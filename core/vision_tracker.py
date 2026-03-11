@@ -1069,86 +1069,7 @@ class MouseTracker:
             'latency_to_immobility': None,
             'last_state': None,
         }
-        """
-        初始化追踪器
-        
-        参数:
-            roi_polygon: ROI多边形顶点 [(x1,y1), (x2,y2), ...]
-            roi_id: ROI编号
-            bg_subtractor: 背景减除器
-            morphology_processor: 形态学处理器
-            detector: 检测器
-            flow_analyzer: 光流分析器
-            fps: 帧率
-            pixel_to_mm: 像素到毫米转换比例
-            
-            # 行为判定参数（黄金参数 - 基于6cm标准体长归一化）
-            win_seconds: 滑动窗口时长（秒，默认0.3s）
-            flow_thr_hi: 光流高阈值（归一化值，默认50）
-            flow_thr_lo: 光流低阈值（归一化值，默认35）
-            speed_std_thr_hi: 质心速度标准差高阈值（归一化值，默认40）
-            speed_std_thr_lo: 质心速度标准差低阈值（归一化值，默认20）
-            min_active_seconds: 最小激活时长（秒，默认0.2s）
-            calm_seconds: 冷却时长（秒，默认0.4s）
-            coherence_thr: 方向一致性阈值（无量纲，默认0.8）
-            coherence_calm_seconds: 方向一致性判定时长（秒，默认0.5s）
-        """
-        self.roi_polygon = np.array(roi_polygon, dtype=np.int32)
-        self.roi_id = roi_id
-        self.bg_subtractor = bg_subtractor
-        self.morphology_processor = morphology_processor
-        self.detector = detector
-        self.flow_analyzer = flow_analyzer
-        
-        # 物理参数
-        self.fps = fps
-        self.pixel_to_mm = pixel_to_mm
-        
-        # 将时间参数转换为帧数
-        self.win = max(1, int(win_seconds * fps))  # 0.3秒 * 30fps = 9帧
-        self.min_frames_active = max(1, int(min_active_seconds * fps))  # 0.2秒 * 30fps = 6帧
-        self.calm_frames = max(1, int(calm_seconds * fps))  # 0.5秒 * 30fps = 15帧
-        self.coherence_calm_frames = max(1, int(coherence_calm_seconds * fps))  # 0.5秒 * 30fps = 15帧
-        
-        # 判定阈值（物理单位）
-        self.flow_thr_hi = flow_thr_hi
-        self.flow_thr_lo = flow_thr_lo
-        self.speed_std_thr_hi = speed_std_thr_hi
-        self.speed_std_thr_lo = speed_std_thr_lo
-        self.coherence_thr = coherence_thr
-        
-        # 创建ROI掩码
-        self.roi_mask = None
-        self.roi_bbox = None  # (x, y, w, h)
-        
-        # 追踪状态
-        self.trajectory = deque(maxlen=100)  # 质心轨迹
-        self.last_centroid = None  # 上一帧质心
-        
-        # 时序特征
-        self.speeds = deque(maxlen=self.win)  # 速度序列（归一化值）
-        self.flows = deque(maxlen=self.win)  # 光流序列（归一化值）
-        self.coherences = deque(maxlen=self.coherence_calm_frames)  # 方向一致性序列（只需要0.5秒）
-        
-        # 判定状态
-        self.is_struggling = False
-        self.frames_active = 0
-        self.calm_counter = 0
-        self.frame_count = 0
-        self.detected_count = 0  # 检测到老鼠的帧数
-        
-        # 不动时间统计
-        self.immobility_stats = {
-            'first_frame': 0,
-            'total_frames': 0,
-            'immobility_frames': 0,
-            'struggling_frames': 0,
-            'immobility_episodes': 0,
-            'struggling_episodes': 0,
-            'latency_to_immobility': None,
-            'last_state': None,
-        }
-        
+
         # 周期性分析器
         self.periodicity_analyzer = PeriodicityAnalyzer(fps)
 
@@ -1604,17 +1525,17 @@ class MouseTracker:
         # 最终生效的摆动状态
         is_swinging_state = self.is_in_confirmed_swing
 
-        # [DEBUG] 打印关键指标，帮助用户调试阈值
-        if self.frame_count % 30 == 0 and detection:
-            base_txt = f"baseAR={baseline_ar:.2f}" if baseline_ar is not None else "baseAR=N/A"
-            print(
-                f"[ROI {self.roi_id}] Swing/Struggle: swingScore={swing_score:.2f}, struggleScore={struggle_score:.2f}, "
-                f"AR={aspect_ratio:.2f} ({base_txt}), AmpR={amp_ratio:.3f}, Hmed={scale_px:.1f}px, "
-                f"Y/X={y_over_x:.2f}, "
-                f"CohMed={coh_med:.2f}, Ent={ent:.2f}, Flow={flow_p90:.1f}, Speed={speed:.1f}, "
-                f"FOS={flow_over_speed:.2f}, AccStd={accel_std:.1f}, Freq={swing_freq:.2f}Hz, ACF={acf_peak:.2f}, "
-                f"SwingState={is_swinging_state}, Buffer={int(sum(self.swing_evidence))}/{self.min_swing_frames}"
-            )
+        # [DEBUG] 打印关键指标（已关闭，如需调试取消下面的注释）
+        # if self.frame_count % 30 == 0 and detection:
+        #     base_txt = f"baseAR={baseline_ar:.2f}" if baseline_ar is not None else "baseAR=N/A"
+        #     print(
+        #         f"[ROI {self.roi_id}] Swing/Struggle: swingScore={swing_score:.2f}, struggleScore={struggle_score:.2f}, "
+        #         f"AR={aspect_ratio:.2f} ({base_txt}), AmpR={amp_ratio:.3f}, Hmed={scale_px:.1f}px, "
+        #         f"Y/X={y_over_x:.2f}, "
+        #         f"CohMed={coh_med:.2f}, Ent={ent:.2f}, Flow={flow_p90:.1f}, Speed={speed:.1f}, "
+        #         f"FOS={flow_over_speed:.2f}, AccStd={accel_std:.1f}, Freq={swing_freq:.2f}Hz, ACF={acf_peak:.2f}, "
+        #         f"SwingState={is_swinging_state}, Buffer={int(sum(self.swing_evidence))}/{self.min_swing_frames}"
+        #     )
 
         # F. 最终挣扎判定
         if is_swinging_state:
@@ -1704,8 +1625,40 @@ class MouseTracker:
             'y_over_x': float(y_over_x),
             'flow_over_speed': float(flow_over_speed),
             'accel_std': float(accel_std),
+            'is_in_stats_window': self._is_in_stats_window(current_time),
         }
     
+    def _is_in_stats_window(self, current_time=None):
+        """判断当前帧是否在统计时间窗口内"""
+        if not self.time_config:
+            return True  # 无时间配置 = 全程统计
+        
+        if current_time is None:
+            current_time = self.frame_count / self.fps
+        
+        mode = self.time_config.get('mode', 'global')
+        start_cfg = self.time_config.get('start')
+        end_cfg = self.time_config.get('end')
+        
+        if mode == 'global':
+            return True
+        elif mode == 'precise':
+            if start_cfg is not None and current_time < start_cfg:
+                return False
+            if end_cfg is not None and current_time > end_cfg:
+                return False
+            return True
+        elif mode == 'relative':
+            if self.first_detected_time is None:
+                return False
+            elapsed = current_time - self.first_detected_time
+            if start_cfg is not None and elapsed < start_cfg:
+                return False
+            if end_cfg is not None and elapsed > end_cfg:
+                return False
+            return True
+        return True
+
     def _update_immobility_stats(self, is_struggling, current_time=None):
         """更新不动时间统计"""
         # 检查时间配置
@@ -1876,7 +1829,20 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         
         # 【性能优化】简化信息显示，减少绘制操作
         # 只显示最重要的 2 行信息
-        info_lines = [f"{roi_name} | {status_text}"]
+        
+        # 统计时间窗口指示
+        in_stats = result.get('is_in_stats_window', True)
+        if in_stats:
+            time_indicator = "[REC]"   # 纯ASCII，避免OpenCV无法渲染Unicode
+            # REC 标识颜色跟随运动状态：挣扎=红，不动/摆动=绿
+            time_color = color
+        else:
+            time_indicator = "[---]"
+            time_color = (128, 128, 128)  # 灰色
+        
+        info_lines = [
+            f"{time_indicator} {roi_name} | {status_text}",  # 第一行：状态+ROI名称
+        ]
         
         if result['flow'] is not None:
             flow_val = result.get('flow_p90', 0.0)
@@ -1897,27 +1863,34 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
                 except Exception:
                     y_min = cy
         
-        # 信息框尺寸（更紧凑）
-        panel_width = 180
-        panel_height = len(info_lines) * 22 + 8
+        # 信息框尺寸
+        panel_width = 260
+        panel_height = len(info_lines) * 22 + 10
         
         # 位置
         panel_x = max(5, min(cx - panel_width // 2, output.shape[1] - panel_width - 5))
-        panel_y = max(10, y_min - panel_height - 30)
+        panel_y = max(10, y_min - panel_height - 10)
         
-        # 【性能优化】直接绘制不透明背景（不用 addWeighted）
-        cv2.rectangle(output, (panel_x, panel_y), 
-                     (panel_x + panel_width, panel_y + panel_height), 
-                     (0, 0, 0), -1)
+        # 背景
+        bg_color = (0, 0, 0) if in_stats else (40, 40, 40)
         cv2.rectangle(output, (panel_x, panel_y),
                      (panel_x + panel_width, panel_y + panel_height),
-                     color, 2)
+                     bg_color, -1)
+        
+        # 边框颜色：统计中跟随运动状态（挣扎=红/不动=绿），非统计=灰色细边框
+        border_color = color if in_stats else (100, 100, 100)
+        border_thickness = 2 if in_stats else 1
+        cv2.rectangle(output, (panel_x, panel_y),
+                     (panel_x + panel_width, panel_y + panel_height),
+                     border_color, border_thickness)
         
         # 绘制文本
         for i, line in enumerate(info_lines):
             y_pos = panel_y + 18 + i * 22
-            cv2.putText(output, line, (panel_x + 5, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            # 第一行用状态颜色，其余白色
+            text_color = time_color if i == 0 else (200, 200, 200)
+            cv2.putText(output, line, (panel_x + 6, y_pos),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
         
         # 绘制轨迹
         if show_trajectory and 'trajectory' in result:

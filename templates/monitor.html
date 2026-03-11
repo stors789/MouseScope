@@ -6,13 +6,15 @@
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h1 class="display-6 cyber-text mb-2"><i class="fas fa-chart-line me-3" style="color:var(--primary-color);"></i><span data-i18n="monitor.title">实时分析监控</span></h1>
+                <h1 class="display-6 cyber-text mb-2"><i class="fas fa-chart-line me-3"
+                        style="color:var(--primary-color);"></i><span data-i18n="monitor.title">实时分析监控</span></h1>
                 <p class="text-secondary" data-i18n="monitor.subtitle">实时追踪分析进度与性能指标</p>
             </div>
             <div class="btn-group">
                 <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i
                         class="fas fa-stop me-2"></i><span data-i18n="monitor.stop">停止分析</span></button>
-                <button class="btn btn-info" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span data-i18n="monitor.refresh">刷新</span></button>
+                <button class="btn btn-info" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span
+                        data-i18n="monitor.refresh">刷新</span></button>
             </div>
         </div>
     </div>
@@ -22,7 +24,8 @@
     <div class="col-lg-8">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="cyber-text mb-0"><i class="fas fa-microchip me-2" style="color:var(--primary-color);"></i><span data-i18n="monitor.status.title">处理状态</span></h5>
+                <h5 class="cyber-text mb-0"><i class="fas fa-microchip me-2"
+                        style="color:var(--primary-color);"></i><span data-i18n="monitor.status.title">处理状态</span></h5>
             </div>
             <div class="card-body">
                 <div class="data-grid mb-4">
@@ -41,11 +44,14 @@
                 </div>
 
                 <div class="progress mb-4">
-                    <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%" aria-valuenow="0"
+                        aria-valuemin="0" aria-valuemax="100"></div>
                 </div>
                 <div class="tech-panel">
-                    <h6 class="cyber-text mb-2"><i class="fas fa-terminal me-2"></i><span data-i18n="monitor.engine">处理状态</span></h6>
-                    <div class="rounded p-3" style="background:#0f172a;color:#e2e8f0;font-family:monospace;font-size:0.85rem;">
+                    <h6 class="cyber-text mb-2"><i class="fas fa-terminal me-2"></i><span
+                            data-i18n="monitor.engine">处理状态</span></h6>
+                    <div class="rounded p-3"
+                        style="background:#0f172a;color:#e2e8f0;font-family:monospace;font-size:0.85rem;">
                         <code id="messageText" data-i18n="monitor.waiting">等待引擎响应...</code>
                     </div>
                 </div>
@@ -55,19 +61,24 @@
                     <h6><i class="fas fa-download me-2"></i><span data-i18n="monitor.download.title">下载结果文件</span></h6>
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <div class="btn-group" role="group">
-                            <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-i18n="monitor.dl.all">全部下载
-                                (ZIP)</span></a>
+                            <a href="#" id="downloadAllBtn" class="btn btn-success"><i
+                                    class="fas fa-archive me-2"></i><span data-i18n="monitor.dl.all">全部下载
+                                    (ZIP)</span></a>
                             <button type="button" class="btn btn-outline-secondary dropdown-toggle"
                                 data-bs-toggle="dropdown"><span data-i18n="monitor.dl.single">单独下载</span></button>
                             <ul class="dropdown-menu">
                                 <li><a class="dropdown-item" href="#" id="dlVideo"><i
-                                            class="fas fa-video me-2 text-primary"></i><span data-i18n="monitor.dl.video">分析视频</span></a></li>
+                                            class="fas fa-video me-2 text-primary"></i><span
+                                            data-i18n="monitor.dl.video">分析视频</span></a></li>
                                 <li><a class="dropdown-item" href="#" id="dlCsv"><i
-                                            class="fas fa-table me-2 text-info"></i><span data-i18n="monitor.dl.csv">详细日志 CSV</span></a></li>
+                                            class="fas fa-table me-2 text-info"></i><span
+                                            data-i18n="monitor.dl.csv">详细日志 CSV</span></a></li>
                                 <li><a class="dropdown-item" href="#" id="dlImmCsv"><i
-                                            class="fas fa-chart-bar me-2 text-success"></i><span data-i18n="monitor.dl.immcsv">统计数据 CSV</span></a></li>
+                                            class="fas fa-chart-bar me-2 text-success"></i><span
+                                            data-i18n="monitor.dl.immcsv">统计数据 CSV</span></a></li>
                                 <li><a class="dropdown-item" href="#" id="dlReport"><i
-                                            class="fas fa-file-alt me-2 text-warning"></i><span data-i18n="monitor.dl.report">报告 TXT</span></a></li>
+                                            class="fas fa-file-alt me-2 text-warning"></i><span
+                                            data-i18n="monitor.dl.report">报告 TXT</span></a></li>
                             </ul>
                         </div>
                         <button class="btn btn-info" onclick="openResultFolder()">
@@ -81,14 +92,15 @@
                     </div>
                     <div class="alert alert-info mt-2">
                         <small><strong>文件说明:</strong> ZIP包含分析视频、帧数据CSV、不动时间CSV和文字报告。<br>
-                        <i class="fas fa-lightbulb me-1 text-warning"></i>桌面端可直接点击"打开结果文件夹"在文件管理器中查看。</small>
+                            <i class="fas fa-lightbulb me-1 text-warning"></i>桌面端可直接点击"打开结果文件夹"在文件管理器中查看。</small>
                     </div>
                 </div>
             </div>
         </div>
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="cyber-text mb-0"><i class="fas fa-tachometer-alt me-2" style="color:var(--primary-color);"></i><span data-i18n="monitor.perf.title">性能指标</span></h5>
+                <h5 class="cyber-text mb-0"><i class="fas fa-tachometer-alt me-2"
+                        style="color:var(--primary-color);"></i><span data-i18n="monitor.perf.title">性能指标</span></h5>
             </div>
             <div class="card-body">
                 <div class="data-grid">
@@ -114,7 +126,8 @@
     <div class="col-lg-4">
         <div class="card mb-4">
             <div class="card-header">
-                <h6 class="cyber-text mb-0"><i class="fas fa-satellite-dish me-2" style="color:var(--primary-color);"></i>实时数据</h6>
+                <h6 class="cyber-text mb-0"><i class="fas fa-satellite-dish me-2"
+                        style="color:var(--primary-color);"></i>实时数据</h6>
             </div>
             <div class="card-body">
                 <div id="realtimeData">
@@ -128,7 +141,8 @@
 
         <div class="card">
             <div class="card-header">
-                <h6 class="cyber-text mb-0"><i class="fas fa-terminal me-2" style="color:var(--primary-color);"></i>系统日志</h6>
+                <h6 class="cyber-text mb-0"><i class="fas fa-terminal me-2" style="color:var(--primary-color);"></i>系统日志
+                </h6>
             </div>
             <div class="card-body p-0">
                 <div id="logContainer" class="terminal-log">
@@ -151,14 +165,27 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
     const sessionId = '{{ session_id }}';
     let updateInterval;
 
     function updateStatus() {
         fetch(`/api/status/${sessionId}`)
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    clearInterval(updateInterval);
+                    document.getElementById('statusText').textContent = '会话已失效';
+                    document.getElementById('statusIndicator').className = 'status-indicator status-error';
+                    document.getElementById('messageText').textContent =
+                        '分析会话不存在或已过期，5秒后自动返回首页...';
+                    document.getElementById('stopBtn').style.display = 'none';
+                    setTimeout(() => { window.location.href = '/'; }, 5000);
+                    return null;
+                }
+                return r.json();
+            })
             .then(data => {
-                if (data.error) return;
+                if (!data || data.error) return;
 
                 document.getElementById('statusText').textContent = getStatusText(data.status);
                 document.getElementById('statusIndicator').className = `status-indicator status-${data.status}`;
@@ -189,20 +216,21 @@
                 const realtimeData = document.getElementById('realtimeData');
                 if (data.realtime_data && data.realtime_data.length > 0) {
                     realtimeData.innerHTML = data.realtime_data.map(item => `
-                    <div class="data-stream-item ${item.is_struggling ? 'struggling' : 'immobile'}" style="padding:10px; margin:5px 0; border-radius:8px; background:rgba(255,255,255,0.05);">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1 cyber-text">${item.roi_name || 'ROI ' + item.roi_id}</h6>
-                                <span class="badge ${item.is_struggling ? 'bg-danger' : 'bg-success'}">
-                                    <i class="fas fa-${item.is_struggling ? 'exclamation' : 'check'} me-1"></i>
-                                    ${item.is_struggling ? '挣扎' : '静止'}
-                                </span>
-                            </div>
-                            <div class="text-end">
-                                <small class="text-muted d-block">光流: ${(item.flow_value || 0).toFixed(1)}</small>
-                            </div>
-                        </div>
-                    </div>`).join('');
+<div class="data-stream-item ${item.is_struggling ? 'struggling' : 'immobile'}"
+    style="padding:10px; margin:5px 0; border-radius:8px; background:rgba(255,255,255,0.05);">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="mb-1 cyber-text">${item.roi_name || 'ROI ' + item.roi_id}</h6>
+            <span class="badge ${item.is_struggling ? 'bg-danger' : 'bg-success'}">
+                <i class="fas fa-${item.is_struggling ? 'exclamation' : 'check'} me-1"></i>
+                ${item.is_struggling ? '挣扎' : '静止'}
+            </span>
+        </div>
+        <div class="text-end">
+            <small class="text-muted d-block">光流: ${(item.flow_value || 0).toFixed(1)}</small>
+        </div>
+    </div>
+</div>`).join('');
                 }
 
                 if (data.status === 'completed') {
@@ -225,7 +253,10 @@
     }
 
     function getStatusText(s) {
-        return { 'waiting': '等待中', 'preprocessing': '预处理', 'analyzing': '分析中', 'completed': '已完成', 'error': '出错', 'stopped': '已停止' }[s] || s;
+        return {
+            'waiting': '等待中', 'preprocessing': '预处理', 'analyzing': '分析中', 'completed': '已完成', 'error': '出错', 'stopped':
+                '已停止'
+        }[s] || s;
     }
 
     function stopAnalysis() {

@@ -11,7 +11,8 @@
                 <ul class="nav nav-tabs mb-4" id="uploadMethodTabs" role="tablist">
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="web-upload-tab" data-bs-toggle="tab"
-                            data-bs-target="#web-upload" type="button" role="tab"><span data-i18n="upload.tab.web">网页上传</span></button>
+                            data-bs-target="#web-upload" type="button" role="tab"><span
+                                data-i18n="upload.tab.web">网页上传</span></button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="local-path-tab" data-bs-toggle="tab" data-bs-target="#local-path"
@@ -32,7 +33,9 @@
                                     <span class="d-none" data-i18n="upload.status.uploading">Uploading</span>
                                     <span class="d-none" data-i18n="upload.status.files">个文件</span>
                                     <span class="d-none" data-i18n="upload.status.done">个文件已上传</span>
-                                    <button type="button" class="btn btn-primary" onclick="document.getElementById('video').click()"><span data-i18n="upload.btn.select">选择文件</span></button>
+                                    <button type="button" class="btn btn-primary"
+                                        onclick="document.getElementById('video').click()"><span
+                                            data-i18n="upload.btn.select">选择文件</span></button>
                                 </div>
                             </div>
                         </div>
@@ -40,25 +43,33 @@
                         <div class="tab-pane fade" id="local-path" role="tabpanel">
                             <div class="alert alert-info">
                                 <strong data-i18n="upload.local.tip.title">提示:</strong><br>
-                                <span data-i18n="upload.local.tip.body" data-i18n-html>可以直接<strong>拖拽视频文件</strong>到下方区域，或手动输入服务器上的完整路径</span><br>
+                                <span data-i18n="upload.local.tip.body"
+                                    data-i18n-html>可以直接<strong>拖拽视频文件</strong>到下方区域，或手动输入服务器上的完整路径</span><br>
                                 <small>• <span data-i18n="upload.local.bullet1">拖拽文件：自动上传并填入路径</span></small><br>
-                                <small>• <span data-i18n="upload.local.bullet2">手动输入：支持文件路径和文件夹路径，每行一个</span></small><br>
+                                <small>• <span
+                                        data-i18n="upload.local.bullet2">手动输入：支持文件路径和文件夹路径，每行一个</span></small><br>
                                 <small>• <span data-i18n="upload.local.bullet3">文件夹：自动扫描并批量处理文件夹下所有视频</span></small>
                             </div>
 
                             <div class="local-drop-zone" id="localDropZone">
                                 <div class="text-center">
                                     <h5 data-i18n="upload.local.drag.hint">拖拽视频文件到这里</h5>
-                                    <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv .wmv 格式，可同时拖入多个文件</p>
+                                    <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv
+                                        .wmv 格式，可同时拖入多个文件</p>
                                     <input type="file" class="d-none" id="localFileInput"
                                         accept=".mp4,.avi,.mov,.mkv,.wmv" multiple>
-                                    <button type="button" class="btn btn-outline-info" onclick="document.getElementById('localFileInput').click()"><span data-i18n="upload.local.or.select">或点击选择文件</span></button>
+                                    <button type="button" class="btn btn-outline-info"
+                                        onclick="document.getElementById('localFileInput').click()"><span
+                                            data-i18n="upload.local.or.select">或点击选择文件</span></button>
                                 </div>
                                 <div id="localUploadProgress" class="mt-3" style="display: none;">
                                     <div class="progress">
-                                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="localProgressBar" style="width: 0%"></div>
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                            id="localProgressBar" style="width: 0%"></div>
                                     </div>
-                                    <small class="text-muted d-flex align-items-center mt-2" id="localUploadStatus"><i class="fas fa-spinner fa-spin me-2"></i><span data-i18n="upload.uploading">上传中...</span></small>
+                                    <small class="text-muted d-flex align-items-center mt-2" id="localUploadStatus"><i
+                                            class="fas fa-spinner fa-spin me-2"></i><span
+                                            data-i18n="upload.uploading">上传中...</span></small>
                                 </div>
                             </div>
 
@@ -67,12 +78,14 @@
                             </div>
 
                             <div class="mb-3">
-                                <label for="localPaths" class="form-label" data-i18n="upload.local.label">视频文件/文件夹路径</label>
+                                <label for="localPaths" class="form-label"
+                                    data-i18n="upload.local.label">视频文件/文件夹路径</label>
                                 <textarea class="form-control font-monospace" id="localPaths" name="local_paths"
                                     rows="6" data-i18n="upload.local.placeholder" data-i18n-attr="placeholder"
                                     placeholder="例如：&#10;/data/videos/mouse1.mp4&#10;/data/videos/batch1/"></textarea>
                             </div>
-                            <button type="button" class="btn btn-outline-primary" id="validatePathsBtn"><span data-i18n="upload.validate">验证路径</span></button>
+                            <button type="button" class="btn btn-outline-primary" id="validatePathsBtn"><span
+                                    data-i18n="upload.validate">验证路径</span></button>
                         </div>
                     </div>
 
@@ -82,33 +95,43 @@
                             <div class="card-body">
                                 <h6 class="cyber-text mb-3" data-i18n="upload.config.title">分析配置</h6>
                                 <div class="row g-3 mb-3">
-                                    <div class="col-md-6">
+                                    <div class="col-md-4">
                                         <label class="form-label" data-i18n="upload.config.start">开始秒数（可选）</label>
                                         <input type="number" step="0.1" min="0" class="form-control"
                                             name="start_seconds" placeholder="0.0">
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-4">
                                         <label class="form-label" data-i18n="upload.config.end">结束秒数（可选）</label>
                                         <input type="number" step="0.1" min="0" class="form-control" name="end_seconds"
                                             placeholder="">
                                         <div class="form-text" data-i18n="upload.config.end.hint">填写则只分析该时间段</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" data-i18n="upload.config.fps">帧率 FPS（可选）</label>
+                                        <input type="number" step="0.01" min="1" max="240" class="form-control"
+                                            name="fps_override" placeholder="自动检测">
+                                        <div class="form-text" data-i18n="upload.config.fps.hint">Bandicam等VFR视频建议手动填写
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label" data-i18n="upload.config.outdir">输出文件夹（可选）</label>
                                     <div class="input-group">
                                         <input type="text" class="form-control font-monospace" name="output_dir"
-                                            id="outputDir"
-                                            data-i18n="upload.config.outdir.ph" data-i18n-attr="placeholder"
-                                            placeholder="留空则使用默认目录: data/results/">
-                                        <button type="button" class="btn btn-outline-info" onclick="setDefaultOutputDir()">
-                                            <i class="fas fa-undo me-1"></i><span data-i18n="upload.config.default">默认</span>
+                                            id="outputDir" data-i18n="upload.config.outdir.ph"
+                                            data-i18n-attr="placeholder" placeholder="留空则使用默认目录: data/results/">
+                                        <button type="button" class="btn btn-outline-info"
+                                            onclick="setDefaultOutputDir()">
+                                            <i class="fas fa-undo me-1"></i><span
+                                                data-i18n="upload.config.default">默认</span>
                                         </button>
                                     </div>
-                                    <div class="form-text" data-i18n="upload.config.outdir.hint">桌面端专属：分析结果将直接保存到此文件夹，可用文件管理器直接查看</div>
+                                    <div class="form-text" data-i18n="upload.config.outdir.hint">
+                                        桌面端专属：分析结果将直接保存到此文件夹，可用文件管理器直接查看</div>
                                 </div>
                                 <div class="d-grid">
-                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn"><span data-i18n="upload.config.submit">开始分析配置</span></button>
+                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn"><span
+                                            data-i18n="upload.config.submit">开始分析配置</span></button>
                                 </div>
                             </div>
                         </div>

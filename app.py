@@ -35,8 +35,14 @@ from flask import (
     flash, jsonify, send_file, session
 )
 
-# 将 core/ 加入路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
+# 将 core/ 加入路径（兼容 PyInstaller 打包环境）
+if getattr(sys, 'frozen', False):
+    # 打包后：core/ 在 sys._MEIPASS 解压目录下
+    _base = sys._MEIPASS
+    sys.path.insert(0, os.path.join(_base, 'core'))
+    sys.path.insert(0, _base)
+else:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
 
 from vision_tracker import (
     BackgroundSubtractor,
@@ -187,12 +193,17 @@ class VisionAnalysisSession:
             self._log(f"❌ 无法打开视频: {video_path}")
             return
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = vision_config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        self._log(f"视频信息: {width}x{height}, {fps:.1f}fps, {total_frames}帧")
+        if fps_override:
+            self._log(f"视频信息: {width}x{height}, {fps:.1f}fps (手动指定, OpenCV检测={detected_fps:.1f}), {total_frames}帧")
+        else:
+            self._log(f"视频信息: {width}x{height}, {fps:.1f}fps, {total_frames}帧")
 
         # 创建处理器
         bg_method = vision_config.get('bg_method', 'threshold')
@@ -689,12 +700,15 @@ def do_upload():
     # 获取时间配置
     start_seconds = request.form.get('start_seconds', '').strip()
     end_seconds = request.form.get('end_seconds', '').strip()
-    output_dir = request.form.get('output_dir', '').strip()
+    output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
+    fps_override = request.form.get('fps_override', '').strip()
 
     # 读取第一个视频的基本信息
     cap = cv2.VideoCapture(video_paths[0])
+    detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     video_info_data = {
-        'fps': cap.get(cv2.CAP_PROP_FPS) or 30.0,
+        'fps': float(fps_override) if fps_override else detected_fps,
+        'detected_fps': detected_fps,
         'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
@@ -709,6 +723,7 @@ def do_upload():
         'start_seconds': start_seconds if start_seconds else None,
         'end_seconds': end_seconds if end_seconds else None,
         'output_dir': output_dir if output_dir else None,
+        'fps_override': float(fps_override) if fps_override else None,
         'is_batch': len(video_paths) > 1,
     }
 
@@ -889,6 +904,7 @@ def start_analysis(session_id):
         'output_dir': sess.get('output_dir'),
         'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
         'end_sec': float(sess['end_seconds']) if sess.get('end_seconds') else None,
+        'fps_override': sess.get('fps_override'),
     }
 
     # 创建分析会话
