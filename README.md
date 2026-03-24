@@ -112,6 +112,35 @@ python app.py
 
 Then open `http://localhost:8080` in your browser.
 
+---
+
+## Desktop UI | 界面预览
+
+<p align="center">
+  <img src="static/img/ui_home.png" alt="MouseScope Desktop UI" width="900"/>
+  <br>
+  <em>Desktop home interface for upload, ROI calibration, analysis, and result export</em><br>
+  <em>MouseScope 桌面端主界面，支持视频上传、ROI 标定、参数调试与结果导出</em>
+</p>
+
+---
+
+## Validation Results (33 Mice) | 33 只小鼠验证结果
+
+<p align="center">
+  <img src="static/img/validation_correlation_33_mice.png" alt="Validation correlation across 33 mice" width="520"/>
+  <br>
+  <em>Pearson correlation between software scoring and human scoring across 33 mice</em><br>
+  <em>33 只小鼠数据中，软件评分与人工评分的相关性验证结果</em>
+</p>
+
+<p align="center">
+  <img src="static/img/validation_ethogram_33_mice.png" alt="Behavior raster for all 33 mice" width="600"/>
+  <br>
+  <em>Behavior raster (ethogram) comparing human and software immobility calls for all 33 mice</em><br>
+  <em>33 只小鼠的行为时序图，用于对比人工与软件的不动判定</em>
+</p>
+
 
 ---
 
