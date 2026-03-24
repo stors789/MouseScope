@@ -9,6 +9,20 @@ MouseScope Desktop Edition — 简化版 Flask 应用
 import os
 import sys
 
+def _configure_console_streams():
+    """Avoid startup crashes when Windows console encoding cannot represent log symbols."""
+    for name in ('stdout', 'stderr'):
+        stream = getattr(sys, name, None)
+        if stream is None or not hasattr(stream, 'reconfigure'):
+            continue
+        try:
+            stream.reconfigure(errors='replace')
+        except Exception:
+            pass
+
+
+_configure_console_streams()
+
 # ==================== 性能环境变量（必须在 import numpy/cv2 之前） ====================
 # 让底层 BLAS/OpenMP 库充分利用所有 CPU 核心
 _cpu_count = str(os.cpu_count() or 4)
