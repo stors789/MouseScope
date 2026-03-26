@@ -33,6 +33,8 @@ a = Analysis(
         'numpy',
         'pandas',
         'PIL',
+        'encodings.idna',
+        'stringprep',
         'open_field',
         'novel_object',
         'vision_tracker',

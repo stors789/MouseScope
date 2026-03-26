@@ -8,6 +8,12 @@ MouseScope Behavior Analysis Platform — 简化版 Flask 应用
 
 import os
 import sys
+import stringprep  # Ensure IDNA codec dependencies are loaded in frozen builds.
+
+try:
+    import encodings.idna  # noqa: F401
+except Exception:
+    encodings = None
 
 def _configure_console_streams():
     """Avoid startup crashes when Windows console encoding cannot represent log symbols."""
