@@ -1,0 +1,1359 @@
+﻿{% extends "base.html" %}
+{% block title %}NOR 配置 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.nor-shell { max-width: 1480px; margin: 0 auto; }
+.nor-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.nor-steps { display: inline-flex; gap: 0.5rem; padding: 0.4rem; border: 1px solid var(--border-card); background: var(--bg-card); border-radius: 999px; }
+.nor-step { border: 0; background: transparent; color: var(--text-muted); padding: 0.55rem 1rem; border-radius: 999px; font-weight: 600; }
+.nor-step.active { background: rgba(37, 99, 235, 0.12); color: var(--primary-color); }
+.nor-step.done { color: var(--success-color); }
+.nor-panel { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.25rem; margin-bottom: 1rem; }
+.nor-panel h5, .nor-panel h6 { margin-bottom: 0.9rem; color: var(--text-primary); }
+.nor-hint { color: var(--text-muted); font-size: 0.92rem; margin-bottom: 0.9rem; }
+.nor-canvas-wrap { background: #09101d; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 18px; padding: 0.75rem; }
+.nor-canvas-wrap canvas { display: block; width: 100%; max-width: 100%; height: auto; background: #000; border-radius: 14px; cursor: crosshair; }
+.nor-toolbar { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+.nor-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 0.95fr); gap: 1rem; align-items: start; }
+.nor-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.nor-preview canvas { height: 320px; }
+.roi-list { display: grid; gap: 0.8rem; }
+.roi-card { border: 1px solid var(--border-card); border-radius: 16px; padding: 0.95rem; background: var(--bg-page); }
+.roi-card-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+.roi-card-title { font-weight: 700; color: var(--text-primary); }
+.roi-card small { color: var(--text-muted); }
+.compact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+.three-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; }
+.param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.param-stack { display: grid; gap: 0.85rem; }
+.object-card { border: 1px solid var(--border-card); border-radius: 12px; padding: 0.8rem; background: var(--bg-card); }
+.object-card-title { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; margin-bottom: 0.6rem; color: var(--text-primary); }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot.familiar { background: #f97316; }
+.dot.novel { background: #3b82f6; }
+.step-pane { display: none; }
+.step-pane.active { display: block; }
+.range-line { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); }
+.mini-note { font-size: 0.85rem; color: var(--text-muted); }
+.status-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; color: var(--text-muted); font-size: 0.9rem; }
+.status-pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--bg-page); border: 1px solid var(--border-card); }
+.loading-overlay { position: fixed; inset: 0; background: rgba(241, 245, 249, 0.78); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+.spinner { width: 48px; height: 48px; border: 3px solid var(--border-card); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1100px) {
+    .nor-row { grid-template-columns: 1fr; }
+    .nor-preview { grid-template-columns: 1fr; }
+    .param-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+    .compact-grid, .three-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;">
+    <div class="spinner"></div>
+</div>
+
+<div class="nor-shell">
+    <div class="nor-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-nor-i18n="header.title">新奇物体识别 NOR 配置</h1>
+            <div class="text-secondary" data-nor-i18n="header.subtitle">支持多 ROI / 多 arena 标定。每个 ROI 需要 4 个 arena 角点 + 2 个物体中心点。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='nor') }}" target="_blank">
+                <i class="fas fa-book-open me-2"></i><span data-nor-i18n="header.manual">NOR 使用手册</span>
+            </a>
+            <div class="nor-steps">
+                <button class="nor-step active" id="stepNav1" onclick="goToStep(1)" data-nor-i18n="step1">1. 标定</button>
+                <button class="nor-step" id="stepNav2" onclick="goToStep(2)" data-nor-i18n="step2">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="nor-row">
+            <div class="nor-panel">
+                <div class="three-grid mb-3">
+                    <div>
+                        <label class="form-label" data-nor-i18n="calib.phase.label">实验阶段</label>
+                        <select class="form-select" id="phase" onchange="handlePhaseChange()">
+                            <option value="recognition" selected data-nor-i18n="calib.phase.recognition">Recognition / 识别测试期</option>
+                            <option value="familiarization" data-nor-i18n="calib.phase.familiarization">Familiarization / 熟悉期</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" data-nor-i18n="calib.arena_width">Arena 宽度 (cm)</label>
+                        <input type="number" class="form-control" id="arenaWidthCm" min="1" step="0.1" value="50" onchange="drawArenaCanvas(); updateDebugPreview();">
+                    </div>
+                    <div>
+                        <label class="form-label" data-nor-i18n="calib.arena_height">Arena 高度 (cm)</label>
+                        <input type="number" class="form-control" id="arenaHeightCm" min="1" step="0.1" value="50" onchange="drawArenaCanvas(); updateDebugPreview();">
+                    </div>
+                </div>
+
+                {% if is_batch %}
+                <div class="mb-3">
+                    <label class="form-label" data-nor-i18n="calib.preview_video">预览视频</label>
+                    <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                        {% for video in video_list %}
+                        <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+                <div class="nor-hint" data-nor-i18n="calib.hint" data-nor-i18n-html>
+                    点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为 familiar，第 2 个物体为 novel。若镜头边缘畸变明显，可在右侧 ROI 卡片中额外绘制单独的检测遮罩。
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-nor-i18n="calib.select_frame">选择帧</label>
+                        <span id="frameLabelArena" class="mini-note">帧 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderArena" min="0" max="0" value="0" oninput="onArenaFrameChange(this.value)">
+                </div>
+
+                <div class="nor-canvas-wrap">
+                    <canvas id="arenaCanvas"></canvas>
+                </div>
+
+                <div class="nor-toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="startNewROI()">
+                        <i class="fas fa-plus me-2"></i><span data-nor-i18n="calib.btn.add_roi">新增 ROI</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoCurrentPoint()">
+                        <i class="fas fa-undo me-2"></i><span data-nor-i18n="calib.btn.undo">撤销一步</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearCurrentROI()">
+                        <i class="fas fa-eraser me-2"></i><span data-nor-i18n="calib.btn.clear_current">清空当前</span>
+                    </button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAllROIs()">
+                        <i class="fas fa-trash me-2"></i><span data-nor-i18n="calib.btn.clear_all">清空全部</span>
+                    </button>
+                    <button class="btn btn-outline-warning" type="button" id="finishMaskBtn" onclick="finishDetectionMaskEdit()" style="display:none;">
+                        <i class="fas fa-draw-polygon me-2"></i><span data-nor-i18n="calib.btn.finish_mask">完成检测遮罩</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" id="cancelMaskBtn" onclick="cancelDetectionMaskEdit()" style="display:none;">
+                        <i class="fas fa-times me-2"></i><span data-nor-i18n="calib.btn.cancel_mask">取消遮罩编辑</span>
+                    </button>
+                    <button class="btn btn-success ms-auto" type="button" id="toDebugBtn" onclick="goToStep(2)" disabled>
+                        <i class="fas fa-arrow-right me-2"></i><span data-nor-i18n="calib.btn.to_debug">进入调参</span>
+                    </button>
+                </div>
+
+                <div class="status-strip">
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.added">已添加:</strong> <span id="roiCountText">0</span></div>
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.corners">角点:</strong> <span id="cornerCountText">0 / 4</span></div>
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.objects">物体点:</strong> <span id="objectCountText">0 / 2</span></div>
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.mask_points">遮罩点数:</strong> <span id="maskPointText">0</span></div>
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.mode">当前模式:</strong> <span id="drawModeText">绘制 ROI</span></div>
+                    <div class="status-pill"><strong data-nor-i18n="calib.status.phase">当前阶段:</strong> <span id="phaseText">识别测试期</span></div>
+                </div>
+            </div>
+
+            <div class="nor-panel">
+                <h5 class="mb-3" data-nor-i18n="roi_list.title">ROI 列表</h5>
+                <div class="nor-hint" data-nor-i18n="roi_list.hint">每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗，也可以额外绘制一个检测遮罩多边形。</div>
+                <div id="roiList" class="roi-list">
+                    <div class="mini-note" data-nor-i18n="roi_list.empty">还没有添加 ROI。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+            <div class="nor-panel">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-nor-i18n="debug.title">调参与预览</h5>
+                        <div class="mini-note" data-nor-i18n="debug.subtitle">预览会同时叠加所有 ROI 的 arena 边界、物体点位、接近范围和鼠体检测结果。</div>
+                    </div>
+                    <div class="nor-toolbar">
+                        <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)">
+                            <i class="fas fa-arrow-left me-2"></i><span data-nor-i18n="debug.btn.back">返回标定</span>
+                        </button>
+                        <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()">
+                            <i class="fas fa-sync-alt me-2"></i><span data-nor-i18n="debug.btn.refresh">刷新预览</span>
+                        </button>
+                        <button class="btn btn-success" type="button" onclick="startAnalysis()">
+                            <i class="fas fa-play me-2"></i><span data-nor-i18n="debug.btn.start">开始 NOR 分析</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-nor-i18n="debug.preview_frame">预览帧</label>
+                        <span id="frameLabelDebug" class="mini-note">帧 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderDebug" min="0" max="0" value="0" oninput="onDebugFrameChange(this.value)">
+            </div>
+
+            <div class="nor-preview mb-4">
+                <div class="nor-canvas-wrap">
+                    <canvas id="previewOriginal"></canvas>
+                </div>
+                <div class="nor-canvas-wrap">
+                    <canvas id="previewResult"></canvas>
+                </div>
+            </div>
+
+            <div class="param-grid">
+                <div class="param-stack">
+                    <div class="nor-panel mb-0">
+                        <h6 data-nor-i18n="detect.title">检测参数</h6>
+                        <div class="compact-grid">
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.method">检测方式</label>
+                                <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">
+                                    <option value="threshold" data-nor-i18n="detect.method.threshold">灰度阈值</option>
+                                    <option value="static" data-nor-i18n="detect.method.static">静态背景减除</option>
+                                </select>
+                            </div>
+                            <div id="bgTypeWrap">
+                                <label class="form-label" data-nor-i18n="detect.bg_type">背景类型</label>
+                                <select class="form-select" id="bgType" onchange="updateDebugPreview()">
+                                    <option value="light" data-nor-i18n="detect.bg_light">浅色背景 / 深色鼠</option>
+                                    <option value="dark" data-nor-i18n="detect.bg_dark">深色背景 / 浅色鼠</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.min_area">最小面积</label>
+                                <input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncRangeLabel('minArea'); updateDebugPreview()">
+                                <div class="range-line"><span>20</span><span id="minAreaLabel">120</span><span>5000</span></div>
+                            </div>
+                            <div id="grayThresholdWrap">
+                                <label class="form-label" data-nor-i18n="detect.gray_threshold">灰度阈值</label>
+                                <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.erosion_kernel">腐蚀核</label>
+                                <input type="range" class="form-range" id="erosionKernel" min="1" max="15" value="3" oninput="syncRangeLabel('erosionKernel'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="erosionKernelLabel">3</span><span>15</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.erosion_iter">腐蚀次数</label>
+                                <input type="range" class="form-range" id="erosionIter" min="0" max="8" value="1" oninput="syncRangeLabel('erosionIter'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="erosionIterLabel">1</span><span>8</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.dilation_kernel">膨胀核</label>
+                                <input type="range" class="form-range" id="dilationKernel" min="1" max="15" value="5" oninput="syncRangeLabel('dilationKernel'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="dilationKernelLabel">5</span><span>15</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="detect.dilation_iter">膨胀次数</label>
+                                <input type="range" class="form-range" id="dilationIter" min="0" max="8" value="2" oninput="syncRangeLabel('dilationIter'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="dilationIterLabel">2</span><span>8</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="param-stack">
+                    <div class="nor-panel mb-0">
+                        <h6 data-nor-i18n="stats.title">统计参数</h6>
+                        <div class="compact-grid">
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.center_ratio_x">中心区宽度比例</label>
+                                <input type="number" class="form-control" id="centerRatioX" min="0.1" max="1.0" step="0.05" value="0.5" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.center_ratio_y">中心区高度比例</label>
+                                <input type="number" class="form-control" id="centerRatioY" min="0.1" max="1.0" step="0.05" value="0.5" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.interaction_radius">交互半径 (cm)</label>
+                                <input type="number" class="form-control" id="interactionRadius" min="0.5" step="0.1" value="4.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.exploration_max_speed">探索最大速度 (cm/s)</label>
+                                <input type="number" class="form-control" id="explorationMaxSpeed" min="0" step="0.1" value="12.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.movement_threshold">运动阈值 (cm/s)</label>
+                                <input type="number" class="form-control" id="movementThreshold" min="0" step="0.1" value="2.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.min_valid_exploration">最小有效探索时长 (s)</label>
+                                <input type="number" class="form-control" id="minValidExploration" min="0" step="0.5" value="20.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.bin_seconds">分箱时长 (s)</label>
+                                <input type="number" class="form-control" id="binSeconds" min="1" step="1" value="300">
+                            </div>
+                            <div class="d-flex align-items-end">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                    <label class="form-check-label" for="generateVideo" data-nor-i18n="stats.generate_video">生成标注视频</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="status-strip mt-3">
+                            <div class="status-pill" id="previewStatus" data-nor-i18n="debug.preview_waiting">等待预览</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+const videoInfo = {{ video_info | tojson }};
+const isBatch = {{ is_batch | tojson }};
+{% if video_list %}
+const videoList = {{ video_list | tojson }};
+{% else %}
+const videoList = [];
+{% endif %}
+
+const NOR_I18N = {
+    zh: {
+        'header.title': '新奇物体识别 NOR 配置',
+        'header.subtitle': '支持多 ROI / 多 arena 标定。每个 ROI 需要 4 个 arena 角点 + 2 个物体中心点。',
+        'header.manual': 'NOR 使用手册',
+        'step1': '1. 标定',
+        'step2': '2. 调参与启动',
+        'calib.phase.label': '实验阶段',
+        'calib.phase.recognition': 'Recognition / 识别测试期',
+        'calib.phase.familiarization': 'Familiarization / 熟悉期',
+        'calib.arena_width': 'Arena 宽度 (cm)',
+        'calib.arena_height': 'Arena 高度 (cm)',
+        'calib.preview_video': '预览视频',
+        'calib.hint': '点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为熟悉物体，第 2 个物体为新奇物体。若镜头边缘畸变明显，可在右侧 ROI 卡片中额外绘制单独的检测遮罩。',
+        'calib.select_frame': '选择帧',
+        'calib.btn.add_roi': '新增 ROI',
+        'calib.btn.undo': '撤销一步',
+        'calib.btn.clear_current': '清空当前',
+        'calib.btn.clear_all': '清空全部',
+        'calib.btn.finish_mask': '完成检测遮罩',
+        'calib.btn.cancel_mask': '取消遮罩编辑',
+        'calib.btn.to_debug': '进入调参',
+        'calib.status.added': '已添加:',
+        'calib.status.corners': '角点:',
+        'calib.status.objects': '物体点:',
+        'calib.status.mask_points': '遮罩点数:',
+        'calib.status.mode': '当前模式:',
+        'calib.status.phase': '当前阶段:',
+        'roi_list.title': 'ROI 列表',
+        'roi_list.hint': '每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗，也可以额外绘制一个检测遮罩多边形。',
+        'roi_list.empty': '还没有添加 ROI。',
+        'roi_list.card.points_hint_mask_custom': '4 个 arena 角点 + 2 个物体中心点 · 已自定义检测遮罩（{0} 点）',
+        'roi_list.card.points_hint_mask_default': '4 个 arena 角点 + 2 个物体中心点 · 检测遮罩默认跟随 arena',
+        'roi_list.card.name': '名称',
+        'roi_list.card.time_mode': '统计模式',
+        'roi_list.card.mode.global': '跟随全局',
+        'roi_list.card.mode.precise': '精确时间窗',
+        'roi_list.card.start_time': '开始时间 (s)',
+        'roi_list.card.end_time': '结束时间 (s)',
+        'roi_list.card.edit_mask': '编辑检测遮罩',
+        'roi_list.card.continue_mask': '继续编辑检测遮罩',
+        'roi_list.card.reset_mask': '恢复默认遮罩',
+        'roi_list.card.mask_note': '统计仍使用 4 点 arena 和物体位置；检测时会优先使用这里的遮罩多边形。',
+        'roi_list.card.object1': '物体 1',
+        'roi_list.card.object2': '物体 2',
+        'roi_list.card.object_name': '名称',
+        'roi_list.card.object_role': '角色',
+        'roi_list.role.familiar': '熟悉',
+        'roi_list.role.novel': '新奇',
+        'debug.title': '调参与预览',
+        'debug.subtitle': '预览会同时叠加所有 ROI 的 arena 边界、物体点位、接近范围和鼠体检测结果。',
+        'debug.btn.back': '返回标定',
+        'debug.btn.refresh': '刷新预览',
+        'debug.btn.start': '开始 NOR 分析',
+        'debug.preview_frame': '预览帧',
+        'debug.preview_waiting': '等待预览',
+        'debug.preview_detected': '已检测 {0}/{1} 个 ROI；接近物体 / 探索中的 ROI：{2}',
+        'debug.preview_failed': '预览失败',
+        'detect.title': '检测参数',
+        'detect.method': '检测方式',
+        'detect.method.threshold': '灰度阈值',
+        'detect.method.static': '静态背景减除',
+        'detect.bg_type': '背景类型',
+        'detect.bg_light': '浅色背景 / 深色鼠',
+        'detect.bg_dark': '深色背景 / 浅色鼠',
+        'detect.min_area': '最小面积',
+        'detect.gray_threshold': '灰度阈值',
+        'detect.erosion_kernel': '腐蚀核',
+        'detect.erosion_iter': '腐蚀次数',
+        'detect.dilation_kernel': '膨胀核',
+        'detect.dilation_iter': '膨胀次数',
+        'stats.title': '统计参数',
+        'stats.center_ratio_x': '中心区宽度比例',
+        'stats.center_ratio_y': '中心区高度比例',
+        'stats.interaction_radius': '交互半径 (cm)',
+        'stats.exploration_max_speed': '探索最大速度 (cm/s)',
+        'stats.movement_threshold': '运动阈值 (cm/s)',
+        'stats.min_valid_exploration': '最小有效探索时长 (s)',
+        'stats.bin_seconds': '分箱时长 (s)',
+        'stats.generate_video': '生成标注视频',
+        'common.frame': '帧',
+        'common.phase.recognition': '识别测试期',
+        'common.phase.familiarization': '熟悉期',
+        'common.object.familiar': '熟悉物体',
+        'common.object.novel': '新奇物体',
+        'common.object.generic': '物体 {0}',
+        'common.mode.edit_mask': '编辑检测遮罩: {0}',
+        'common.mode.draw_arena': '绘制 arena 角点',
+        'common.mode.draw_object': '绘制物体中心点',
+        'common.mode.draw_roi': '绘制 ROI',
+        'common.mode.view': '查看',
+        'alerts.mask_need_points': '检测遮罩至少需要 4 个点，推荐沿弯曲边缘绘制 8-16 个点。',
+        'alerts.need_roi_for_debug': '请先完成至少一个 ROI 标定。',
+        'alerts.unfinished_mask': '当前检测遮罩还没完成，至少需要 4 个点。',
+        'alerts.need_roi_for_analysis': '请先完成 ROI 标定。',
+        'alerts.roi_missing': 'ROI {0} 缺少 arena 角点或物体中心点。',
+        'alerts.mask_invalid': 'ROI {0} 的检测遮罩至少需要 4 个点。',
+        'alerts.start_failed': '启动分析失败'
+    },
+    en: {
+        'header.title': 'Novel Object Recognition NOR Setup',
+        'header.subtitle': 'Supports multi-ROI / multi-arena calibration. Each ROI needs 4 arena corners plus 2 object centers.',
+        'header.manual': 'NOR Manual',
+        'step1': '1. Calibrate',
+        'step2': '2. Tune & Start',
+        'calib.phase.label': 'Experiment Phase',
+        'calib.phase.recognition': 'Recognition / Test Phase',
+        'calib.phase.familiarization': 'Familiarization / Training Phase',
+        'calib.arena_width': 'Arena Width (cm)',
+        'calib.arena_height': 'Arena Height (cm)',
+        'calib.preview_video': 'Preview Video',
+        'calib.hint': 'Click in this fixed order: <strong>4 arena corners</strong> → <strong>2 object centers</strong>. In the Recognition phase, object 1 defaults to familiar and object 2 defaults to novel. If edge distortion is obvious, draw a separate detection mask in the ROI card on the right.',
+        'calib.select_frame': 'Select Frame',
+        'calib.btn.add_roi': 'Add ROI',
+        'calib.btn.undo': 'Undo',
+        'calib.btn.clear_current': 'Clear Current',
+        'calib.btn.clear_all': 'Clear All',
+        'calib.btn.finish_mask': 'Finish Detection Mask',
+        'calib.btn.cancel_mask': 'Cancel Mask Editing',
+        'calib.btn.to_debug': 'Go To Tuning',
+        'calib.status.added': 'Added:',
+        'calib.status.corners': 'Corners:',
+        'calib.status.objects': 'Objects:',
+        'calib.status.mask_points': 'Mask Points:',
+        'calib.status.mode': 'Mode:',
+        'calib.status.phase': 'Phase:',
+        'roi_list.title': 'ROI List',
+        'roi_list.hint': 'Each ROI can be named individually, configured with object names, roles, and its own time window, and can also use an extra detection-mask polygon.',
+        'roi_list.empty': 'No ROI added yet.',
+        'roi_list.card.points_hint_mask_custom': '4 arena corners + 2 object centers · custom detection mask ({0} points)',
+        'roi_list.card.points_hint_mask_default': '4 arena corners + 2 object centers · detection mask follows the arena by default',
+        'roi_list.card.name': 'Name',
+        'roi_list.card.time_mode': 'Statistics Mode',
+        'roi_list.card.mode.global': 'Follow Global',
+        'roi_list.card.mode.precise': 'Precise Time Window',
+        'roi_list.card.start_time': 'Start Time (s)',
+        'roi_list.card.end_time': 'End Time (s)',
+        'roi_list.card.edit_mask': 'Edit Detection Mask',
+        'roi_list.card.continue_mask': 'Continue Mask Editing',
+        'roi_list.card.reset_mask': 'Reset Default Mask',
+        'roi_list.card.mask_note': 'Statistics still use the 4-point arena and object positions; detection will prioritize this mask polygon.',
+        'roi_list.card.object1': 'Object 1',
+        'roi_list.card.object2': 'Object 2',
+        'roi_list.card.object_name': 'Name',
+        'roi_list.card.object_role': 'Role',
+        'roi_list.role.familiar': 'Familiar',
+        'roi_list.role.novel': 'Novel',
+        'debug.title': 'Tuning & Preview',
+        'debug.subtitle': 'The preview overlays every ROI\'s arena boundary, object locations, interaction range, and mouse detection result at the same time.',
+        'debug.btn.back': 'Back To Calibration',
+        'debug.btn.refresh': 'Refresh Preview',
+        'debug.btn.start': 'Start NOR Analysis',
+        'debug.preview_frame': 'Preview Frame',
+        'debug.preview_waiting': 'Waiting for preview',
+        'debug.preview_detected': 'Detected {0}/{1} ROIs; ROIs near/exploring objects: {2}',
+        'debug.preview_failed': 'Preview failed',
+        'detect.title': 'Detection Parameters',
+        'detect.method': 'Detection Method',
+        'detect.method.threshold': 'Gray Threshold',
+        'detect.method.static': 'Static Background Subtraction',
+        'detect.bg_type': 'Background Type',
+        'detect.bg_light': 'Light Background / Dark Mouse',
+        'detect.bg_dark': 'Dark Background / Light Mouse',
+        'detect.min_area': 'Minimum Area',
+        'detect.gray_threshold': 'Gray Threshold',
+        'detect.erosion_kernel': 'Erosion Kernel',
+        'detect.erosion_iter': 'Erosion Iterations',
+        'detect.dilation_kernel': 'Dilation Kernel',
+        'detect.dilation_iter': 'Dilation Iterations',
+        'stats.title': 'Statistics Parameters',
+        'stats.center_ratio_x': 'Center Width Ratio',
+        'stats.center_ratio_y': 'Center Height Ratio',
+        'stats.interaction_radius': 'Interaction Radius (cm)',
+        'stats.exploration_max_speed': 'Exploration Max Speed (cm/s)',
+        'stats.movement_threshold': 'Movement Threshold (cm/s)',
+        'stats.min_valid_exploration': 'Minimum Valid Exploration (s)',
+        'stats.bin_seconds': 'Bin Length (s)',
+        'stats.generate_video': 'Generate Annotated Video',
+        'common.frame': 'Frame',
+        'common.phase.recognition': 'Recognition',
+        'common.phase.familiarization': 'Familiarization',
+        'common.object.familiar': 'Familiar Object',
+        'common.object.novel': 'Novel Object',
+        'common.object.generic': 'Object {0}',
+        'common.mode.edit_mask': 'Editing Detection Mask: {0}',
+        'common.mode.draw_arena': 'Drawing arena corners',
+        'common.mode.draw_object': 'Drawing object centers',
+        'common.mode.draw_roi': 'Drawing ROI',
+        'common.mode.view': 'View',
+        'alerts.mask_need_points': 'A detection mask needs at least 4 points. Drawing 8-16 points along the curved edge is recommended.',
+        'alerts.need_roi_for_debug': 'Please finish at least one ROI calibration first.',
+        'alerts.unfinished_mask': 'The current detection mask is not finished yet and needs at least 4 points.',
+        'alerts.need_roi_for_analysis': 'Please finish ROI calibration first.',
+        'alerts.roi_missing': 'ROI {0} is missing arena corners or object centers.',
+        'alerts.mask_invalid': 'ROI {0} needs at least 4 detection-mask points.',
+        'alerts.start_failed': 'Failed to start analysis'
+    }
+};
+
+let baseFrame = null;
+let currentVideoIdx = 0;
+let rois = [];
+let currentROI = { points: [], objects: [] };
+let isDrawingROI = false;
+let currentMaskPoints = [];
+let isDrawingMask = false;
+let maskEditROIIndex = null;
+let debounceTimers = {};
+const MAX_MASK_POINTS = 24;
+
+function norLang() {
+    return (typeof getLang === 'function') ? getLang() : 'zh';
+}
+
+function norTr(key, fallback = '') {
+    const lang = norLang();
+    const dict = NOR_I18N[lang] || NOR_I18N.zh;
+    if (dict[key] !== undefined) return dict[key];
+    return fallback;
+}
+
+function norFormat(key, values = [], fallback = '') {
+    let text = norTr(key, fallback);
+    values.forEach((value, index) => {
+        text = text.replaceAll(`{${index}}`, value);
+    });
+    return text;
+}
+
+function totalFrames() {
+    return Math.max(0, (videoInfo.total_frames || 1) - 1);
+}
+
+function frameLabelText(current, total) {
+    return `${norTr('common.frame', 'Frame')} ${current} / ${total}`;
+}
+
+function currentPhase() {
+    return document.getElementById('phase').value;
+}
+
+function phaseLabel() {
+    return currentPhase() === 'recognition'
+        ? norTr('common.phase.recognition', 'Recognition')
+        : norTr('common.phase.familiarization', 'Familiarization');
+}
+
+function defaultObjectRole(index) {
+    if (currentPhase() === 'recognition') {
+        return index === 1 ? 'novel' : 'familiar';
+    }
+    return 'familiar';
+}
+
+function defaultObjectName(index) {
+    if (currentPhase() === 'recognition') {
+        return index === 1
+            ? norTr('common.object.novel', 'Novel Object')
+            : norTr('common.object.familiar', 'Familiar Object');
+    }
+    return norFormat('common.object.generic', [index + 1], `Object ${index + 1}`);
+}
+
+function roiDefaultName(index) {
+    return `ROI ${index + 1}`;
+}
+
+function currentDrawModeLabel() {
+    if (isDrawingMask) {
+        const name = (maskEditROIIndex != null && rois[maskEditROIIndex])
+            ? (rois[maskEditROIIndex].name || roiDefaultName(maskEditROIIndex))
+            : 'ROI';
+        return norFormat('common.mode.edit_mask', [name], `Editing Detection Mask: ${name}`);
+    }
+    if (isDrawingROI) {
+        if (currentROI.points.length < 4) return norTr('common.mode.draw_arena', 'Drawing arena corners');
+        if (currentROI.objects.length < 2) return norTr('common.mode.draw_object', 'Drawing object centers');
+        return norTr('common.mode.draw_roi', 'Drawing ROI');
+    }
+    return norTr('common.mode.view', 'View');
+}
+
+function applyNorLang() {
+    const dict = NOR_I18N[norLang()] || NOR_I18N.zh;
+    document.title = `${dict['header.title'] || 'NOR Setup'} - MouseScope`;
+    document.querySelectorAll('[data-nor-i18n]').forEach(el => {
+        const key = el.getAttribute('data-nor-i18n');
+        const val = dict[key];
+        if (val === undefined) return;
+        if (el.getAttribute('data-nor-i18n-html') !== null) {
+            el.innerHTML = val;
+        } else {
+            el.textContent = val;
+        }
+    });
+
+    const arenaSlider = document.getElementById('frameSliderArena');
+    const debugSlider = document.getElementById('frameSliderDebug');
+    if (arenaSlider) {
+        document.getElementById('frameLabelArena').textContent = frameLabelText(arenaSlider.value || 0, totalFrames());
+    }
+    if (debugSlider) {
+        document.getElementById('frameLabelDebug').textContent = frameLabelText(debugSlider.value || 0, totalFrames());
+    }
+    const phaseText = document.getElementById('phaseText');
+    if (phaseText) phaseText.textContent = phaseLabel();
+    const drawModeText = document.getElementById('drawModeText');
+    if (drawModeText) drawModeText.textContent = currentDrawModeLabel();
+    refreshPreviewStatus();
+    updateROIList();
+    if (baseFrame) drawArenaCanvas();
+}
+
+function setPreviewStatus(mode, payload = {}) {
+    const status = document.getElementById('previewStatus');
+    if (!status) return;
+    status.dataset.mode = mode;
+    Object.entries(payload).forEach(([key, value]) => {
+        status.dataset[key] = String(value);
+    });
+    refreshPreviewStatus();
+}
+
+function refreshPreviewStatus() {
+    const status = document.getElementById('previewStatus');
+    if (!status) return;
+    const mode = status.dataset.mode || 'waiting';
+    if (mode === 'detected') {
+        status.textContent = norFormat(
+            'debug.preview_detected',
+            [status.dataset.detected || '0', status.dataset.roiCount || '0', status.dataset.exploring || '0'],
+            `Detected ${status.dataset.detected || '0'}/${status.dataset.roiCount || '0'} ROIs; ROIs near/exploring objects: ${status.dataset.exploring || '0'}`
+        );
+        return;
+    }
+    if (mode === 'server_error') {
+        status.textContent = status.dataset.message || norTr('debug.preview_failed', 'Preview failed');
+        return;
+    }
+    if (mode === 'failed') {
+        status.textContent = norTr('debug.preview_failed', 'Preview failed');
+        return;
+    }
+    status.textContent = norTr('debug.preview_waiting', 'Waiting for preview');
+}
+
+function updateMaskToolbar() {
+    const finishBtn = document.getElementById('finishMaskBtn');
+    const cancelBtn = document.getElementById('cancelMaskBtn');
+    finishBtn.style.display = isDrawingMask ? '' : 'none';
+    cancelBtn.style.display = isDrawingMask ? '' : 'none';
+    finishBtn.disabled = !isDrawingMask || currentMaskPoints.length < 4;
+}
+
+function updateBgMethodUI() {
+    const method = document.getElementById('bgMethod')?.value || 'threshold';
+    const thresholdVisible = method === 'threshold';
+    const bgTypeWrap = document.getElementById('bgTypeWrap');
+    const grayThresholdWrap = document.getElementById('grayThresholdWrap');
+    if (bgTypeWrap) bgTypeWrap.style.display = thresholdVisible ? '' : 'none';
+    if (grayThresholdWrap) grayThresholdWrap.style.display = thresholdVisible ? '' : 'none';
+}
+
+function debounce(key, fn, delay) {
+    clearTimeout(debounceTimers[key]);
+    debounceTimers[key] = setTimeout(fn, delay);
+}
+
+function syncRangeLabel(id) {
+    const input = document.getElementById(id);
+    const label = document.getElementById(id + 'Label');
+    if (input && label) label.textContent = input.value;
+}
+
+function roleColor(role) {
+    return String(role || '').toLowerCase() === 'novel' ? '#3b82f6' : '#f97316';
+}
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function handlePhaseChange() {
+    applyPhaseDefaults();
+    document.getElementById('phaseText').textContent = phaseLabel();
+    updateROIList();
+    drawArenaCanvas();
+    if (document.getElementById('step2').classList.contains('active') && rois.length) {
+        updateDebugPreview();
+    }
+}
+
+function applyPhaseDefaults() {
+    rois.forEach(roi => {
+        roi.objects.forEach((obj, idx) => {
+            obj.role = defaultObjectRole(idx);
+            if (!obj.name) obj.name = defaultObjectName(idx);
+        });
+    });
+    currentROI.objects.forEach((obj, idx) => {
+        obj.role = defaultObjectRole(idx);
+        if (!obj.name) obj.name = defaultObjectName(idx);
+    });
+}
+
+window.onload = function () {
+    document.getElementById('frameSliderArena').max = totalFrames();
+    document.getElementById('frameSliderDebug').max = totalFrames();
+    document.getElementById('frameLabelArena').textContent = frameLabelText(0, totalFrames());
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(0, totalFrames());
+    document.getElementById('phaseText').textContent = phaseLabel();
+    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    updateBgMethodUI();
+    updateROIList();
+    loadFrame(0);
+    updateStepNav(1);
+    setPreviewStatus('waiting');
+    applyNorLang();
+};
+
+function loadFrame(frameIdx, callback) {
+    fetch(`/api/get_first_frame/${sessionId}?frame=${frameIdx}&video=${currentVideoIdx}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const img = new Image();
+            img.onload = function () {
+                baseFrame = img;
+                drawArenaCanvas();
+                if (callback) callback();
+            };
+            img.src = 'data:image/jpeg;base64,' + data.image;
+        })
+        .catch(err => console.error(err));
+}
+function drawArenaCanvas() {
+    const canvas = document.getElementById('arenaCanvas');
+    if (!canvas || !baseFrame) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = baseFrame.width;
+    canvas.height = baseFrame.height;
+    ctx.drawImage(baseFrame, 0, 0);
+
+    rois.forEach((roi, index) => {
+        const hue = (index * 53) % 360;
+        const points = roi.points || [];
+        if (points.length === 4) {
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            points.forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.closePath();
+            ctx.fillStyle = `hsla(${hue}, 75%, 55%, 0.14)`;
+            ctx.strokeStyle = `hsl(${hue}, 75%, 58%)`;
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        const detectionPoints = roi.detection_points || [];
+        if (detectionPoints.length >= 4) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
+            detectionPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.closePath();
+            ctx.setLineDash([8, 6]);
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.08)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            detectionPoints.forEach((p, pointIdx) => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = pointIdx === 0 ? '#f97316' : '#facc15';
+                ctx.fill();
+            });
+        }
+
+        points.forEach((p, pointIdx) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = pointIdx === 0 ? '#22c55e' : '#ffffff';
+            ctx.fill();
+        });
+
+        (roi.objects || []).forEach((obj, objIndex) => {
+            const point = obj.point || obj;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = roleColor(obj.role);
+            ctx.fill();
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.font = '13px sans-serif';
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText(obj.name || defaultObjectName(objIndex), point.x + 8, point.y - 8);
+        });
+
+        if (points.length) {
+            const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+            const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(centerX - 50, centerY - 18, 100, 26);
+            ctx.strokeStyle = `hsl(${hue}, 75%, 58%)`;
+            ctx.strokeRect(centerX - 50, centerY - 18, 100, 26);
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '14px sans-serif';
+            ctx.fillText(roi.name || roiDefaultName(index), centerX - 42, centerY);
+        }
+    });
+
+    if (currentROI.points.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(currentROI.points[0].x, currentROI.points[0].y);
+        currentROI.points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        if (currentROI.points.length === 4) ctx.closePath();
+        ctx.stroke();
+        currentROI.points.forEach((p, index) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = index === 0 ? '#22c55e' : '#facc15';
+            ctx.fill();
+        });
+    }
+
+    currentROI.objects.forEach((obj, idx) => {
+        ctx.beginPath();
+        ctx.arc(obj.point.x, obj.point.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = roleColor(obj.role);
+        ctx.fill();
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(obj.name || defaultObjectName(idx), obj.point.x + 8, obj.point.y - 8);
+    });
+
+    if (currentMaskPoints.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(currentMaskPoints[0].x, currentMaskPoints[0].y);
+        currentMaskPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        if (currentMaskPoints.length >= 4) {
+            ctx.closePath();
+        }
+        ctx.setLineDash([10, 6]);
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+
+        currentMaskPoints.forEach((p, index) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = index === 0 ? '#22c55e' : '#f97316';
+            ctx.fill();
+        });
+    }
+
+    document.getElementById('roiCountText').textContent = String(rois.length);
+    document.getElementById('cornerCountText').textContent = `${currentROI.points.length} / 4`;
+    document.getElementById('objectCountText').textContent = `${currentROI.objects.length} / 2`;
+    document.getElementById('maskPointText').textContent = String(currentMaskPoints.length);
+    document.getElementById('drawModeText').textContent = currentDrawModeLabel();
+    updateMaskToolbar();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const canvas = document.getElementById('arenaCanvas');
+
+    canvas.addEventListener('click', function (e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
+
+        if (isDrawingMask) {
+            if (currentMaskPoints.length < MAX_MASK_POINTS) {
+                currentMaskPoints.push({ x, y });
+                drawArenaCanvas();
+            }
+            return;
+        }
+        if (!isDrawingROI) return;
+
+        if (currentROI.points.length < 4) {
+            currentROI.points.push({ x, y });
+            drawArenaCanvas();
+            return;
+        }
+
+        if (currentROI.objects.length < 2) {
+            const idx = currentROI.objects.length;
+            currentROI.objects.push({
+                point: { x, y },
+                name: defaultObjectName(idx),
+                role: defaultObjectRole(idx)
+            });
+            if (currentROI.objects.length === 2) {
+                finishCurrentROI();
+            } else {
+                drawArenaCanvas();
+            }
+        }
+    });
+
+    canvas.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        undoCurrentPoint();
+        return false;
+    });
+});
+
+function startNewROI() {
+    cancelDetectionMaskEdit();
+    currentROI = { points: [], objects: [] };
+    isDrawingROI = true;
+    drawArenaCanvas();
+}
+
+function finishCurrentROI() {
+    if (currentROI.points.length !== 4 || currentROI.objects.length !== 2) return;
+    rois.push({
+        points: JSON.parse(JSON.stringify(currentROI.points)),
+        objects: JSON.parse(JSON.stringify(currentROI.objects)),
+        name: roiDefaultName(rois.length),
+        time_config: { mode: 'global', start: null, end: null }
+    });
+    currentROI = { points: [], objects: [] };
+    isDrawingROI = false;
+    updateROIList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+}
+
+function startDetectionMaskEdit(index) {
+    currentROI = { points: [], objects: [] };
+    isDrawingROI = false;
+    isDrawingMask = true;
+    maskEditROIIndex = index;
+    currentMaskPoints = JSON.parse(JSON.stringify(rois[index].detection_points || []));
+    updateROIList();
+    drawArenaCanvas();
+}
+
+function finishDetectionMaskEdit() {
+    if (!isDrawingMask || maskEditROIIndex == null) return;
+    if (currentMaskPoints.length < 4) {
+        alert(norTr('alerts.mask_need_points', 'A detection mask needs at least 4 points. Drawing 8-16 points along the curved edge is recommended.'));
+        return;
+    }
+    rois[maskEditROIIndex].detection_points = JSON.parse(JSON.stringify(currentMaskPoints));
+    isDrawingMask = false;
+    maskEditROIIndex = null;
+    currentMaskPoints = [];
+    updateROIList();
+    drawArenaCanvas();
+    if (document.getElementById('step2').classList.contains('active')) {
+        updateDebugPreview();
+    }
+}
+
+function cancelDetectionMaskEdit() {
+    isDrawingMask = false;
+    maskEditROIIndex = null;
+    currentMaskPoints = [];
+    updateROIList();
+    drawArenaCanvas();
+}
+
+function resetDetectionMask(index) {
+    delete rois[index].detection_points;
+    if (maskEditROIIndex === index) {
+        cancelDetectionMaskEdit();
+        return;
+    }
+    updateROIList();
+    drawArenaCanvas();
+    if (document.getElementById('step2').classList.contains('active')) {
+        updateDebugPreview();
+    }
+}
+
+function undoCurrentPoint() {
+    if (isDrawingMask && currentMaskPoints.length > 0) {
+        currentMaskPoints.pop();
+    } else if (currentROI.objects.length > 0) {
+        currentROI.objects.pop();
+    } else if (currentROI.points.length > 0) {
+        currentROI.points.pop();
+    }
+    drawArenaCanvas();
+}
+
+function clearCurrentROI() {
+    if (isDrawingMask) {
+        currentMaskPoints = [];
+    } else {
+        currentROI = { points: [], objects: [] };
+    }
+    drawArenaCanvas();
+}
+
+function clearAllROIs() {
+    rois = [];
+    currentROI = { points: [], objects: [] };
+    isDrawingROI = false;
+    isDrawingMask = false;
+    maskEditROIIndex = null;
+    currentMaskPoints = [];
+    updateROIList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = true;
+}
+
+function deleteROI(index) {
+    if (maskEditROIIndex === index) {
+        cancelDetectionMaskEdit();
+    } else if (maskEditROIIndex != null && index < maskEditROIIndex) {
+        maskEditROIIndex -= 1;
+    }
+    rois.splice(index, 1);
+    updateROIList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+}
+
+function updateROIList() {
+    const list = document.getElementById('roiList');
+    if (!rois.length) {
+        list.innerHTML = `<div class="mini-note">${norTr('roi_list.empty', 'No ROI added yet.')}</div>`;
+        return;
+    }
+
+    list.innerHTML = rois.map((roi, index) => {
+        const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
+        const preciseStyle = timeConfig.mode === 'precise' ? '' : 'display:none;';
+        const recognition = currentPhase() === 'recognition';
+        const detectionCount = (roi.detection_points || []).length;
+        const isEditingMask = isDrawingMask && maskEditROIIndex === index;
+        return `
+            <div class="roi-card">
+                <div class="roi-card-head">
+                    <div>
+                        <div class="roi-card-title">ROI ${index + 1}</div>
+                        <small>${detectionCount >= 4
+                            ? norFormat('roi_list.card.points_hint_mask_custom', [detectionCount], `4 arena corners + 2 object centers · custom detection mask (${detectionCount} points)`)
+                            : norTr('roi_list.card.points_hint_mask_default', '4 arena corners + 2 object centers · detection mask follows the arena by default')}</small>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteROI(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+
+                <div class="compact-grid">
+                    <div>
+                        <label class="form-label">${norTr('roi_list.card.name', 'Name')}</label>
+                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateROIName(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${norTr('roi_list.card.time_mode', 'Statistics Mode')}</label>
+                        <select class="form-select" onchange="updateROITimeMode(${index}, this.value)">
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${norTr('roi_list.card.mode.global', 'Follow Global')}</option>
+                            <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${norTr('roi_list.card.mode.precise', 'Precise Time Window')}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="compact-grid mt-2" id="timeBox${index}" style="${preciseStyle}">
+                    <div>
+                        <label class="form-label">${norTr('roi_list.card.start_time', 'Start Time (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.start == null ? '' : timeConfig.start}" onchange="updateROITimeValue(${index}, 'start', this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${norTr('roi_list.card.end_time', 'End Time (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.end == null ? '' : timeConfig.end}" onchange="updateROITimeValue(${index}, 'end', this.value)">
+                    </div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button class="btn btn-sm ${isEditingMask ? 'btn-warning' : 'btn-outline-warning'}" type="button" onclick="startDetectionMaskEdit(${index})">
+                        <i class="fas fa-draw-polygon me-1"></i>${isEditingMask
+                            ? norTr('roi_list.card.continue_mask', 'Continue Mask Editing')
+                            : norTr('roi_list.card.edit_mask', 'Edit Detection Mask')}
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetDetectionMask(${index})" ${detectionCount >= 4 ? '' : 'disabled'}>
+                        <i class="fas fa-rotate-left me-1"></i>${norTr('roi_list.card.reset_mask', 'Reset Default Mask')}
+                    </button>
+                </div>
+                <div class="mini-note mt-2">${norTr('roi_list.card.mask_note', 'Statistics still use the 4-point arena and object positions; detection will prioritize this mask polygon.')}</div>
+
+                <div class="object-card mt-3">
+                    <div class="object-card-title"><span class="dot familiar"></span>${norTr('roi_list.card.object1', 'Object 1')}</div>
+                    <div class="compact-grid">
+                        <div>
+                            <label class="form-label">${norTr('roi_list.card.object_name', 'Name')}</label>
+                            <input class="form-control" value="${escapeHtml((roi.objects[0] && roi.objects[0].name) || '')}" onchange="updateObjectName(${index}, 0, this.value)">
+                        </div>
+                        <div>
+                            <label class="form-label">${norTr('roi_list.card.object_role', 'Role')}</label>
+                            <select class="form-select" ${recognition ? '' : 'disabled'} onchange="updateObjectRole(${index}, 0, this.value)">
+                                <option value="familiar" ${((roi.objects[0] && roi.objects[0].role) || 'familiar') === 'familiar' ? 'selected' : ''}>${norTr('roi_list.role.familiar', 'Familiar')}</option>
+                                <option value="novel" ${((roi.objects[0] && roi.objects[0].role) || '') === 'novel' ? 'selected' : ''}>${norTr('roi_list.role.novel', 'Novel')}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="object-card mt-2">
+                    <div class="object-card-title"><span class="dot novel"></span>${norTr('roi_list.card.object2', 'Object 2')}</div>
+                    <div class="compact-grid">
+                        <div>
+                            <label class="form-label">${norTr('roi_list.card.object_name', 'Name')}</label>
+                            <input class="form-control" value="${escapeHtml((roi.objects[1] && roi.objects[1].name) || '')}" onchange="updateObjectName(${index}, 1, this.value)">
+                        </div>
+                        <div>
+                            <label class="form-label">${norTr('roi_list.card.object_role', 'Role')}</label>
+                            <select class="form-select" ${recognition ? '' : 'disabled'} onchange="updateObjectRole(${index}, 1, this.value)">
+                                <option value="familiar" ${((roi.objects[1] && roi.objects[1].role) || '') === 'familiar' ? 'selected' : ''}>${norTr('roi_list.role.familiar', 'Familiar')}</option>
+                                <option value="novel" ${((roi.objects[1] && roi.objects[1].role) || 'novel') === 'novel' ? 'selected' : ''}>${norTr('roi_list.role.novel', 'Novel')}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    return;
+}
+
+function updateROIName(index, value) {
+    rois[index].name = value || roiDefaultName(index);
+    drawArenaCanvas();
+}
+
+function updateROITimeMode(index, mode) {
+    if (!rois[index].time_config) {
+        rois[index].time_config = { mode: 'global', start: null, end: null };
+    }
+    rois[index].time_config.mode = mode;
+    if (mode === 'global') {
+        rois[index].time_config.start = null;
+        rois[index].time_config.end = null;
+    }
+    updateROIList();
+}
+
+function updateROITimeValue(index, key, value) {
+    if (!rois[index].time_config) {
+        rois[index].time_config = { mode: 'precise', start: null, end: null };
+    }
+    rois[index].time_config[key] = value === '' ? null : parseFloat(value);
+}
+
+function updateObjectName(roiIndex, objectIndex, value) {
+    rois[roiIndex].objects[objectIndex].name = value || defaultObjectName(objectIndex);
+    drawArenaCanvas();
+}
+
+function updateObjectRole(roiIndex, objectIndex, value) {
+    if (currentPhase() !== 'recognition') return;
+    rois[roiIndex].objects[objectIndex].role = value;
+    const otherIndex = objectIndex === 0 ? 1 : 0;
+    if (rois[roiIndex].objects[otherIndex].role === value) {
+        rois[roiIndex].objects[otherIndex].role = value === 'novel' ? 'familiar' : 'novel';
+    }
+    updateROIList();
+    drawArenaCanvas();
+}
+function onArenaFrameChange(value) {
+    document.getElementById('frameLabelArena').textContent = frameLabelText(value, totalFrames());
+    debounce('arenaFrame', () => loadFrame(parseInt(value, 10)), 180);
+}
+
+function onDebugFrameChange(value) {
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(value, totalFrames());
+    debounce('debugFrame', () => updateDebugPreview(parseInt(value, 10)), 180);
+}
+
+function onVideoChange(value) {
+    currentVideoIdx = parseInt(value, 10) || 0;
+    loadFrame(0, () => {
+        if (document.getElementById('step2').classList.contains('active')) {
+            updateDebugPreview(0);
+        }
+    });
+}
+
+function goToStep(step) {
+    if (step === 2 && rois.length === 0) {
+        alert(norTr('alerts.need_roi_for_debug', 'Please finish at least one ROI calibration first.'));
+        return;
+    }
+    if (step === 2 && isDrawingMask && currentMaskPoints.length > 0 && currentMaskPoints.length < 4) {
+        alert(norTr('alerts.unfinished_mask', 'The current detection mask is not finished yet and needs at least 4 points.'));
+        return;
+    }
+    if (step === 2 && isDrawingMask && currentMaskPoints.length >= 4) {
+        finishDetectionMaskEdit();
+    }
+    document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
+    document.getElementById(`step${step}`).classList.add('active');
+    updateStepNav(step);
+    if (step === 2) {
+        updateDebugPreview();
+    }
+}
+
+function updateStepNav(activeStep) {
+    [1, 2].forEach(step => {
+        const el = document.getElementById(`stepNav${step}`);
+        el.classList.remove('active', 'done');
+        if (step < activeStep) el.classList.add('done');
+        if (step === activeStep) el.classList.add('active');
+    });
+}
+
+function buildRequestBody(frameIdx) {
+    return {
+        frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
+        video: currentVideoIdx,
+        phase: currentPhase(),
+        bg_method: document.getElementById('bgMethod').value,
+        bg_type: document.getElementById('bgType').value,
+        gray_threshold: parseInt(document.getElementById('grayThreshold').value, 10),
+        erosion_kernel: parseInt(document.getElementById('erosionKernel').value, 10),
+        erosion_iter: parseInt(document.getElementById('erosionIter').value, 10),
+        dilation_kernel: parseInt(document.getElementById('dilationKernel').value, 10),
+        dilation_iter: parseInt(document.getElementById('dilationIter').value, 10),
+        min_area: parseInt(document.getElementById('minArea').value, 10),
+        arena_width_cm: parseFloat(document.getElementById('arenaWidthCm').value || '50'),
+        arena_height_cm: parseFloat(document.getElementById('arenaHeightCm').value || '50'),
+        rois: rois,
+        center_ratio_x: parseFloat(document.getElementById('centerRatioX').value || '0.5'),
+        center_ratio_y: parseFloat(document.getElementById('centerRatioY').value || '0.5'),
+        interaction_radius_cm: parseFloat(document.getElementById('interactionRadius').value || '4'),
+        exploration_max_speed_cm_s: parseFloat(document.getElementById('explorationMaxSpeed').value || '12'),
+        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold').value || '2'),
+        min_valid_exploration_s: parseFloat(document.getElementById('minValidExploration').value || '20'),
+        bin_seconds: parseFloat(document.getElementById('binSeconds').value || '300'),
+        generate_video: document.getElementById('generateVideo').checked
+    };
+}
+
+function drawImageOnCanvas(canvasId, base64Data) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = function () {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+    };
+    img.src = 'data:image/jpeg;base64,' + base64Data;
+}
+
+function updateDebugPreview(frameIdx) {
+    if (!rois.length) return;
+    fetch(`/api/debug_preview/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRequestBody(frameIdx))
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                setPreviewStatus('server_error', { message: data.error });
+                return;
+            }
+            drawImageOnCanvas('previewOriginal', data.original);
+            drawImageOnCanvas('previewResult', data.result);
+            setPreviewStatus('detected', {
+                detected: data.detections || 0,
+                roiCount: data.roi_count || rois.length,
+                exploring: data.exploring || 0
+            });
+        })
+        .catch(err => {
+            console.error(err);
+            setPreviewStatus('failed');
+        });
+}
+
+function startAnalysis() {
+    if (!rois.length) {
+        alert(norTr('alerts.need_roi_for_analysis', 'Please finish ROI calibration first.'));
+        return;
+    }
+    const invalid = rois.findIndex(roi => !roi.points || roi.points.length !== 4 || !roi.objects || roi.objects.length !== 2);
+    if (invalid !== -1) {
+        alert(norFormat('alerts.roi_missing', [invalid + 1], `ROI ${invalid + 1} is missing arena corners or object centers.`));
+        return;
+    }
+    const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+    if (invalidMask !== -1) {
+        alert(norFormat('alerts.mask_invalid', [invalidMask + 1], `ROI ${invalidMask + 1} needs at least 4 detection-mask points.`));
+        return;
+    }
+
+    document.getElementById('loading').style.display = 'flex';
+    fetch(`/api/start_analysis/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRequestBody())
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = `/monitor/${sessionId}`;
+                return;
+            }
+            document.getElementById('loading').style.display = 'none';
+            alert(data.error || norTr('alerts.start_failed', 'Failed to start analysis'));
+        })
+        .catch(err => {
+            document.getElementById('loading').style.display = 'none';
+            alert(err);
+        });
+}
+
+document.addEventListener('DOMContentLoaded', applyNorLang);
+document.addEventListener('mousescope:langchange', applyNorLang);
+</script>
+{% endblock %}
+

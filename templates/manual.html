@@ -228,15 +228,18 @@
     <div class="manual-switch">
         <div class="manual-switch-label" data-i18n="manual.switch.label">实验手册</div>
         <div class="manual-switch-group">
-            <a href="{{ url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type != 'oft' %}active{% endif %}">
+            <a href="{{ url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
                 <span data-i18n="manual.switch.tst">TST 手册</span>
             </a>
             <a href="{{ url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
                 <span data-i18n="manual.switch.oft">OFT 手册</span>
             </a>
+            <a href="{{ url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
+                <span data-i18n="manual.switch.nor">NOR 手册</span>
+            </a>
         </div>
     </div>
-    {% if manual_type != 'oft' %}
+    {% if manual_type == 'tst' %}
     <div class="card mb-4">
         <div class="card-body py-3">
             <div class="flow-steps justify-content-center">
@@ -687,8 +690,10 @@
             </div>
         </div>
     </div>
-    {% else %}
+    {% elif manual_type == 'oft' %}
     {% include "manual_oft_content.html" %}
+    {% else %}
+    {% include "manual_nor_content.html" %}
     {% endif %}
 </div>
 

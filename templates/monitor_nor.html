@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}NOR 实时监控 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.nor-monitor { max-width: 1500px; margin: 0 auto; }
+.monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.monitor-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: 1rem; align-items: start; }
+.monitor-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.2rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; }
+.metric-box { background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 16px; padding: 1rem; }
+.metric-label { color: var(--text-muted); font-size: 0.85rem; }
+.metric-value { color: var(--text-primary); font-size: 1.35rem; font-weight: 700; margin-top: 0.2rem; }
+.download-grid { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.roi-table-wrap { overflow-x: auto; }
+.roi-table { width: 100%; border-collapse: collapse; }
+.roi-table th, .roi-table td { padding: 0.82rem 0.72rem; border-bottom: 1px solid var(--border-card); white-space: nowrap; }
+.roi-table th { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.roi-table td { color: var(--text-primary); }
+.pill { display: inline-flex; align-items: center; justify-content: center; min-width: 72px; padding: 0.28rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
+.pill.novel { background: rgba(59, 130, 246, 0.13); color: #1d4ed8; }
+.pill.familiar { background: rgba(249, 115, 22, 0.16); color: #c2410c; }
+.pill.valid { background: rgba(34, 197, 94, 0.14); color: #15803d; }
+.pill.invalid { background: rgba(239, 68, 68, 0.14); color: #b91c1c; }
+.pill.active { background: rgba(14, 165, 233, 0.12); color: #0369a1; }
+.pill.paused { background: rgba(148, 163, 184, 0.16); color: #475569; }
+.log-box { background: #0f172a; color: #e2e8f0; border-radius: 16px; padding: 1rem; font-family: Consolas, Monaco, monospace; font-size: 0.85rem; min-height: 220px; max-height: 420px; overflow-y: auto; }
+@media (max-width: 1180px) {
+    .monitor-grid { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+    .metric-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="nor-monitor">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-i18n="nor.monitor.header.title">新奇物体识别 NOR 实时监控</h1>
+            <div class="text-secondary" data-i18n="nor.monitor.header.subtitle">多 ROI / 多 arena 并行分析，实时显示当前探索目标、探索时长与新奇偏好指标</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()">
+                <i class="fas fa-stop me-2"></i><span data-i18n="nor.monitor.btn.stop">停止分析</span>
+            </button>
+            <button class="btn btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt me-2"></i><span data-i18n="nor.monitor.btn.refresh">刷新</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-i18n="nor.monitor.processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-i18n="nor.monitor.processing.waiting">等待引擎响应...</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-label" data-i18n="nor.monitor.processing.status_label">状态</div>
+                        <div class="metric-value" id="statusText" data-i18n="nor.monitor.status.waiting">等待中</div>
+                    </div>
+                </div>
+                <div class="progress mb-2" style="height: 14px;">
+                    <div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div>
+                </div>
+                <div class="text-secondary small"><span data-i18n="nor.monitor.processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
+
+            <div class="monitor-card">
+                <h5 class="mb-3" data-i18n="nor.monitor.overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.processed_frames">已处理帧</div>
+                        <div class="metric-value" id="processedFrames">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.elapsed">运行时间</div>
+                        <div class="metric-value" id="elapsedTime">0s</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.speed">处理速度</div>
+                        <div class="metric-value" id="processingSpeed">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.roi_count">ROI 数</div>
+                        <div class="metric-value" id="roiCount">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.total_exploration">总探索时长</div>
+                        <div class="metric-value" id="totalExploration">0s</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="nor.monitor.overview.mean_di">平均 DI</div>
+                        <div class="metric-value" id="meanDI">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-i18n="nor.monitor.table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-i18n="nor.monitor.table.subtitle">显示当前目标、探索时长、新奇偏好指标和统计窗口状态</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-i18n="nor.monitor.table.col.current_object">当前物体</th>
+                                <th data-i18n="nor.monitor.table.col.role">角色</th>
+                                <th data-i18n="nor.monitor.table.col.distance">距离</th>
+                                <th data-i18n="nor.monitor.table.col.total_exp">总探索</th>
+                                <th data-i18n="nor.monitor.table.col.novel">新奇</th>
+                                <th data-i18n="nor.monitor.table.col.familiar">熟悉</th>
+                                <th data-i18n="nor.monitor.table.col.di">DI</th>
+                                <th data-i18n="nor.monitor.table.col.preference">偏好</th>
+                                <th data-i18n="nor.monitor.table.col.window">统计窗口</th>
+                                <th data-i18n="nor.monitor.table.col.validity">有效性</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody">
+                            <tr><td colspan="11" class="text-secondary" data-i18n="nor.monitor.table.waiting">等待结果...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-i18n="nor.monitor.download.title">结果下载</h5>
+                <div class="download-grid">
+                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-i18n="nor.monitor.download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-i18n="nor.monitor.download.video">标注视频</a>
+                    <a href="#" id="dlTrack" class="btn btn-outline-primary" data-i18n="nor.monitor.download.track">轨迹 CSV</a>
+                    <a href="#" id="dlSummary" class="btn btn-outline-primary" data-i18n="nor.monitor.download.summary">汇总 CSV</a>
+                    <a href="#" id="dlBins" class="btn btn-outline-primary" data-i18n="nor.monitor.download.bins">分箱 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-i18n="nor.monitor.download.report">TXT 报告</a>
+                    <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-i18n="nor.monitor.download.heatmap">热图</a>
+                    <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-i18n="nor.monitor.download.trackmap">轨迹图</a>
+                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-i18n="nor.monitor.download.open_folder">打开结果目录</button>
+                </div>
+                <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
+                    <span data-i18n="nor.monitor.download.save_path">保存位置:</span> <code id="resultPathText"></code>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <h5 class="mb-3" data-i18n="nor.monitor.log.title">日志</h5>
+                <div id="logBox" class="log-box">$ <span data-i18n="nor.monitor.log.waiting">等待日志输出...</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+let updateInterval = null;
+
+function tr(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    if (typeof I18N !== 'undefined' && I18N[lang] && I18N[lang][key] !== undefined) {
+        return I18N[lang][key];
+    }
+    return fallback;
+}
+
+function applyMonitorTitle() {
+    document.title = `${tr('nor.monitor.header.title', 'NOR Real-time Monitor')} - MouseScope`;
+}
+
+function getStatusText(status) {
+    return {
+        waiting: tr('nor.monitor.status.waiting', 'Waiting'),
+        analyzing: tr('nor.monitor.status.analyzing', 'Analyzing'),
+        completed: tr('nor.monitor.status.completed', 'Completed'),
+        error: tr('nor.monitor.status.error', 'Error'),
+        stopped: tr('nor.monitor.status.stopped', 'Stopped')
+    }[status] || status;
+}
+
+function fmtNumber(value, digits = 2) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toFixed(digits);
+}
+
+function roleClass(role) {
+    return String(role || '').toLowerCase() === 'novel' ? 'novel' : 'familiar';
+}
+
+function roleText(role) {
+    const value = String(role || '').toLowerCase();
+    if (value === 'novel') return tr('nor.monitor.role.novel', 'Novel');
+    if (value === 'familiar') return tr('nor.monitor.role.familiar', 'Familiar');
+    return role || '-';
+}
+
+function localizeMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return '-';
+    if (text === 'Waiting to start...') {
+        return tr('nor.monitor.message.waiting_to_start', '等待开始...');
+    }
+    if (text === 'Novel object recognition analysis completed.') {
+        return tr('nor.monitor.message.completed', '新奇物体识别分析已完成。');
+    }
+    if (text.startsWith('All ') && text.endsWith(' NOR videos finished.')) {
+        const match = text.match(/^All (\d+) NOR videos finished\.$/);
+        if (match) {
+            return tr('nor.monitor.message.batch_completed', '全部 {0} 个 NOR 视频已完成。').replace('{0}', match[1]);
+        }
+    }
+    if (text.startsWith('Frame ')) {
+        const match = text.match(/^Frame (\d+)\/(\d+) \((\d+)%\)$/);
+        if (match) {
+            return tr('nor.monitor.message.frame_progress', '帧 {0}/{1} ({2}%)')
+                .replace('{0}', match[1])
+                .replace('{1}', match[2])
+                .replace('{2}', match[3]);
+        }
+    }
+    if (text.startsWith('Processing NOR video ')) {
+        const match = text.match(/^Processing NOR video (\d+)\/(\d+):\s*(.*)$/);
+        if (match) {
+            return tr('nor.monitor.message.processing_video', '正在处理 NOR 视频 {0}/{1}: {2}')
+                .replace('{0}', match[1])
+                .replace('{1}', match[2])
+                .replace('{2}', match[3] || '-');
+        }
+    }
+    if (text.startsWith('Analysis error: ')) {
+        return tr('nor.monitor.message.error_prefix', '分析错误: ') + text.slice('Analysis error: '.length);
+    }
+    return text;
+}
+
+function localizeLogLine(log) {
+    const full = String(log || '');
+    const match = full.match(/^(\[[^\]]+\]\s*)(.*)$/);
+    const prefix = match ? match[1] : '';
+    const text = match ? match[2] : full;
+
+    let localized = text;
+    let parsed = text.match(/^NOR video info:\s*(\d+)x(\d+),\s*([\d.]+)fps,\s*(\d+)\s*frames$/);
+    if (parsed) {
+        localized = tr('nor.monitor.log.video_info', 'NOR video info: {0}x{1}, {2}fps, {3} frames')
+            .replace('{0}', parsed[1])
+            .replace('{1}', parsed[2])
+            .replace('{2}', parsed[3])
+            .replace('{3}', parsed[4]);
+        return prefix + localized;
+    }
+
+    parsed = text.match(/^Configured\s+(\d+)\s+NOR arenas$/);
+    if (parsed) {
+        localized = tr('nor.monitor.log.configured_arenas', 'Configured {0} NOR arenas').replace('{0}', parsed[1]);
+        return prefix + localized;
+    }
+
+    parsed = text.match(/^NOR video processed in\s*([\d.]+)s,\s*(\d+)\s*frames$/);
+    if (parsed) {
+        localized = tr('nor.monitor.log.processed_video', 'NOR video processed in {0}s, {1} frames')
+            .replace('{0}', parsed[1])
+            .replace('{1}', parsed[2]);
+        return prefix + localized;
+    }
+
+    parsed = text.match(/^Processing NOR video (\d+)\/(\d+):\s*(.*)$/);
+    if (parsed) {
+        localized = tr('nor.monitor.message.processing_video', 'Processing NOR video {0}/{1}: {2}')
+            .replace('{0}', parsed[1])
+            .replace('{1}', parsed[2])
+            .replace('{2}', parsed[3] || '-');
+        return prefix + localized;
+    }
+
+    parsed = text.match(/^Saved NOR (.+?):\s*(.+)$/);
+    if (parsed) {
+        localized = tr('nor.monitor.log.saved_generic', 'Saved NOR {0}: {1}')
+            .replace('{0}', parsed[1])
+            .replace('{1}', parsed[2]);
+        return prefix + localized;
+    }
+
+    if (text.startsWith('Analysis error: ')) {
+        return prefix + tr('nor.monitor.message.error_prefix', 'Analysis error: ') + text.slice('Analysis error: '.length);
+    }
+
+    return prefix + text;
+}
+
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="11" class="text-secondary">${tr('nor.monitor.table.waiting', 'Waiting for results...')}</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = rows.map(row => {
+        const role = row.current_role || '-';
+        const windowText = row.in_stats_window === false
+            ? tr('nor.monitor.table.paused', 'Paused')
+            : tr('nor.monitor.table.active', 'In Window');
+        const windowClass = row.in_stats_window === false ? 'paused' : 'active';
+        const validText = row.meets_min_exploration
+            ? tr('nor.monitor.table.valid', 'Valid')
+            : tr('nor.monitor.table.low_exp', 'Low Exp');
+        const validClass = row.meets_min_exploration ? 'valid' : 'invalid';
+        return `
+            <tr>
+                <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+                <td>${escapeHtml(row.current_object || tr('nor.monitor.table.completed_target', '已完成'))}</td>
+                <td>${role === '-' ? '-' : `<span class="pill ${roleClass(role)}">${escapeHtml(roleText(role))}</span>`}</td>
+                <td>${fmtNumber(row.distance_cm, 1)} cm</td>
+                <td>${fmtNumber(row.total_exploration_s, 1)} s</td>
+                <td>${fmtNumber(row.novel_exploration_s, 1)} s</td>
+                <td>${fmtNumber(row.familiar_exploration_s, 1)} s</td>
+                <td>${fmtNumber(row.discrimination_index, 3)}</td>
+                <td>${row.preference_index_percent == null ? '-' : `${fmtNumber(row.preference_index_percent, 1)}%`}</td>
+                <td><span class="pill ${windowClass}">${windowText}</span></td>
+                <td><span class="pill ${validClass}">${validText}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    if (!logs.length) {
+        box.textContent = `$ ${tr('nor.monitor.log.waiting', 'Waiting for log output...')}`;
+        return;
+    }
+    box.innerHTML = logs.map(log => {
+        const localized = localizeLogLine(log);
+        let color = '#e2e8f0';
+        if (/error|failed|traceback|错误|失败/i.test(localized)) color = '#f87171';
+        else if (/saved|completed|finished|完成|已保存/i.test(localized)) color = '#60a5fa';
+        return `<div style="color:${color}; margin-bottom:0.35rem;">$ ${escapeHtml(localized)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+}
+
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`)
+        .then(r => {
+            if (!r.ok) throw new Error('session');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('statusText').textContent = getStatusText(data.status);
+            document.getElementById('messageText').textContent = localizeMessage(data.message);
+            document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+            document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+            document.getElementById('progressText').textContent = `${data.progress || 0}%`;
+
+            const stats = data.stats || {};
+            const expStats = data.experiment_stats || {};
+            document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+            document.getElementById('elapsedTime').textContent = `${fmtNumber(stats.elapsed_time || 0, 1)}s`;
+            document.getElementById('processingSpeed').textContent = fmtNumber(stats.fps || 0, 1);
+            document.getElementById('roiCount').textContent = expStats.roi_count || (data.realtime_data || []).length || 0;
+            document.getElementById('totalExploration').textContent = `${fmtNumber(expStats.total_exploration_s || 0, 1)}s`;
+            document.getElementById('meanDI').textContent = expStats.mean_discrimination_index == null ? '-' : fmtNumber(expStats.mean_discrimination_index, 3);
+
+            renderTable(data.realtime_data || []);
+            renderLogs(data.logs || []);
+
+            if (data.status === 'completed') {
+                showDownloads();
+                fetchResultDir();
+                document.getElementById('stopBtn').style.display = 'none';
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+
+            if (data.status === 'error' || data.status === 'stopped') {
+                document.getElementById('stopBtn').style.display = 'none';
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+        })
+        .catch(() => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            document.getElementById('statusText').textContent = tr('nor.monitor.status.invalid', 'Session Invalid');
+            document.getElementById('messageText').textContent = tr('nor.monitor.status.expired', 'Analysis session not found or expired');
+            document.getElementById('stopBtn').style.display = 'none';
+        });
+}
+
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
+    document.getElementById('dlTrack').href = `/api/download/${sessionId}/track_csv`;
+    document.getElementById('dlSummary').href = `/api/download/${sessionId}/summary_csv`;
+    document.getElementById('dlBins').href = `/api/download/${sessionId}/bins_csv`;
+    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
+    document.getElementById('dlHeatmap').href = `/api/download/${sessionId}/heatmap`;
+    document.getElementById('dlTrackmap').href = `/api/download/${sessionId}/trackmap`;
+}
+
+function stopAnalysis() {
+    fetch(`/api/stop/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert(data.message || tr('nor.monitor.alert.stop_sent', 'Stop command sent')));
+}
+
+function openResultFolder() {
+    fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) alert(data.error || tr('nor.monitor.alert.open_folder_failed', 'Failed to open result folder'));
+        });
+}
+
+function fetchResultDir() {
+    fetch(`/api/result_dir/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('resultPathInfo').style.display = 'block';
+                document.getElementById('resultPathText').textContent = data.path;
+            }
+        });
+}
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+document.addEventListener('mousescope:langchange', function () {
+    applyMonitorTitle();
+    updateStatus();
+});
+
+applyMonitorTitle();
+updateStatus();
+updateInterval = setInterval(updateStatus, 2000);
+</script>
+{% endblock %}

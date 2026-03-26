@@ -76,6 +76,12 @@ from open_field import (
     render_open_field_trackmap,
     sanitize_name,
 )
+from novel_object import (
+    NovelObjectTracker,
+    draw_novel_object_results,
+    render_novel_object_heatmap,
+    render_novel_object_trackmap,
+)
 from performance_utils import enable_opencv_optimizations
 
 try:
@@ -119,6 +125,33 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
 # 会话存储（内存中，无数据库）
 analysis_sessions = {}
+debug_static_bg_cache = {}
+
+
+def _coerce_point_list(points, min_points=4):
+    parsed = []
+    for point in points or []:
+        if isinstance(point, dict):
+            parsed.append([float(point['x']), float(point['y'])])
+        else:
+            parsed.append([float(point[0]), float(point[1])])
+    if len(parsed) < min_points:
+        raise ValueError(f'Polygon requires at least {min_points} points.')
+    return parsed
+
+
+def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert):
+    if bg_method == 'threshold':
+        return BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
+    if bg_method == 'static':
+        cache_key = os.path.abspath(video_path)
+        static_bg = debug_static_bg_cache.get(cache_key)
+        if static_bg is None:
+            static_bg = create_static_background(video_path, num_frames=15)
+            debug_static_bg_cache[cache_key] = static_bg
+        bg_rgb = cv2.cvtColor(static_bg, cv2.COLOR_GRAY2BGR) if len(static_bg.shape) == 2 else static_bg
+        return BackgroundSubtractor(method='static', static_bg=bg_rgb)
+    return BackgroundSubtractor(method=bg_method)
 
 # ==================== Jinja2 过滤器 ====================
 @app.template_filter('filesizeformat')
@@ -680,6 +713,698 @@ class OpenFieldAnalysisSession:
             import traceback
             self._log(traceback.format_exc())
 
+    def _analyze_single_video(self, video_path, video_info, batch_index=None):
+        video_start_time = time.time()
+        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        os.makedirs(result_folder, exist_ok=True)
+
+        video_name = Path(video_info.get('original_name', 'video')).stem
+        output_base = os.path.join(result_folder, f"{video_name}_nor")
+        output_video_path = f"{output_base}_analyzed.mp4"
+        generate_video = bool(self.config.get('generate_video', True))
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to open video: {video_path}")
+            return
+
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = self.config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._log(f"NOR video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+
+        bg_method = self.config.get('bg_method', 'threshold')
+        if bg_method == 'threshold':
+            bg_subtractor = BackgroundSubtractor(
+                method='threshold',
+                threshold=self.config.get('gray_threshold', 127),
+                invert=self.config.get('invert', False),
+            )
+        elif bg_method == 'static':
+            bg = create_static_background(video_path, num_frames=15)
+            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
+            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+        else:
+            bg_subtractor = BackgroundSubtractor(method=bg_method)
+
+        morph_processor = MorphologyProcessor(
+            erosion_kernel=self.config.get('erosion_kernel', 3),
+            erosion_iterations=self.config.get('erosion_iter', 1),
+            dilation_kernel=self.config.get('dilation_kernel', 5),
+            dilation_iterations=self.config.get('dilation_iter', 2),
+        )
+        detector = MouseDetector(
+            min_area=self.config.get('min_area', 120),
+            max_area=self.config.get('max_area', 50000),
+        )
+
+        phase = self.config.get('phase', 'recognition')
+        arena_width_cm = float(self.config.get('arena_width_cm', self.config.get('arena_side_cm', 50.0)))
+        arena_height_cm = float(self.config.get('arena_height_cm', self.config.get('arena_side_cm', 50.0)))
+        start_sec = self.config.get('start_sec')
+        end_sec = self.config.get('end_sec')
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+        roi_configs = self._parse_rois()
+
+        trackers = []
+        for roi in roi_configs:
+            trackers.append(
+                NovelObjectTracker(
+                    arena_points=roi['points'],
+                    object_points=roi['objects'],
+                    detection_points=roi.get('detection_points'),
+                    arena_width_cm=arena_width_cm,
+                    arena_height_cm=arena_height_cm,
+                    fps=fps,
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    phase=phase,
+                    time_config=roi.get('time_config'),
+                    global_start_time_s=global_start_time_s,
+                    center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
+                    center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
+                    interaction_radius_cm=float(self.config.get('interaction_radius_cm', 4.0)),
+                    exploration_max_speed_cm_s=float(self.config.get('exploration_max_speed_cm_s', 12.0)),
+                    movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
+                    min_valid_exploration_s=float(self.config.get('min_valid_exploration_s', 20.0)),
+                )
+            )
+        self._log(f"Configured {len(trackers)} NOR arenas")
+
+        writer = None
+        if generate_video:
+            for codec in ('avc1', 'H264', 'mp4v'):
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        writer = test_writer
+                        self._log(f"NOR video codec: {codec}")
+                        break
+                    test_writer.release()
+                except Exception:
+                    pass
+
+        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
+        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            self._log(f"Start NOR analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+
+        frames_to_process = max(0, end_frame - start_frame + 1)
+        frame_idx = 0
+
+        while self.is_running:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            try:
+                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            except Exception:
+                current_frame_no = start_frame + frame_idx
+
+            if current_frame_no > end_frame:
+                break
+
+            current_time = current_frame_no / max(fps, 1e-6)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+
+            if frame_idx % 15 == 0:
+                rows = []
+                for tracker, result in zip(trackers, results):
+                    summary = tracker.build_summary()
+                    rows.append({
+                        'roi_id': tracker.roi_id,
+                        'roi_name': tracker.roi_name,
+                        'detected': bool(result.get('detected')),
+                        'current_object': result.get('current_object_name') or '-',
+                        'current_role': result.get('current_object_role') or '-',
+                        'distance_cm': summary['total_distance_cm'],
+                        'total_exploration_s': summary['total_object_exploration_s'],
+                        'novel_exploration_s': summary.get('novel_exploration_s'),
+                        'familiar_exploration_s': summary.get('familiar_exploration_s'),
+                        'discrimination_index': summary.get('discrimination_index'),
+                        'preference_index_percent': summary.get('preference_index_percent'),
+                        'meets_min_exploration': bool(summary.get('meets_min_exploration', False)),
+                        'in_stats_window': bool(result.get('in_stats_window', True)),
+                    })
+                self.realtime_data = rows
+                self.live_metrics = self._build_live_metrics(rows)
+
+            if generate_video and writer is not None:
+                result_frame = draw_novel_object_results(frame, list(zip(trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 10 == 0:
+                    self.current_frame = result_frame
+
+            frame_idx += 1
+            self.processed_frames += 1
+
+            if frame_idx % 20 == 0:
+                if batch_index is not None:
+                    batch_progress = int(batch_index / len(self.video_paths) * 100)
+                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    self.progress = batch_progress + video_progress
+                else:
+                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
+                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+
+        cap.release()
+        if writer is not None:
+            writer.release()
+
+        summary_rows = []
+        track_rows = []
+        bins_rows = []
+        for tracker in trackers:
+            summary = tracker.build_summary()
+            summary['video_name'] = video_info.get('original_name', video_name)
+            summary_rows.append(summary)
+
+            for row in tracker.frame_records:
+                record = dict(row)
+                record['video_name'] = video_info.get('original_name', video_name)
+                track_rows.append(record)
+
+            for row in tracker.build_time_bins(bin_seconds=float(self.config.get('bin_seconds', 300.0))):
+                bucket = dict(row)
+                bucket['video_name'] = video_info.get('original_name', video_name)
+                bins_rows.append(bucket)
+
+        if HAS_PANDAS and track_rows:
+            track_csv_path = f"{output_base}_track.csv"
+            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
+            self._append_result_file(track_csv_path, 'track_csv')
+
+        if HAS_PANDAS and summary_rows:
+            summary_csv_path = f"{output_base}_summary.csv"
+            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
+            self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and bins_rows:
+            bins_csv_path = f"{output_base}_bins.csv"
+            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
+            self._append_result_file(bins_csv_path, 'bins_csv')
+
+        report_txt_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_path)
+        self._append_result_file(report_txt_path, 'report')
+
+        heatmap_paths = []
+        trackmap_paths = []
+        for tracker in trackers:
+            roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
+            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+
+            if render_novel_object_heatmap(tracker, heatmap_path):
+                heatmap_paths.append(heatmap_path)
+                self._append_result_file(heatmap_path)
+
+            if render_novel_object_trackmap(tracker, trackmap_path):
+                trackmap_paths.append(trackmap_path)
+                self._append_result_file(trackmap_path)
+
+        if heatmap_paths:
+            if len(heatmap_paths) == 1:
+                self._append_result_file(heatmap_paths[0], 'heatmap')
+            else:
+                heatmap_grid_path = f"{output_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(heatmap_grid_path, 'heatmap')
+
+        if trackmap_paths:
+            if len(trackmap_paths) == 1:
+                self._append_result_file(trackmap_paths[0], 'trackmap')
+            else:
+                trackmap_grid_path = f"{output_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(trackmap_grid_path, 'trackmap')
+
+        if generate_video and os.path.exists(output_video_path):
+            self._append_result_file(output_video_path, 'video')
+            self._log(f"NOR annotated video saved: {output_video_path}")
+
+        self.realtime_data = [
+            {
+                'roi_id': row['roi_id'],
+                'roi_name': row['roi_name'],
+                'detected': True,
+                'current_object': 'Completed',
+                'current_role': '-',
+                'distance_cm': row['total_distance_cm'],
+                'total_exploration_s': row['total_object_exploration_s'],
+                'novel_exploration_s': row.get('novel_exploration_s'),
+                'familiar_exploration_s': row.get('familiar_exploration_s'),
+                'discrimination_index': row.get('discrimination_index'),
+                'preference_index_percent': row.get('preference_index_percent'),
+                'meets_min_exploration': bool(row.get('meets_min_exploration', False)),
+                'in_stats_window': True,
+            }
+            for row in summary_rows
+        ]
+        self.live_metrics = self._build_live_metrics(self.realtime_data)
+
+        if batch_index is None and self.is_running:
+            self.status = 'completed'
+            self.end_time = time.time()
+            self.progress = 100
+            self.message = 'Novel object recognition analysis completed.'
+
+        elapsed = time.time() - video_start_time
+        self._log(f"NOR video processed in {elapsed:.1f}s, {frame_idx} frames")
+
+        import gc
+        gc.collect()
+
+    def stop(self):
+        self.is_running = False
+        self.status = 'stopped'
+        self.end_time = time.time()
+
+    def get_status(self):
+        elapsed = 0
+        if self.start_time:
+            elapsed = (self.end_time or time.time()) - self.start_time
+        processing_fps = self.processed_frames / elapsed if elapsed > 0 else 0
+        return {
+            'session_id': self.session_id,
+            'experiment_type': self.experiment_type,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'logs': self.logs[-10:],
+            'realtime_data': self.realtime_data,
+            'result_files': self.result_files,
+            'experiment_stats': self.live_metrics,
+            'stats': {
+                'processed_frames': self.processed_frames,
+                'elapsed_time': elapsed,
+                'fps': processing_fps,
+            }
+        }
+
+    def get_download_file_map(self):
+        return self.output_groups
+
+    def _generate_txt_report(self, summaries, txt_path):
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope Novel Object Recognition Report\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"Analysis time: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                if summaries:
+                    f.write(f"Video: {summaries[0].get('video_name', '')}\n")
+                    f.write(f"Phase: {summaries[0].get('phase', 'recognition')}\n")
+                f.write(f"ROI count: {len(summaries)}\n")
+                f.write("Rule: exploration is counted with a proximity-based contour heuristic.\n\n")
+
+                for summary in summaries:
+                    f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
+                    f.write(f"  Time mode: {summary.get('time_mode', 'global')}\n")
+                    if summary.get('time_start_s') is not None:
+                        f.write(f"  Window start: {summary.get('time_start_s')} s\n")
+                    if summary.get('time_end_s') is not None:
+                        f.write(f"  Window end: {summary.get('time_end_s')} s\n")
+
+                    for label, key, suffix in [
+                        ('Total time', 'total_time_s', 's'),
+                        ('Detected rate', 'detected_rate_percent', '%'),
+                        ('Total distance', 'total_distance_cm', 'cm'),
+                        ('Mean speed', 'mean_speed_cm_s', 'cm/s'),
+                        ('Center time', 'center_time_s', 's'),
+                        ('Center percent', 'center_percent', '%'),
+                        ('Object 1 exploration', 'object_1_exploration_s', 's'),
+                        ('Object 2 exploration', 'object_2_exploration_s', 's'),
+                        ('Total exploration', 'total_object_exploration_s', 's'),
+                        ('Novel exploration', 'novel_exploration_s', 's'),
+                        ('Familiar exploration', 'familiar_exploration_s', 's'),
+                        ('Discrimination index', 'discrimination_index', ''),
+                        ('Preference index', 'preference_index_percent', '%'),
+                    ]:
+                        value = summary.get(key)
+                        if value is None:
+                            value = '-'
+                            suffix = ''
+                        f.write(f"  {label}: {value}{suffix}\n")
+                    f.write("\n")
+        except Exception as e:
+            print(f"Failed to write NOR report: {e}")
+
+    def _analyze_single_video(self, video_path, video_info, batch_index=None):
+        video_start_time = time.time()
+        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        os.makedirs(result_folder, exist_ok=True)
+
+        video_name = Path(video_info.get('original_name', 'video')).stem
+        output_base = os.path.join(result_folder, f"{video_name}_nor")
+        output_video_path = f"{output_base}_analyzed.mp4"
+        generate_video = bool(self.config.get('generate_video', True))
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to open video: {video_path}")
+            return
+
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = self.config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._log(f"NOR video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+
+        bg_method = self.config.get('bg_method', 'threshold')
+        if bg_method == 'threshold':
+            bg_subtractor = BackgroundSubtractor(
+                method='threshold',
+                threshold=self.config.get('gray_threshold', 127),
+                invert=self.config.get('invert', False),
+            )
+        elif bg_method == 'static':
+            bg = create_static_background(video_path, num_frames=15)
+            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
+            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+        else:
+            bg_subtractor = BackgroundSubtractor(method=bg_method)
+
+        morph_processor = MorphologyProcessor(
+            erosion_kernel=self.config.get('erosion_kernel', 3),
+            erosion_iterations=self.config.get('erosion_iter', 1),
+            dilation_kernel=self.config.get('dilation_kernel', 5),
+            dilation_iterations=self.config.get('dilation_iter', 2),
+        )
+        detector = MouseDetector(
+            min_area=self.config.get('min_area', 120),
+            max_area=self.config.get('max_area', 50000),
+        )
+
+        phase = self.config.get('phase', 'recognition')
+        arena_width_cm = float(self.config.get('arena_width_cm', self.config.get('arena_side_cm', 50.0)))
+        arena_height_cm = float(self.config.get('arena_height_cm', self.config.get('arena_side_cm', 50.0)))
+        start_sec = self.config.get('start_sec')
+        end_sec = self.config.get('end_sec')
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+        roi_configs = self._parse_rois()
+
+        trackers = []
+        for roi in roi_configs:
+            trackers.append(
+                NovelObjectTracker(
+                    arena_points=roi['points'],
+                    object_points=roi['objects'],
+                    detection_points=roi.get('detection_points'),
+                    arena_width_cm=arena_width_cm,
+                    arena_height_cm=arena_height_cm,
+                    fps=fps,
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    phase=phase,
+                    time_config=roi.get('time_config'),
+                    global_start_time_s=global_start_time_s,
+                    center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
+                    center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
+                    interaction_radius_cm=float(self.config.get('interaction_radius_cm', 4.0)),
+                    exploration_max_speed_cm_s=float(self.config.get('exploration_max_speed_cm_s', 12.0)),
+                    movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
+                    min_valid_exploration_s=float(self.config.get('min_valid_exploration_s', 20.0)),
+                )
+            )
+        self._log(f"Configured {len(trackers)} NOR arenas")
+
+        writer = None
+        if generate_video:
+            for codec in ('avc1', 'H264', 'mp4v'):
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        writer = test_writer
+                        self._log(f"NOR video codec: {codec}")
+                        break
+                    test_writer.release()
+                except Exception:
+                    pass
+
+        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
+        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            self._log(f"Start NOR analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+
+        frames_to_process = max(0, end_frame - start_frame + 1)
+        frame_idx = 0
+
+        while self.is_running:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            try:
+                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            except Exception:
+                current_frame_no = start_frame + frame_idx
+
+            if current_frame_no > end_frame:
+                break
+
+            current_time = current_frame_no / max(fps, 1e-6)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+
+            if frame_idx % 15 == 0:
+                rows = []
+                for tracker, result in zip(trackers, results):
+                    summary = tracker.build_summary()
+                    rows.append({
+                        'roi_id': tracker.roi_id,
+                        'roi_name': tracker.roi_name,
+                        'detected': bool(result.get('detected')),
+                        'current_object': result.get('current_object_name') or '-',
+                        'current_role': result.get('current_object_role') or '-',
+                        'distance_cm': summary['total_distance_cm'],
+                        'total_exploration_s': summary['total_object_exploration_s'],
+                        'novel_exploration_s': summary.get('novel_exploration_s'),
+                        'familiar_exploration_s': summary.get('familiar_exploration_s'),
+                        'discrimination_index': summary.get('discrimination_index'),
+                        'preference_index_percent': summary.get('preference_index_percent'),
+                        'meets_min_exploration': bool(summary.get('meets_min_exploration', False)),
+                        'in_stats_window': bool(result.get('in_stats_window', True)),
+                    })
+                self.realtime_data = rows
+                self.live_metrics = self._build_live_metrics(rows)
+
+            if generate_video and writer is not None:
+                result_frame = draw_novel_object_results(frame, list(zip(trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 10 == 0:
+                    self.current_frame = result_frame
+
+            frame_idx += 1
+            self.processed_frames += 1
+
+            if frame_idx % 20 == 0:
+                if batch_index is not None:
+                    batch_progress = int(batch_index / len(self.video_paths) * 100)
+                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    self.progress = batch_progress + video_progress
+                else:
+                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
+                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+
+        cap.release()
+        if writer is not None:
+            writer.release()
+
+        summary_rows = []
+        track_rows = []
+        bins_rows = []
+        for tracker in trackers:
+            summary = tracker.build_summary()
+            summary['video_name'] = video_info.get('original_name', video_name)
+            summary_rows.append(summary)
+
+            for row in tracker.frame_records:
+                record = dict(row)
+                record['video_name'] = video_info.get('original_name', video_name)
+                track_rows.append(record)
+
+            for row in tracker.build_time_bins(bin_seconds=float(self.config.get('bin_seconds', 300.0))):
+                bucket = dict(row)
+                bucket['video_name'] = video_info.get('original_name', video_name)
+                bins_rows.append(bucket)
+
+        if HAS_PANDAS and track_rows:
+            track_csv_path = f"{output_base}_track.csv"
+            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
+            self._append_result_file(track_csv_path, 'track_csv')
+
+        if HAS_PANDAS and summary_rows:
+            summary_csv_path = f"{output_base}_summary.csv"
+            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
+            self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and bins_rows:
+            bins_csv_path = f"{output_base}_bins.csv"
+            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
+            self._append_result_file(bins_csv_path, 'bins_csv')
+
+        report_txt_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_path)
+        self._append_result_file(report_txt_path, 'report')
+
+        heatmap_paths = []
+        trackmap_paths = []
+        for tracker in trackers:
+            roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
+            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+
+            if render_novel_object_heatmap(tracker, heatmap_path):
+                heatmap_paths.append(heatmap_path)
+                self._append_result_file(heatmap_path)
+
+            if render_novel_object_trackmap(tracker, trackmap_path):
+                trackmap_paths.append(trackmap_path)
+                self._append_result_file(trackmap_path)
+
+        if heatmap_paths:
+            if len(heatmap_paths) == 1:
+                self._append_result_file(heatmap_paths[0], 'heatmap')
+            else:
+                heatmap_grid_path = f"{output_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(heatmap_grid_path, 'heatmap')
+
+        if trackmap_paths:
+            if len(trackmap_paths) == 1:
+                self._append_result_file(trackmap_paths[0], 'trackmap')
+            else:
+                trackmap_grid_path = f"{output_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(trackmap_grid_path, 'trackmap')
+
+        if generate_video and os.path.exists(output_video_path):
+            self._append_result_file(output_video_path, 'video')
+            self._log(f"NOR annotated video saved: {output_video_path}")
+
+        self.realtime_data = [
+            {
+                'roi_id': row['roi_id'],
+                'roi_name': row['roi_name'],
+                'detected': True,
+                'current_object': 'Completed',
+                'current_role': '-',
+                'distance_cm': row['total_distance_cm'],
+                'total_exploration_s': row['total_object_exploration_s'],
+                'novel_exploration_s': row.get('novel_exploration_s'),
+                'familiar_exploration_s': row.get('familiar_exploration_s'),
+                'discrimination_index': row.get('discrimination_index'),
+                'preference_index_percent': row.get('preference_index_percent'),
+                'meets_min_exploration': bool(row.get('meets_min_exploration', False)),
+                'in_stats_window': True,
+            }
+            for row in summary_rows
+        ]
+        self.live_metrics = self._build_live_metrics(self.realtime_data)
+
+        if batch_index is None and self.is_running:
+            self.status = 'completed'
+            self.end_time = time.time()
+            self.progress = 100
+            self.message = 'Novel object recognition analysis completed.'
+
+        elapsed = time.time() - video_start_time
+        self._log(f"NOR video processed in {elapsed:.1f}s, {frame_idx} frames")
+
+        import gc
+        gc.collect()
+
+    def stop(self):
+        self.is_running = False
+        self.status = 'stopped'
+        self.end_time = time.time()
+
+    def get_status(self):
+        elapsed = 0
+        if self.start_time:
+            elapsed = (self.end_time or time.time()) - self.start_time
+        processing_fps = self.processed_frames / elapsed if elapsed > 0 else 0
+        return {
+            'session_id': self.session_id,
+            'experiment_type': self.experiment_type,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'logs': self.logs[-10:],
+            'realtime_data': self.realtime_data,
+            'result_files': self.result_files,
+            'experiment_stats': self.live_metrics,
+            'stats': {
+                'processed_frames': self.processed_frames,
+                'elapsed_time': elapsed,
+                'fps': processing_fps,
+            }
+        }
+
+    def get_download_file_map(self):
+        return self.output_groups
+
+    def _generate_txt_report(self, summaries, txt_path):
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope Novel Object Recognition Report\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"Analysis time: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                if summaries:
+                    f.write(f"Video: {summaries[0].get('video_name', '')}\n")
+                    f.write(f"Phase: {summaries[0].get('phase', 'recognition')}\n")
+                f.write(f"ROI count: {len(summaries)}\n")
+                f.write("Rule: exploration is counted with a proximity-based contour heuristic.\n\n")
+
+                for summary in summaries:
+                    f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
+                    f.write(f"  Time mode: {summary.get('time_mode', 'global')}\n")
+                    if summary.get('time_start_s') is not None:
+                        f.write(f"  Window start: {summary.get('time_start_s')} s\n")
+                    if summary.get('time_end_s') is not None:
+                        f.write(f"  Window end: {summary.get('time_end_s')} s\n")
+
+                    for label, key, suffix in [
+                        ('Total time', 'total_time_s', 's'),
+                        ('Detected rate', 'detected_rate_percent', '%'),
+                        ('Total distance', 'total_distance_cm', 'cm'),
+                        ('Mean speed', 'mean_speed_cm_s', 'cm/s'),
+                        ('Center time', 'center_time_s', 's'),
+                        ('Center percent', 'center_percent', '%'),
+                        ('Object 1 exploration', 'object_1_exploration_s', 's'),
+                        ('Object 2 exploration', 'object_2_exploration_s', 's'),
+                        ('Total exploration', 'total_object_exploration_s', 's'),
+                        ('Novel exploration', 'novel_exploration_s', 's'),
+                        ('Familiar exploration', 'familiar_exploration_s', 's'),
+                        ('Discrimination index', 'discrimination_index', ''),
+                        ('Preference index', 'preference_index_percent', '%'),
+                    ]:
+                        value = summary.get(key)
+                        if value is None:
+                            value = '-'
+                            suffix = ''
+                        f.write(f"  {label}: {value}{suffix}\n")
+                    f.write("\n")
+        except Exception as e:
+            print(f"Failed to write NOR report: {e}")
+
     def _parse_arena_points(self):
         points = self.config.get('arena_points', [])
         if isinstance(points, str):
@@ -746,6 +1471,7 @@ class OpenFieldAnalysisSession:
 
         tracker = OpenFieldTracker(
             arena_points=self._parse_arena_points(),
+            detection_points=(self.config.get('detection_points') or None),
             arena_width_cm=float(self.config.get('arena_width_cm', 50.0)),
             arena_height_cm=float(self.config.get('arena_height_cm', 50.0)),
             fps=fps,
@@ -1179,6 +1905,10 @@ class OpenFieldMultiArenaAnalysisSession:
                 else:
                     parsed_points.append([float(point[0]), float(point[1])])
 
+            detection_points = None
+            if isinstance(roi, dict) and roi.get('detection_points'):
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=4)
+
             if isinstance(roi, dict):
                 roi_name = str(roi.get('name') or f'Arena {idx + 1}').strip() or f'Arena {idx + 1}'
                 time_config = roi.get('time_config') or {'mode': 'global', 'start': None, 'end': None}
@@ -1190,6 +1920,7 @@ class OpenFieldMultiArenaAnalysisSession:
                 'roi_id': idx + 1,
                 'name': roi_name,
                 'points': parsed_points,
+                'detection_points': detection_points,
                 'time_config': time_config,
             })
 
@@ -1294,6 +2025,7 @@ class OpenFieldMultiArenaAnalysisSession:
             trackers.append(
                 OpenFieldTracker(
                     arena_points=roi['points'],
+                    detection_points=roi.get('detection_points'),
                     arena_side_cm=arena_side_cm,
                     fps=fps,
                     center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
@@ -1566,6 +2298,502 @@ class OpenFieldMultiArenaAnalysisSession:
             print(f"Failed to write OFT report: {e}")
 
 
+class NovelObjectMultiArenaAnalysisSession:
+    """Multi-ROI Novel Object Recognition analysis session."""
+
+    def __init__(self, session_id, video_paths, video_infos, config):
+        self.session_id = session_id
+        self.video_paths = video_paths
+        self.video_infos = video_infos
+        self.config = config
+        self.experiment_type = 'novel_object'
+
+        self.status = 'waiting'
+        self.progress = 0
+        self.message = 'Waiting to start...'
+        self.logs = []
+        self.realtime_data = []
+        self.result_files = []
+        self.processed_frames = 0
+        self.is_running = False
+        self.start_time = None
+        self.end_time = None
+        self.current_frame = None
+        self.live_metrics = {}
+        self.output_groups = {
+            'video': [],
+            'track_csv': [],
+            'summary_csv': [],
+            'bins_csv': [],
+            'report': [],
+            'heatmap': [],
+            'trackmap': [],
+        }
+
+    def start(self):
+        self.is_running = True
+        self.status = 'analyzing'
+        self.start_time = time.time()
+        thread = threading.Thread(target=self._run, daemon=True)
+        thread.start()
+
+    def _log(self, message):
+        timestamp = china_now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        self.logs.append(log_entry)
+        print(log_entry)
+
+    def _append_result_file(self, path, group=None):
+        if not path or not os.path.exists(path):
+            return
+        if path not in self.result_files:
+            self.result_files.append(path)
+        if group and path not in self.output_groups[group]:
+            self.output_groups[group].append(path)
+
+    def _parse_rois(self):
+        rois = self.config.get('rois') or []
+        if isinstance(rois, str):
+            rois = json.loads(rois)
+
+        parsed = []
+        for idx, roi in enumerate(rois):
+            points = roi.get('points', roi) if isinstance(roi, dict) else roi
+            if len(points) != 4:
+                raise ValueError(f'ROI {idx + 1} must contain exactly 4 arena corner points.')
+
+            parsed_points = []
+            for point in points:
+                if isinstance(point, dict):
+                    parsed_points.append([float(point['x']), float(point['y'])])
+                else:
+                    parsed_points.append([float(point[0]), float(point[1])])
+
+            detection_points = None
+            if isinstance(roi, dict) and roi.get('detection_points'):
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=4)
+
+            objects = roi.get('objects') if isinstance(roi, dict) else None
+            if not objects or len(objects) != 2:
+                raise ValueError(f'ROI {idx + 1} must contain exactly 2 object points.')
+
+            parsed_objects = []
+            for obj_idx, obj in enumerate(objects):
+                point = obj.get('point', obj) if isinstance(obj, dict) else obj
+                if isinstance(point, dict):
+                    point_xy = [float(point['x']), float(point['y'])]
+                else:
+                    point_xy = [float(point[0]), float(point[1])]
+
+                parsed_objects.append({
+                    'point': point_xy,
+                    'name': (obj.get('name') if isinstance(obj, dict) else None) or f'Object {obj_idx + 1}',
+                    'role': (obj.get('role') if isinstance(obj, dict) else None) or ('novel' if obj_idx == 1 else 'familiar'),
+                })
+
+            if isinstance(roi, dict):
+                roi_name = str(roi.get('name') or f'ROI {idx + 1}').strip() or f'ROI {idx + 1}'
+                time_config = roi.get('time_config') or {'mode': 'global', 'start': None, 'end': None}
+            else:
+                roi_name = f'ROI {idx + 1}'
+                time_config = {'mode': 'global', 'start': None, 'end': None}
+
+            parsed.append({
+                'roi_id': idx + 1,
+                'name': roi_name,
+                'points': parsed_points,
+                'detection_points': detection_points,
+                'objects': parsed_objects,
+                'time_config': time_config,
+            })
+
+        if not parsed:
+            raise ValueError('Novel object recognition requires at least one ROI.')
+        return parsed
+
+    @staticmethod
+    def _build_live_metrics(rows):
+        if not rows:
+            return {}
+        valid_dis = [float(row['discrimination_index']) for row in rows if row.get('discrimination_index') is not None]
+        return {
+            'roi_count': len(rows),
+            'detected_roi_count': sum(1 for row in rows if row.get('detected')),
+            'total_distance_cm': round(sum(float(row.get('distance_cm', 0.0) or 0.0) for row in rows), 3),
+            'total_exploration_s': round(sum(float(row.get('total_exploration_s', 0.0) or 0.0) for row in rows), 3),
+            'mean_discrimination_index': round(sum(valid_dis) / len(valid_dis), 4) if valid_dis else None,
+        }
+
+    def _run(self):
+        try:
+            if len(self.video_paths) == 1:
+                self._analyze_single_video(self.video_paths[0], self.video_infos[0])
+            else:
+                for i, (path, info) in enumerate(zip(self.video_paths, self.video_infos)):
+                    if not self.is_running:
+                        break
+                    self._log(f"Processing NOR video {i + 1}/{len(self.video_paths)}: {info.get('original_name', '')}")
+                    self._analyze_single_video(path, info, batch_index=i)
+                    self.progress = int((i + 1) / len(self.video_paths) * 100)
+
+                if self.is_running:
+                    self.status = 'completed'
+                    self.end_time = time.time()
+                    self.message = f'All {len(self.video_paths)} NOR videos finished.'
+                    self._log(self.message)
+        except Exception as e:
+            self.status = 'error'
+            self.message = f'Analysis error: {str(e)}'
+            self._log(self.message)
+            import traceback
+            self._log(traceback.format_exc())
+
+    def _analyze_single_video(self, video_path, video_info, batch_index=None):
+        video_start_time = time.time()
+        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        os.makedirs(result_folder, exist_ok=True)
+
+        video_name = Path(video_info.get('original_name', 'video')).stem
+        output_base = os.path.join(result_folder, f"{video_name}_nor")
+        output_video_path = f"{output_base}_analyzed.mp4"
+        generate_video = bool(self.config.get('generate_video', True))
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to open video: {video_path}")
+            return
+
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = self.config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._log(f"NOR video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+
+        bg_method = self.config.get('bg_method', 'threshold')
+        if bg_method == 'threshold':
+            bg_subtractor = BackgroundSubtractor(
+                method='threshold',
+                threshold=self.config.get('gray_threshold', 127),
+                invert=self.config.get('invert', False),
+            )
+        elif bg_method == 'static':
+            bg = create_static_background(video_path, num_frames=15)
+            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
+            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+        else:
+            bg_subtractor = BackgroundSubtractor(method=bg_method)
+
+        morph_processor = MorphologyProcessor(
+            erosion_kernel=self.config.get('erosion_kernel', 3),
+            erosion_iterations=self.config.get('erosion_iter', 1),
+            dilation_kernel=self.config.get('dilation_kernel', 5),
+            dilation_iterations=self.config.get('dilation_iter', 2),
+        )
+        detector = MouseDetector(
+            min_area=self.config.get('min_area', 120),
+            max_area=self.config.get('max_area', 50000),
+        )
+
+        phase = self.config.get('phase', 'recognition')
+        arena_width_cm = float(self.config.get('arena_width_cm', self.config.get('arena_side_cm', 50.0)))
+        arena_height_cm = float(self.config.get('arena_height_cm', self.config.get('arena_side_cm', 50.0)))
+        start_sec = self.config.get('start_sec')
+        end_sec = self.config.get('end_sec')
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+        roi_configs = self._parse_rois()
+
+        trackers = []
+        for roi in roi_configs:
+            trackers.append(
+                NovelObjectTracker(
+                    arena_points=roi['points'],
+                    object_points=roi['objects'],
+                    detection_points=roi.get('detection_points'),
+                    arena_width_cm=arena_width_cm,
+                    arena_height_cm=arena_height_cm,
+                    fps=fps,
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    phase=phase,
+                    time_config=roi.get('time_config'),
+                    global_start_time_s=global_start_time_s,
+                    center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
+                    center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
+                    interaction_radius_cm=float(self.config.get('interaction_radius_cm', 4.0)),
+                    exploration_max_speed_cm_s=float(self.config.get('exploration_max_speed_cm_s', 12.0)),
+                    movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
+                    min_valid_exploration_s=float(self.config.get('min_valid_exploration_s', 20.0)),
+                )
+            )
+        self._log(f"Configured {len(trackers)} NOR arenas")
+
+        writer = None
+        if generate_video:
+            for codec in ('avc1', 'H264', 'mp4v'):
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        writer = test_writer
+                        self._log(f"NOR video codec: {codec}")
+                        break
+                    test_writer.release()
+                except Exception:
+                    pass
+
+        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
+        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            self._log(f"Start NOR analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+
+        frames_to_process = max(0, end_frame - start_frame + 1)
+        frame_idx = 0
+
+        while self.is_running:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            try:
+                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            except Exception:
+                current_frame_no = start_frame + frame_idx
+
+            if current_frame_no > end_frame:
+                break
+
+            current_time = current_frame_no / max(fps, 1e-6)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+
+            if frame_idx % 15 == 0:
+                rows = []
+                for tracker, result in zip(trackers, results):
+                    summary = tracker.build_summary()
+                    rows.append({
+                        'roi_id': tracker.roi_id,
+                        'roi_name': tracker.roi_name,
+                        'detected': bool(result.get('detected')),
+                        'current_object': result.get('current_object_name') or '-',
+                        'current_role': result.get('current_object_role') or '-',
+                        'distance_cm': summary['total_distance_cm'],
+                        'total_exploration_s': summary['total_object_exploration_s'],
+                        'novel_exploration_s': summary.get('novel_exploration_s'),
+                        'familiar_exploration_s': summary.get('familiar_exploration_s'),
+                        'discrimination_index': summary.get('discrimination_index'),
+                        'preference_index_percent': summary.get('preference_index_percent'),
+                        'meets_min_exploration': bool(summary.get('meets_min_exploration', False)),
+                        'in_stats_window': bool(result.get('in_stats_window', True)),
+                    })
+                self.realtime_data = rows
+                self.live_metrics = self._build_live_metrics(rows)
+
+            if generate_video and writer is not None:
+                result_frame = draw_novel_object_results(frame, list(zip(trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 10 == 0:
+                    self.current_frame = result_frame
+
+            frame_idx += 1
+            self.processed_frames += 1
+
+            if frame_idx % 20 == 0:
+                if batch_index is not None:
+                    batch_progress = int(batch_index / len(self.video_paths) * 100)
+                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    self.progress = batch_progress + video_progress
+                else:
+                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
+                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+
+        cap.release()
+        if writer is not None:
+            writer.release()
+
+        summary_rows = []
+        track_rows = []
+        bins_rows = []
+        for tracker in trackers:
+            summary = tracker.build_summary()
+            summary['video_name'] = video_info.get('original_name', video_name)
+            summary_rows.append(summary)
+
+            for row in tracker.frame_records:
+                record = dict(row)
+                record['video_name'] = video_info.get('original_name', video_name)
+                track_rows.append(record)
+
+            for row in tracker.build_time_bins(bin_seconds=float(self.config.get('bin_seconds', 300.0))):
+                bucket = dict(row)
+                bucket['video_name'] = video_info.get('original_name', video_name)
+                bins_rows.append(bucket)
+
+        if HAS_PANDAS and track_rows:
+            track_csv_path = f"{output_base}_track.csv"
+            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
+            self._append_result_file(track_csv_path, 'track_csv')
+
+        if HAS_PANDAS and summary_rows:
+            summary_csv_path = f"{output_base}_summary.csv"
+            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
+            self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and bins_rows:
+            bins_csv_path = f"{output_base}_bins.csv"
+            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
+            self._append_result_file(bins_csv_path, 'bins_csv')
+
+        report_txt_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_path)
+        self._append_result_file(report_txt_path, 'report')
+
+        heatmap_paths = []
+        trackmap_paths = []
+        for tracker in trackers:
+            roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
+            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+
+            if render_novel_object_heatmap(tracker, heatmap_path):
+                heatmap_paths.append(heatmap_path)
+                self._append_result_file(heatmap_path)
+
+            if render_novel_object_trackmap(tracker, trackmap_path):
+                trackmap_paths.append(trackmap_path)
+                self._append_result_file(trackmap_path)
+
+        if heatmap_paths:
+            if len(heatmap_paths) == 1:
+                self._append_result_file(heatmap_paths[0], 'heatmap')
+            else:
+                heatmap_grid_path = f"{output_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(heatmap_grid_path, 'heatmap')
+
+        if trackmap_paths:
+            if len(trackmap_paths) == 1:
+                self._append_result_file(trackmap_paths[0], 'trackmap')
+            else:
+                trackmap_grid_path = f"{output_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(trackmap_grid_path, 'trackmap')
+
+        if generate_video and os.path.exists(output_video_path):
+            self._append_result_file(output_video_path, 'video')
+            self._log(f"NOR annotated video saved: {output_video_path}")
+
+        self.realtime_data = [
+            {
+                'roi_id': row['roi_id'],
+                'roi_name': row['roi_name'],
+                'detected': True,
+                'current_object': 'Completed',
+                'current_role': '-',
+                'distance_cm': row['total_distance_cm'],
+                'total_exploration_s': row['total_object_exploration_s'],
+                'novel_exploration_s': row.get('novel_exploration_s'),
+                'familiar_exploration_s': row.get('familiar_exploration_s'),
+                'discrimination_index': row.get('discrimination_index'),
+                'preference_index_percent': row.get('preference_index_percent'),
+                'meets_min_exploration': bool(row.get('meets_min_exploration', False)),
+                'in_stats_window': True,
+            }
+            for row in summary_rows
+        ]
+        self.live_metrics = self._build_live_metrics(self.realtime_data)
+
+        if batch_index is None and self.is_running:
+            self.status = 'completed'
+            self.end_time = time.time()
+            self.progress = 100
+            self.message = 'Novel object recognition analysis completed.'
+
+        elapsed = time.time() - video_start_time
+        self._log(f"NOR video processed in {elapsed:.1f}s, {frame_idx} frames")
+
+        import gc
+        gc.collect()
+
+    def stop(self):
+        self.is_running = False
+        self.status = 'stopped'
+        self.end_time = time.time()
+
+    def get_status(self):
+        elapsed = 0
+        if self.start_time:
+            elapsed = (self.end_time or time.time()) - self.start_time
+        processing_fps = self.processed_frames / elapsed if elapsed > 0 else 0
+        return {
+            'session_id': self.session_id,
+            'experiment_type': self.experiment_type,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'logs': self.logs[-10:],
+            'realtime_data': self.realtime_data,
+            'result_files': self.result_files,
+            'experiment_stats': self.live_metrics,
+            'stats': {
+                'processed_frames': self.processed_frames,
+                'elapsed_time': elapsed,
+                'fps': processing_fps,
+            }
+        }
+
+    def get_download_file_map(self):
+        return self.output_groups
+
+    def _generate_txt_report(self, summaries, txt_path):
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope Novel Object Recognition Report\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"Analysis time: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                if summaries:
+                    f.write(f"Video: {summaries[0].get('video_name', '')}\n")
+                    f.write(f"Phase: {summaries[0].get('phase', 'recognition')}\n")
+                f.write(f"ROI count: {len(summaries)}\n")
+                f.write("Rule: exploration is counted with a proximity-based contour heuristic.\n\n")
+
+                for summary in summaries:
+                    f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
+                    f.write(f"  Time mode: {summary.get('time_mode', 'global')}\n")
+                    if summary.get('time_start_s') is not None:
+                        f.write(f"  Window start: {summary.get('time_start_s')} s\n")
+                    if summary.get('time_end_s') is not None:
+                        f.write(f"  Window end: {summary.get('time_end_s')} s\n")
+
+                    for label, key, suffix in [
+                        ('Total time', 'total_time_s', 's'),
+                        ('Detected rate', 'detected_rate_percent', '%'),
+                        ('Total distance', 'total_distance_cm', 'cm'),
+                        ('Mean speed', 'mean_speed_cm_s', 'cm/s'),
+                        ('Center time', 'center_time_s', 's'),
+                        ('Center percent', 'center_percent', '%'),
+                        ('Object 1 exploration', 'object_1_exploration_s', 's'),
+                        ('Object 2 exploration', 'object_2_exploration_s', 's'),
+                        ('Total exploration', 'total_object_exploration_s', 's'),
+                        ('Novel exploration', 'novel_exploration_s', 's'),
+                        ('Familiar exploration', 'familiar_exploration_s', 's'),
+                        ('Discrimination index', 'discrimination_index', ''),
+                        ('Preference index', 'preference_index_percent', '%'),
+                    ]:
+                        value = summary.get(key)
+                        if value is None:
+                            value = '-'
+                            suffix = ''
+                        f.write(f"  {label}: {value}{suffix}\n")
+                    f.write("\n")
+        except Exception as e:
+            print(f"Failed to write NOR report: {e}")
+
 # ==================== 路由 ====================
 
 @app.route('/')
@@ -1584,7 +2812,7 @@ def upload_page():
 def manual():
     """使用手册"""
     manual_type = request.args.get('module', 'tst').strip().lower()
-    if manual_type not in {'tst', 'oft'}:
+    if manual_type not in {'tst', 'oft', 'nor'}:
         manual_type = 'tst'
     return render_template('manual.html', manual_type=manual_type)
 
@@ -1593,6 +2821,12 @@ def manual():
 def manual_open_field():
     """Open field manual."""
     return redirect(url_for('manual', module='oft'))
+
+
+@app.route('/manual/novel_object')
+def manual_novel_object():
+    """Novel object recognition manual."""
+    return redirect(url_for('manual', module='nor'))
 
 
 @app.route('/license')
@@ -1655,7 +2889,12 @@ def do_upload():
     uploaded_files = request.files.getlist('videos')
     local_paths_raw = request.form.get('local_paths', '').strip()
     experiment_type = request.form.get('experiment_type', 'tst').strip() or 'tst'
-    experiment_type = 'open_field' if experiment_type == 'open_field' else 'tst'
+    if experiment_type == 'open_field':
+        experiment_type = 'open_field'
+    elif experiment_type == 'novel_object':
+        experiment_type = 'novel_object'
+    else:
+        experiment_type = 'tst'
 
     video_paths = []
     video_infos = []
@@ -1737,7 +2976,12 @@ def calibrate(session_id):
         for i, info in enumerate(sess['video_infos']):
             video_list.append({'index': i, 'name': info['original_name']})
 
-    template_name = 'calibrate_openfield.html' if sess.get('experiment_type') == 'open_field' else 'calibrate.html'
+    if sess.get('experiment_type') == 'open_field':
+        template_name = 'calibrate_openfield.html'
+    elif sess.get('experiment_type') == 'novel_object':
+        template_name = 'calibrate_nor.html'
+    else:
+        template_name = 'calibrate.html'
     return render_template(
         template_name,
         session_id=session_id,
@@ -1756,7 +3000,12 @@ def monitor(session_id):
     if not sess:
         flash('Session expired. Please start again.', 'error')
         return redirect(url_for('index'))
-    template_name = 'monitor_openfield.html' if sess.get('experiment_type') == 'open_field' else 'monitor.html'
+    if sess.get('experiment_type') == 'open_field':
+        template_name = 'monitor_openfield.html'
+    elif sess.get('experiment_type') == 'novel_object':
+        template_name = 'monitor_nor.html'
+    else:
+        template_name = 'monitor.html'
     return render_template(template_name, session_id=session_id)
 
 
@@ -1791,7 +3040,7 @@ def get_first_frame(session_id):
     })
 
 
-def _open_field_debug_preview(frame, data):
+def _open_field_debug_preview(frame, data, video_path):
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))
     bg_type = data.get('bg_type', 'light')
@@ -1812,10 +3061,10 @@ def _open_field_debug_preview(frame, data):
     if not rois:
         return jsonify({'error': 'Open field preview requires at least one ROI.'}), 400
 
-    if bg_method == 'threshold':
-        bg_sub = BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
-    else:
-        bg_sub = BackgroundSubtractor(method=bg_method)
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
     morph = MorphologyProcessor(
         erosion_kernel=erosion_kernel,
@@ -1836,6 +3085,7 @@ def _open_field_debug_preview(frame, data):
 
         tracker = OpenFieldTracker(
             arena_points=[[p['x'], p['y']] if isinstance(p, dict) else p for p in points],
+            detection_points=(([[p['x'], p['y']] if isinstance(p, dict) else p for p in roi.get('detection_points', [])]) if isinstance(roi, dict) and roi.get('detection_points') else None),
             arena_side_cm=arena_side_cm,
             fps=30.0,
             center_ratio_x=float(data.get('center_ratio_x', 0.5)),
@@ -1864,6 +3114,87 @@ def _open_field_debug_preview(frame, data):
     })
 
 
+def _novel_object_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    bg_type = data.get('bg_type', 'light')
+    invert = (bg_type == 'dark')
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 120))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'Novel object preview requires at least one ROI.'}), 400
+
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+
+    morph = MorphologyProcessor(
+        erosion_kernel=erosion_kernel,
+        erosion_iterations=erosion_iter,
+        dilation_kernel=dilation_kernel,
+        dilation_iterations=dilation_iter
+    )
+    det = MouseDetector(min_area=min_area, max_area=50000)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    tracker_results = []
+    detected_count = 0
+    phase = data.get('phase', 'recognition')
+    arena_width_cm = float(data.get('arena_width_cm', data.get('arena_side_cm', 50.0)))
+    arena_height_cm = float(data.get('arena_height_cm', data.get('arena_side_cm', 50.0)))
+
+    for idx, roi in enumerate(rois):
+        points = roi.get('points', roi) if isinstance(roi, dict) else roi
+        if len(points) != 4:
+            return jsonify({'error': f'ROI {idx + 1} must contain exactly 4 arena corner points.'}), 400
+
+        objects = roi.get('objects') if isinstance(roi, dict) else None
+        if not objects or len(objects) != 2:
+            return jsonify({'error': f'ROI {idx + 1} must contain exactly 2 object points.'}), 400
+
+        tracker = NovelObjectTracker(
+            arena_points=[[p['x'], p['y']] if isinstance(p, dict) else p for p in points],
+            object_points=objects,
+            detection_points=(([[p['x'], p['y']] if isinstance(p, dict) else p for p in roi.get('detection_points', [])]) if isinstance(roi, dict) and roi.get('detection_points') else None),
+            arena_width_cm=arena_width_cm,
+            arena_height_cm=arena_height_cm,
+            fps=30.0,
+            roi_id=idx + 1,
+            roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'ROI {idx + 1}',
+            phase=phase,
+            time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
+            center_ratio_x=float(data.get('center_ratio_x', 0.5)),
+            center_ratio_y=float(data.get('center_ratio_y', 0.5)),
+            interaction_radius_cm=float(data.get('interaction_radius_cm', 4.0)),
+            exploration_max_speed_cm_s=float(data.get('exploration_max_speed_cm_s', 12.0)),
+            movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+            min_valid_exploration_s=float(data.get('min_valid_exploration_s', 20.0)),
+        )
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+
+    result_frame = draw_novel_object_results(frame, tracker_results)
+    exploring_count = sum(1 for _, result in tracker_results if result.get('current_object_name'))
+
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+        'exploring': exploring_count,
+    })
+
+
 @app.route('/api/debug_preview/<session_id>', methods=['POST'])
 def debug_preview(session_id):
     """参数调试预览"""
@@ -1886,7 +3217,9 @@ def debug_preview(session_id):
 
     # 使用传统检测
     if sess.get('experiment_type') == 'open_field':
-        return _open_field_debug_preview(frame, data)
+        return _open_field_debug_preview(frame, data, video_path)
+    if sess.get('experiment_type') == 'novel_object':
+        return _novel_object_debug_preview(frame, data, video_path)
 
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))
@@ -1902,10 +3235,10 @@ def debug_preview(session_id):
     # ROI 掩码
     rois = data.get('rois', [])
 
-    if bg_method == 'threshold':
-        bg_sub = BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
-    else:
-        bg_sub = BackgroundSubtractor(method=bg_method)
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
     morph = MorphologyProcessor(
         erosion_kernel=erosion_kernel,
@@ -1994,6 +3327,46 @@ def start_analysis(session_id):
         }
 
         analysis = OpenFieldMultiArenaAnalysisSession(
+            session_id=session_id,
+            video_paths=sess['video_paths'],
+            video_infos=sess['video_infos'],
+            config=vision_config
+        )
+
+        analysis_sessions[session_id]['analysis'] = analysis
+        analysis.start()
+        return jsonify({'success': True, 'session_id': session_id})
+
+    if sess.get('experiment_type') == 'novel_object':
+        vision_config = {
+            'bg_method': data.get('bg_method', 'threshold'),
+            'gray_threshold': int(data.get('gray_threshold', 127)),
+            'invert': data.get('bg_type', 'light') == 'dark',
+            'erosion_kernel': int(data.get('erosion_kernel', 3)),
+            'erosion_iter': int(data.get('erosion_iter', 1)),
+            'dilation_kernel': int(data.get('dilation_kernel', 5)),
+            'dilation_iter': int(data.get('dilation_iter', 2)),
+            'min_area': int(data.get('min_area', 120)),
+            'max_area': int(data.get('max_area', 50000)),
+            'phase': data.get('phase', 'recognition'),
+            'rois': data.get('rois', []),
+            'arena_width_cm': float(data.get('arena_width_cm', data.get('arena_side_cm', 50.0))),
+            'arena_height_cm': float(data.get('arena_height_cm', data.get('arena_side_cm', 50.0))),
+            'center_ratio_x': float(data.get('center_ratio_x', 0.5)),
+            'center_ratio_y': float(data.get('center_ratio_y', 0.5)),
+            'interaction_radius_cm': float(data.get('interaction_radius_cm', 4.0)),
+            'exploration_max_speed_cm_s': float(data.get('exploration_max_speed_cm_s', 12.0)),
+            'movement_threshold_cm_s': float(data.get('movement_threshold_cm_s', 2.0)),
+            'min_valid_exploration_s': float(data.get('min_valid_exploration_s', 20.0)),
+            'bin_seconds': float(data.get('bin_seconds', 300.0)),
+            'generate_video': data.get('generate_video', True),
+            'output_dir': sess.get('output_dir'),
+            'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
+            'end_sec': float(sess['end_seconds']) if sess.get('end_seconds') else None,
+            'fps_override': sess.get('fps_override'),
+        }
+
+        analysis = NovelObjectMultiArenaAnalysisSession(
             session_id=session_id,
             video_paths=sess['video_paths'],
             video_infos=sess['video_infos'],

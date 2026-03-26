@@ -88,7 +88,7 @@
                     {% endif %}
                 </div>
 
-                <div class="oft-hint" data-i18n="oft.calib.hint">每个 ROI 对应一个旷场。点击 4 个角点即可完成一个 arena，系统会做透视矫正并把轨迹标准化到正方形坐标。</div>
+                <div class="oft-hint" data-i18n="oft.calib.hint">每个 ROI 对应一个旷场。先点击 4 个角点完成 arena 标定；如果镜头畸变明显，可在右侧 ROI 卡片里额外绘制“检测遮罩”，让检测区域贴合真实边界。</div>
 
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -115,6 +115,12 @@
                     <button class="btn btn-outline-danger" type="button" onclick="clearAllArenas()">
                         <i class="fas fa-trash me-2"></i><span data-i18n="oft.calib.btn.clear_all">清空全部</span>
                     </button>
+                    <button class="btn btn-outline-warning" type="button" id="finishMaskBtn" onclick="finishDetectionMaskEdit()" style="display:none;">
+                        <i class="fas fa-draw-polygon me-2"></i>完成检测遮罩
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" id="cancelMaskBtn" onclick="cancelDetectionMaskEdit()" style="display:none;">
+                        <i class="fas fa-times me-2"></i>取消遮罩编辑
+                    </button>
                     <button class="btn btn-success ms-auto" type="button" id="toDebugBtn" onclick="goToStep(2)" disabled>
                         <i class="fas fa-arrow-right me-2"></i><span data-i18n="oft.calib.btn.to_debug">进入调参</span>
                     </button>
@@ -123,13 +129,15 @@
                 <div class="status-strip">
                     <div class="status-pill"><strong data-i18n="oft.calib.status.added">已添加:</strong> <span id="arenaCountText">0</span></div>
                     <div class="status-pill"><strong data-i18n="oft.calib.status.points">当前点数:</strong> <span id="currentPointText">0 / 4</span></div>
+                    <div class="status-pill"><strong>遮罩点数:</strong> <span id="maskPointText">0</span></div>
+                    <div class="status-pill"><strong>当前模式:</strong> <span id="drawModeText">绘制 arena</span></div>
                     <div class="status-pill"><strong data-i18n="oft.calib.status.size">边长:</strong> <span id="arenaSizeText">50 cm</span></div>
                 </div>
             </div>
 
             <div class="oft-panel">
                 <h5 class="mb-3" data-i18n="oft.calib.roi_list.title">ROI 列表</h5>
-                <div class="oft-hint" data-i18n="oft.calib.roi_list.hint">每个 ROI 都可以单独命名，也可以设置精确统计时间段。默认跟随上传页的全局时间范围。</div>
+                <div class="oft-hint" data-i18n="oft.calib.roi_list.hint">每个 ROI 都可以单独命名、设置精确统计时间段，也可以追加一个单独的检测遮罩多边形。默认检测遮罩跟随 arena 四边形。</div>
                 <div id="arenaList" class="arena-list">
                     <div class="mini-note" data-i18n="oft.calib.roi_list.empty">还没有添加 arena。</div>
                 </div>
@@ -180,6 +188,13 @@
                         <h6 data-i18n="oft.calib.detect.title">检测参数</h6>
                         <div class="compact-grid">
                             <div>
+                                <label class="form-label">检测方式</label>
+                                <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">
+                                    <option value="threshold">灰度阈值</option>
+                                    <option value="static">静态背景减除</option>
+                                </select>
+                            </div>
+                            <div id="bgTypeWrap">
                                 <label class="form-label" data-i18n="oft.calib.detect.bg_type">背景类型</label>
                                 <select class="form-select" id="bgType" onchange="updateDebugPreview()">
                                     <option value="light" data-i18n="oft.calib.detect.bg_light">浅色背景 / 深色鼠</option>
@@ -191,7 +206,7 @@
                                 <input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncRangeLabel('minArea'); updateDebugPreview()">
                                 <div class="range-line"><span>20</span><span id="minAreaLabel">120</span><span>5000</span></div>
                             </div>
-                            <div>
+                            <div id="grayThresholdWrap">
                                 <label class="form-label" data-i18n="oft.calib.detect.gray_threshold">灰度阈值</label>
                                 <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
                                 <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
@@ -278,7 +293,11 @@ let currentVideoIdx = 0;
 let rois = [];
 let currentROI = [];
 let isDrawingArena = false;
+let currentMaskPoints = [];
+let isDrawingMask = false;
+let maskEditArenaIndex = null;
 let debounceTimers = {};
+const MAX_MASK_POINTS = 24;
 
 function tr(key, fallback) {
     const lang = (typeof getLang === 'function') ? getLang() : 'zh';
@@ -302,11 +321,40 @@ function refreshLocalizedState() {
     const debugFrame = parseInt(document.getElementById('frameSliderDebug').value || '0', 10);
     document.getElementById('frameLabelArena').textContent = frameLabelText(arenaFrame, totalFrames);
     document.getElementById('frameLabelDebug').textContent = frameLabelText(debugFrame, totalFrames);
+    updateBgMethodUI();
     updateArenaList();
     drawArenaCanvas();
     if (!rois.length) {
         document.getElementById('previewStatus').textContent = tr('oft.calib.preview.waiting', 'Waiting for preview');
     }
+}
+
+function currentDrawModeLabel() {
+    if (isDrawingMask) {
+        const name = (maskEditArenaIndex != null && rois[maskEditArenaIndex]) ? (rois[maskEditArenaIndex].name || arenaDefaultName(maskEditArenaIndex)) : 'ROI';
+        return `编辑检测遮罩: ${name}`;
+    }
+    if (isDrawingArena) {
+        return '绘制 arena';
+    }
+    return '查看';
+}
+
+function updateMaskToolbar() {
+    const finishBtn = document.getElementById('finishMaskBtn');
+    const cancelBtn = document.getElementById('cancelMaskBtn');
+    finishBtn.style.display = isDrawingMask ? '' : 'none';
+    cancelBtn.style.display = isDrawingMask ? '' : 'none';
+    finishBtn.disabled = !isDrawingMask || currentMaskPoints.length < 4;
+}
+
+function updateBgMethodUI() {
+    const method = document.getElementById('bgMethod')?.value || 'threshold';
+    const thresholdVisible = method === 'threshold';
+    const bgTypeWrap = document.getElementById('bgTypeWrap');
+    const grayThresholdWrap = document.getElementById('grayThresholdWrap');
+    if (bgTypeWrap) bgTypeWrap.style.display = thresholdVisible ? '' : 'none';
+    if (grayThresholdWrap) grayThresholdWrap.style.display = thresholdVisible ? '' : 'none';
 }
 
 function debounce(key, fn, delay) {
@@ -326,6 +374,7 @@ window.onload = function () {
     syncRangeLabel('dilationKernel');
     syncRangeLabel('dilationIter');
     syncRangeLabel('minArea');
+    updateBgMethodUI();
     loadFrame(0);
     updateStepNav(1);
 };
@@ -370,6 +419,29 @@ function drawArenaCanvas() {
         ctx.fill();
         ctx.stroke();
 
+        const detectionPoints = roi.detection_points || [];
+        if (detectionPoints.length >= 4) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
+            detectionPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.closePath();
+            ctx.setLineDash([8, 6]);
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.08)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            detectionPoints.forEach((p, pointIdx) => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = pointIdx === 0 ? '#f97316' : '#facc15';
+                ctx.fill();
+            });
+        }
+
         points.forEach((p, pointIdx) => {
             ctx.beginPath();
             ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
@@ -403,20 +475,52 @@ function drawArenaCanvas() {
         });
     }
 
+    if (currentMaskPoints.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(currentMaskPoints[0].x, currentMaskPoints[0].y);
+        currentMaskPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        if (currentMaskPoints.length >= 4) {
+            ctx.closePath();
+        }
+        ctx.setLineDash([10, 6]);
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+
+        currentMaskPoints.forEach((p, index) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = index === 0 ? '#22c55e' : '#f97316';
+            ctx.fill();
+        });
+    }
+
     document.getElementById('arenaCountText').textContent = String(rois.length);
     document.getElementById('currentPointText').textContent = `${currentROI.length} / 4`;
+    document.getElementById('maskPointText').textContent = String(currentMaskPoints.length);
+    document.getElementById('drawModeText').textContent = currentDrawModeLabel();
     document.getElementById('arenaSizeText').textContent = `${parseFloat(document.getElementById('arenaSideCm').value || '50')} cm`;
+    updateMaskToolbar();
 }
 
 document.addEventListener('DOMContentLoaded', function () {
     const canvas = document.getElementById('arenaCanvas');
     canvas.addEventListener('click', function (e) {
-        if (!isDrawingArena) return;
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
         const x = Math.round((e.clientX - rect.left) * scaleX);
         const y = Math.round((e.clientY - rect.top) * scaleY);
+        if (isDrawingMask) {
+            if (currentMaskPoints.length < MAX_MASK_POINTS) {
+                currentMaskPoints.push({ x, y });
+                drawArenaCanvas();
+            }
+            return;
+        }
+        if (!isDrawingArena) return;
         if (currentROI.length < 4) {
             currentROI.push({ x, y });
             if (currentROI.length === 4) {
@@ -442,6 +546,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function startNewArena() {
+    cancelDetectionMaskEdit();
     currentROI = [];
     isDrawingArena = true;
     drawArenaCanvas();
@@ -461,7 +566,60 @@ function finishCurrentArena() {
     document.getElementById('toDebugBtn').disabled = rois.length === 0;
 }
 
+function startDetectionMaskEdit(index) {
+    currentROI = [];
+    isDrawingArena = false;
+    isDrawingMask = true;
+    maskEditArenaIndex = index;
+    currentMaskPoints = JSON.parse(JSON.stringify(rois[index].detection_points || []));
+    updateArenaList();
+    drawArenaCanvas();
+}
+
+function finishDetectionMaskEdit() {
+    if (!isDrawingMask || maskEditArenaIndex == null) return;
+    if (currentMaskPoints.length < 4) {
+        alert('检测遮罩至少需要 4 个点，推荐沿弯曲边缘绘制 8-16 个点。');
+        return;
+    }
+    rois[maskEditArenaIndex].detection_points = JSON.parse(JSON.stringify(currentMaskPoints));
+    isDrawingMask = false;
+    maskEditArenaIndex = null;
+    currentMaskPoints = [];
+    updateArenaList();
+    drawArenaCanvas();
+    if (document.getElementById('step2').classList.contains('active')) {
+        updateDebugPreview();
+    }
+}
+
+function cancelDetectionMaskEdit() {
+    isDrawingMask = false;
+    maskEditArenaIndex = null;
+    currentMaskPoints = [];
+    updateArenaList();
+    drawArenaCanvas();
+}
+
+function resetDetectionMask(index) {
+    delete rois[index].detection_points;
+    if (maskEditArenaIndex === index) {
+        cancelDetectionMaskEdit();
+        return;
+    }
+    updateArenaList();
+    drawArenaCanvas();
+    if (document.getElementById('step2').classList.contains('active')) {
+        updateDebugPreview();
+    }
+}
+
 function undoCurrentPoint() {
+    if (isDrawingMask && currentMaskPoints.length > 0) {
+        currentMaskPoints.pop();
+        drawArenaCanvas();
+        return;
+    }
     if (currentROI.length > 0) {
         currentROI.pop();
         drawArenaCanvas();
@@ -469,7 +627,11 @@ function undoCurrentPoint() {
 }
 
 function clearCurrentArena() {
-    currentROI = [];
+    if (isDrawingMask) {
+        currentMaskPoints = [];
+    } else {
+        currentROI = [];
+    }
     drawArenaCanvas();
 }
 
@@ -477,12 +639,20 @@ function clearAllArenas() {
     rois = [];
     currentROI = [];
     isDrawingArena = false;
+    isDrawingMask = false;
+    maskEditArenaIndex = null;
+    currentMaskPoints = [];
     updateArenaList();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = true;
 }
 
 function deleteArena(index) {
+    if (maskEditArenaIndex === index) {
+        cancelDetectionMaskEdit();
+    } else if (maskEditArenaIndex != null && index < maskEditArenaIndex) {
+        maskEditArenaIndex -= 1;
+    }
     rois.splice(index, 1);
     updateArenaList();
     drawArenaCanvas();
@@ -498,12 +668,14 @@ function updateArenaList() {
     list.innerHTML = rois.map((roi, index) => {
         const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
         const preciseStyle = timeConfig.mode === 'precise' ? '' : 'display:none;';
+        const detectionCount = (roi.detection_points || []).length;
+        const isEditingMask = isDrawingMask && maskEditArenaIndex === index;
         return `
             <div class="arena-card">
                 <div class="arena-card-head">
                     <div>
                         <div class="arena-card-title">ROI ${index + 1}</div>
-                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')}</small>
+                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')} · ${detectionCount >= 4 ? `已自定义检测遮罩 (${detectionCount} 点)` : '检测遮罩默认跟随 arena'}</small>
                     </div>
                     <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteArena(${index})">
                         <i class="fas fa-trash"></i>
@@ -532,6 +704,15 @@ function updateArenaList() {
                         <input class="form-control" type="number" step="0.1" value="${timeConfig.end == null ? '' : timeConfig.end}" onchange="updateArenaTimeValue(${index}, 'end', this.value)">
                     </div>
                 </div>
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button class="btn btn-sm ${isEditingMask ? 'btn-warning' : 'btn-outline-warning'}" type="button" onclick="startDetectionMaskEdit(${index})">
+                        <i class="fas fa-draw-polygon me-1"></i>${isEditingMask ? '继续编辑检测遮罩' : '编辑检测遮罩'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetDetectionMask(${index})" ${detectionCount >= 4 ? '' : 'disabled'}>
+                        <i class="fas fa-rotate-left me-1"></i>恢复默认遮罩
+                    </button>
+                </div>
+                <div class="mini-note mt-2">统计仍使用 4 点 arena；检测时会优先使用这里的遮罩多边形。</div>
             </div>
         `;
     }).join('');
@@ -585,6 +766,13 @@ function goToStep(step) {
         alert(tr('oft.calib.alert.need_arena', 'Please complete at least one arena calibration.'));
         return;
     }
+    if (step === 2 && isDrawingMask && currentMaskPoints.length > 0 && currentMaskPoints.length < 4) {
+        alert('当前检测遮罩还没完成，至少需要 4 个点。');
+        return;
+    }
+    if (step === 2 && isDrawingMask && currentMaskPoints.length >= 4) {
+        finishDetectionMaskEdit();
+    }
     document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
     document.getElementById(`step${step}`).classList.add('active');
     updateStepNav(step);
@@ -612,7 +800,7 @@ function buildRequestBody(frameIdx) {
     return {
         frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
         video: currentVideoIdx,
-        bg_method: 'threshold',
+        bg_method: document.getElementById('bgMethod').value,
         bg_type: document.getElementById('bgType').value,
         gray_threshold: parseInt(document.getElementById('grayThreshold').value, 10),
         erosion_kernel: parseInt(document.getElementById('erosionKernel').value, 10),
@@ -659,6 +847,11 @@ function updateDebugPreview(frameIdx) {
 function startAnalysis() {
     if (!rois.length) {
         alert(tr('oft.calib.alert.finish_arena', 'Please finish arena calibration first.'));
+        return;
+    }
+    const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+    if (invalidMask !== -1) {
+        alert(`ROI ${invalidMask + 1} 的检测遮罩至少需要 4 个点。`);
         return;
     }
     document.getElementById('loading').style.display = 'flex';

@@ -35,6 +35,16 @@ def _order_quad(points: Sequence[Sequence[float]]) -> np.ndarray:
     return ordered
 
 
+def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: int = 4) -> Optional[np.ndarray]:
+    if points is None:
+        return None
+
+    pts = np.asarray(points, dtype=np.float32)
+    if pts.ndim != 2 or pts.shape[1] != 2 or pts.shape[0] < min_points:
+        raise ValueError(f"Open field detection mask requires at least {min_points} points.")
+    return pts
+
+
 def sanitize_name(text: str, fallback: str = "arena") -> str:
     cleaned = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", str(text or "").strip())
     cleaned = cleaned.strip("._-")
@@ -59,6 +69,7 @@ class OpenFieldTracker:
         roi_name: Optional[str] = None,
         time_config: Optional[Dict[str, Any]] = None,
         global_start_time_s: float = 0.0,
+        detection_points: Optional[Sequence[Sequence[float]]] = None,
     ) -> None:
         if arena_side_cm is not None:
             arena_width_cm = arena_side_cm
@@ -74,6 +85,9 @@ class OpenFieldTracker:
 
         self.raw_arena_points = arena_points
         self.arena_points = _order_quad(arena_points)
+        self.raw_detection_points = detection_points
+        self.detection_points = _normalize_polygon(detection_points) if detection_points is not None else self.arena_points.copy()
+        self.has_custom_detection_mask = detection_points is not None
         self.arena_width_cm = max(1.0, float(arena_width_cm))
         self.arena_height_cm = max(1.0, float(arena_height_cm))
         self.fps = max(1.0, float(fps))
@@ -95,9 +109,9 @@ class OpenFieldTracker:
         self.h_img_to_cm = cv2.getPerspectiveTransform(self.arena_points.astype(np.float32), dst_rect)
         self.h_cm_to_img = cv2.getPerspectiveTransform(dst_rect, self.arena_points.astype(np.float32))
 
-        self.arena_mask: Optional[np.ndarray] = None
-        self.arena_bbox: Optional[Tuple[int, int, int, int]] = None
-        self._cropped_mask: Optional[np.ndarray] = None
+        self.detection_mask: Optional[np.ndarray] = None
+        self.detection_bbox: Optional[Tuple[int, int, int, int]] = None
+        self._cropped_detection_mask: Optional[np.ndarray] = None
 
         self.total_frames = 0
         self.frames_in_window = 0
@@ -148,14 +162,14 @@ class OpenFieldTracker:
         return cfg
 
     def initialize(self, frame_shape: Tuple[int, ...]) -> None:
-        if self.arena_mask is not None:
+        if self.detection_mask is not None:
             return
 
-        self.arena_mask = np.zeros(frame_shape[:2], dtype=np.uint8)
-        cv2.fillPoly(self.arena_mask, [self.arena_points.astype(np.int32)], 255)
-        x, y, w, h = cv2.boundingRect(self.arena_points.astype(np.int32))
-        self.arena_bbox = (x, y, w, h)
-        self._cropped_mask = self.arena_mask[y : y + h, x : x + w]
+        self.detection_mask = np.zeros(frame_shape[:2], dtype=np.uint8)
+        cv2.fillPoly(self.detection_mask, [self.detection_points.astype(np.int32)], 255)
+        x, y, w, h = cv2.boundingRect(self.detection_points.astype(np.int32))
+        self.detection_bbox = (x, y, w, h)
+        self._cropped_detection_mask = self.detection_mask[y : y + h, x : x + w]
 
     def get_center_rect_cm(self) -> Tuple[float, float, float, float]:
         center_w = self.arena_width_cm * self.center_ratio_x
@@ -235,15 +249,19 @@ class OpenFieldTracker:
 
     def detect_mouse(self, frame: np.ndarray, gray: np.ndarray, bg_subtractor, morph_processor, detector):
         self.initialize(frame.shape)
-        assert self.arena_bbox is not None
-        assert self._cropped_mask is not None
+        assert self.detection_bbox is not None
+        assert self._cropped_detection_mask is not None
 
-        x, y, w, h = self.arena_bbox
+        x, y, w, h = self.detection_bbox
         arena_frame = frame[y : y + h, x : x + w]
         arena_gray = gray[y : y + h, x : x + w]
 
-        fg_mask = bg_subtractor.apply(arena_frame, gray=arena_gray)
-        fg_mask = cv2.bitwise_and(fg_mask, fg_mask, mask=self._cropped_mask)
+        if getattr(bg_subtractor, "method", "") == "static":
+            full_fg_mask = bg_subtractor.apply(frame, gray=gray)
+            fg_mask = full_fg_mask[y : y + h, x : x + w]
+        else:
+            fg_mask = bg_subtractor.apply(arena_frame, gray=arena_gray)
+        fg_mask = cv2.bitwise_and(fg_mask, fg_mask, mask=self._cropped_detection_mask)
         fg_mask = morph_processor.process(fg_mask, inplace=True)
         detections = detector.detect(fg_mask)
 
@@ -531,12 +549,15 @@ def draw_open_field_results(
 
     for tracker, result in tracker_results:
         arena_poly = tracker.arena_points.astype(np.int32)
+        detection_poly = tracker.detection_points.astype(np.int32)
         center_poly = tracker.cm_rect_to_image_polygon(tracker.get_center_rect_cm())
         zone_label = result.get("zone_label", "Unknown")
         detected = bool(result.get("detected"))
         color = _zone_color(zone_label, detected)
 
         cv2.polylines(output, [arena_poly], True, color, 2)
+        if tracker.has_custom_detection_mask:
+            cv2.polylines(output, [detection_poly], True, (255, 214, 10), 1, cv2.LINE_AA)
         cv2.polylines(output, [center_poly], True, (255, 215, 0), 1)
 
         contour = result.get("contour")

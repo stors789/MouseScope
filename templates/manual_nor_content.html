@@ -1,0 +1,389 @@
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="flow-steps justify-content-center">
+            <span class="flow-step">1. <span data-nor-manual-i18n="flow.1">视频采集要求</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">2. <span data-nor-manual-i18n="flow.2">上传视频</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">3. <span data-nor-manual-i18n="flow.3">多 ROI 与双物体标定</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">4. <span data-nor-manual-i18n="flow.4">阶段、角色与时间窗</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">5. <span data-nor-manual-i18n="flow.5">调参与启动</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">6. <span data-nor-manual-i18n="flow.6">结果与指标</span></span>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-3 mb-4">
+        <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+            <a href="#sec-video" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span data-nor-manual-i18n="nav.video">视频采集要求</span>
+            </a>
+            <a href="#sec-upload" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span data-nor-manual-i18n="nav.upload">上传视频</span>
+            </a>
+            <a href="#sec-calib" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span data-nor-manual-i18n="nav.calib">多 ROI 与双物体标定</span>
+            </a>
+            <a href="#sec-phase" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span data-nor-manual-i18n="nav.phase">阶段、角色与时间窗</span>
+            </a>
+            <a href="#sec-debug" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span data-nor-manual-i18n="nav.debug">调参与启动</span>
+            </a>
+            <a href="#sec-output" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span data-nor-manual-i18n="nav.output">结果与指标</span>
+            </a>
+            <a href="#sec-notes" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span data-nor-manual-i18n="nav.notes">注意事项</span>
+            </a>
+        </div>
+    </div>
+    <div class="col-lg-9">
+        <div class="manual-section" id="sec-video">
+            <h3><span class="step-number">1</span><span data-nor-manual-i18n="sec1.title">视频采集要求</span></h3>
+            <p data-nor-manual-i18n="sec1.intro">NOR 建议使用俯视或接近俯视的固定机位，保证 arena 边界和两个物体在整个视频中都清晰可见。当前模块支持和 OFT 一样的多 ROI / 多 arena 并行流程，因此同一视频里可以同时分析多个场地。</p>
+            <div class="sub-step">
+                <h5><i class="fas fa-camera me-2"></i><span data-nor-manual-i18n="sec1.camera.title">机位与场地</span></h5>
+                <ul class="mb-0">
+                    <li data-nor-manual-i18n="sec1.camera.li1">尽量完整拍到每个 arena，四条边和四个角点不要被裁切。</li>
+                    <li data-nor-manual-i18n="sec1.camera.li2">两个物体要在统计阶段内保持固定位置，不要在录制中途被移动。</li>
+                    <li data-nor-manual-i18n="sec1.camera.li3">如果镜头边缘有明显广角畸变，后续建议单独绘制检测遮罩，而不是盲目把 arena 往外框大。</li>
+                </ul>
+            </div>
+            <div class="sub-step">
+                <h5><i class="fas fa-lightbulb me-2"></i><span data-nor-manual-i18n="sec1.light.title">光照与对比</span></h5>
+                <ul class="mb-0">
+                    <li data-nor-manual-i18n="sec1.light.li1">背景和小鼠要有明显对比，尽量避免高光、阴影和物体反光。</li>
+                    <li data-nor-manual-i18n="sec1.light.li2">多个 arena 同时拍摄时，尽量让各笼位亮度接近，便于使用统一参数。</li>
+                    <li data-nor-manual-i18n="sec1.light.li3">如果边缘存在黑边或镜头暗角，优先靠检测遮罩隔离，不建议直接依赖阈值硬扛。</li>
+                </ul>
+            </div>
+            <div class="tip-box">
+                <i class="fas fa-info-circle me-2 text-info"></i>
+                <span data-nor-manual-i18n="sec1.tip">NOR 更看重“场地边界清楚、物体位置固定、鼠体轮廓稳定”，并不是分辨率越高越好。</span>
+            </div>
+        </div>
+
+        <div class="manual-section" id="sec-upload">
+            <h3><span class="step-number">2</span><span data-nor-manual-i18n="sec2.title">上传视频</span></h3>
+            <p data-nor-manual-i18n="sec2.intro" data-nor-manual-i18n-html>在上传页把实验模块切换为 <code>Novel Object Recognition</code>，之后可以使用网页上传或本地路径导入。上传页中的全局开始时间和结束时间会作为分析的默认统计时间范围。</p>
+            <ul>
+                <li data-nor-manual-i18n="sec2.li1">如果只想统计识别测试期中的一小段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。</li>
+                <li data-nor-manual-i18n="sec2.li2">后续每个 ROI 还可以单独设置“跟随全局”或“精确时间窗”，便于多笼位共用一个视频时分别控制统计区间。</li>
+                <li data-nor-manual-i18n="sec2.li3">如果源视频是可变帧率，建议在上传页手动填写 FPS。</li>
+            </ul>
+        </div>
+
+        <div class="manual-section" id="sec-calib">
+            <h3><span class="step-number">3</span><span data-nor-manual-i18n="sec3.title">多 ROI 与双物体标定</span></h3>
+            <p data-nor-manual-i18n="sec3.intro">当前 NOR 模块使用“每个 ROI = 一个 arena + 两个物体中心点”的结构。每添加一个 ROI，都需要先点 4 个 arena 角点，再点 2 个物体中心点。</p>
+            <div class="sub-step">
+                <h5><i class="fas fa-draw-polygon me-2"></i><span data-nor-manual-i18n="sec3.order.title">标定顺序</span></h5>
+                <ol class="mb-0">
+                    <li data-nor-manual-i18n="sec3.order.li1">点击“新增 ROI”后，依次点这个 arena 的 4 个角点。</li>
+                    <li data-nor-manual-i18n="sec3.order.li2">再点 2 个物体的中心点。默认第 1 个是熟悉物体，第 2 个是新奇物体。</li>
+                    <li data-nor-manual-i18n="sec3.order.li3">点满后系统会自动把这个 ROI 加入右侧列表，可以继续标下一个 arena。</li>
+                </ol>
+            </div>
+            <div class="sub-step">
+                <h5><i class="fas fa-mask me-2"></i><span data-nor-manual-i18n="sec3.mask.title">检测遮罩</span></h5>
+                <p data-nor-manual-i18n="sec3.mask.intro">如果镜头边缘存在广角畸变、黑边或局部暗角，可以在 ROI 卡片里额外绘制检测遮罩。检测遮罩和统计 arena 是分开的：</p>
+                <ul class="mb-0">
+                    <li data-nor-manual-i18n="sec3.mask.li1">4 点 arena 仍然负责透视矫正、中心区、物体距离和统计坐标。</li>
+                    <li data-nor-manual-i18n="sec3.mask.li2">检测遮罩多边形只负责限制鼠体检测范围，推荐沿真实可见边界画 8 到 16 个点。</li>
+                    <li data-nor-manual-i18n="sec3.mask.li3">如果不单独画遮罩，系统默认使用 arena 四边形作为检测区域。</li>
+                </ul>
+            </div>
+            <div class="warning-box">
+                <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
+                <span data-nor-manual-i18n="sec3.warning">arena 角点误差会直接影响透视校正和距离统计；物体中心点误差会直接影响接近区、探索时长和偏好指标。</span>
+            </div>
+        </div>
+
+        <div class="manual-section" id="sec-phase">
+            <h3><span class="step-number">4</span><span data-nor-manual-i18n="sec4.title">阶段、角色与时间窗</span></h3>
+            <p data-nor-manual-i18n="sec4.intro">NOR 模块支持常见的两个分析阶段，并且每个 ROI 都可以单独设置时间窗。</p>
+            <table class="mini-table">
+                <tr>
+                    <th data-nor-manual-i18n="sec4.table.recognition">Recognition</th>
+                    <td data-nor-manual-i18n="sec4.table.recognition_desc" data-nor-manual-i18n-html>识别测试期。一个物体标记为 <code>familiar</code>，另一个标记为 <code>novel</code>，系统会输出新奇偏好相关指标。</td>
+                </tr>
+                <tr>
+                    <th data-nor-manual-i18n="sec4.table.familiarization">Familiarization</th>
+                    <td data-nor-manual-i18n="sec4.table.familiarization_desc">熟悉 / 训练期。此时两个物体都按熟悉物体处理，更适合看总探索、探索均衡性和轨迹表现。</td>
+                </tr>
+                <tr>
+                    <th data-nor-manual-i18n="sec4.table.global">跟随全局</th>
+                    <td data-nor-manual-i18n="sec4.table.global_desc">沿用上传页里设置的全局起止时间。</td>
+                </tr>
+                <tr>
+                    <th data-nor-manual-i18n="sec4.table.precise">精确时间窗</th>
+                    <td data-nor-manual-i18n="sec4.table.precise_desc" data-nor-manual-i18n-html>按视频绝对时间统计，例如开始 <code>60</code>、结束 <code>360</code> 表示只统计第 60 秒到第 360 秒。</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="manual-section" id="sec-debug">
+            <h3><span class="step-number">5</span><span data-nor-manual-i18n="sec5.title">调参与启动</span></h3>
+            <p data-nor-manual-i18n="sec5.intro">进入第二步后，页面会显示原始画面和叠加预览。预览会同时显示所有 ROI 的 arena、中心区、物体交互范围以及鼠体检测结果，所以调参目标是让所有 ROI 尽量稳定，而不是只顾某一个框。</p>
+            <div class="sub-step">
+                <h5><i class="fas fa-sliders-h me-2"></i><span data-nor-manual-i18n="sec5.detect.title">检测参数</span></h5>
+                <ul class="mb-0">
+                    <li data-nor-manual-i18n="sec5.detect.li1" data-nor-manual-i18n-html><strong>灰度阈值</strong>：传统前景分割方式，适合背景干净且光照稳定的视频。</li>
+                    <li data-nor-manual-i18n="sec5.detect.li2" data-nor-manual-i18n-html><strong>静态背景减除</strong>：更适合黑边、镜头畸变、局部阴影较明显但背景整体静止的情况。</li>
+                    <li data-nor-manual-i18n="sec5.detect.li3" data-nor-manual-i18n-html><strong>腐蚀 / 膨胀 / 最小面积</strong>：用于去噪、修补轮廓并过滤碎片。</li>
+                </ul>
+            </div>
+            <div class="sub-step">
+                <h5><i class="fas fa-ruler-combined me-2"></i><span data-nor-manual-i18n="sec5.stats.title">统计参数</span></h5>
+                <ul class="mb-0">
+                    <li data-nor-manual-i18n="sec5.stats.li1" data-nor-manual-i18n-html><strong>Interaction Radius</strong>：定义物体周围多大范围算作接近区。</li>
+                    <li data-nor-manual-i18n="sec5.stats.li2" data-nor-manual-i18n-html><strong>Exploration Max Speed</strong>：只把靠近物体且速度不太快的片段记为探索，用来排除路过。</li>
+                    <li data-nor-manual-i18n="sec5.stats.li3" data-nor-manual-i18n-html><strong>Movement Threshold</strong>：区分移动与静止。</li>
+                    <li data-nor-manual-i18n="sec5.stats.li4" data-nor-manual-i18n-html><strong>Min Valid Exploration</strong>：样本是否达到基本探索量的质控阈值，不会改变单帧探索判定。</li>
+                    <li data-nor-manual-i18n="sec5.stats.li5" data-nor-manual-i18n-html><strong>Bin Seconds</strong>：控制分箱 CSV 的时间长度。</li>
+                </ul>
+            </div>
+            <div class="tip-box">
+                <i class="fas fa-info-circle me-2 text-info"></i>
+                <span data-nor-manual-i18n="sec5.tip">建议把帧滑块拖到多个不同时间点检查，特别要看小鼠在物体旁边、场地边缘和镜头畸变区域是否会漏检。</span>
+            </div>
+        </div>
+
+        <div class="manual-section" id="sec-output">
+            <h3><span class="step-number">6</span><span data-nor-manual-i18n="sec6.title">结果与指标</span></h3>
+            <p data-nor-manual-i18n="sec6.intro">分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、bins CSV、TXT 报告、热图和轨迹图。识别测试期最常用的核心指标如下：</p>
+            <table class="mini-table">
+                <tr>
+                    <th><code>novel_exploration_s</code></th>
+                    <td data-nor-manual-i18n="sec6.table.novel">对新奇物体的累计探索时长。</td>
+                </tr>
+                <tr>
+                    <th><code>familiar_exploration_s</code></th>
+                    <td data-nor-manual-i18n="sec6.table.familiar">对熟悉物体的累计探索时长。</td>
+                </tr>
+                <tr>
+                    <th><code>discrimination_index</code></th>
+                    <td data-nor-manual-i18n="sec6.table.di" data-nor-manual-i18n-html><code>(novel - familiar) / (novel + familiar)</code>，越大通常表示越偏好新奇物体。</td>
+                </tr>
+                <tr>
+                    <th><code>preference_index_percent</code></th>
+                    <td data-nor-manual-i18n="sec6.table.pref" data-nor-manual-i18n-html><code>novel / (novel + familiar) * 100</code>，表示新奇物体探索占比。</td>
+                </tr>
+                <tr>
+                    <th><code>object_*_bouts</code></th>
+                    <td data-nor-manual-i18n="sec6.table.bouts">进入对应物体探索状态的次数。</td>
+                </tr>
+                <tr>
+                    <th><code>object_*_latency_s</code></th>
+                    <td data-nor-manual-i18n="sec6.table.latency">首次探索该物体的潜伏期。</td>
+                </tr>
+                <tr>
+                    <th><code>meets_min_exploration</code></th>
+                    <td data-nor-manual-i18n="sec6.table.valid">是否达到你设置的“最小有效探索时长”阈值，可作为质控提示。</td>
+                </tr>
+            </table>
+            <p class="mt-3 mb-0" data-nor-manual-i18n="sec6.outro">此外还会输出总路程、平均速度、中心区时间、移动 / 静止时间等一般活动指标，方便同时观察探索偏好和整体运动状态。</p>
+        </div>
+
+        <div class="manual-section" id="sec-notes">
+            <h3><span class="step-number">7</span><span data-nor-manual-i18n="sec7.title">注意事项</span></h3>
+            <ul class="mb-0">
+                <li data-nor-manual-i18n="sec7.li1">当前版本的 NOR 探索判定是基于“接近物体 + 低速条件”的传统 CV 启发式，不是鼻尖级或姿态级追踪。</li>
+                <li data-nor-manual-i18n="sec7.li2">如果两个物体距离过近、反光严重，或者鼠体与背景对比太弱，探索统计会明显变得不稳定。</li>
+                <li data-nor-manual-i18n="sec7.li3">检测遮罩可以缓解镜头畸变和黑边问题，但它不能替代相机畸变标定；如果镜头桶形畸变非常明显，仍建议优先改善采集机位。</li>
+                <li data-nor-manual-i18n="sec7.li4" data-nor-manual-i18n-html>建议把 <code>meets_min_exploration</code> 当作质控提示，而不是直接替代人工核查结论。</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+const NOR_MANUAL_I18N = {
+    zh: {
+        'flow.1': '视频采集要求',
+        'flow.2': '上传视频',
+        'flow.3': '多 ROI 与双物体标定',
+        'flow.4': '阶段、角色与时间窗',
+        'flow.5': '调参与启动',
+        'flow.6': '结果与指标',
+        'nav.video': '视频采集要求',
+        'nav.upload': '上传视频',
+        'nav.calib': '多 ROI 与双物体标定',
+        'nav.phase': '阶段、角色与时间窗',
+        'nav.debug': '调参与启动',
+        'nav.output': '结果与指标',
+        'nav.notes': '注意事项',
+        'sec1.title': '视频采集要求',
+        'sec1.intro': 'NOR 建议使用俯视或接近俯视的固定机位，保证 arena 边界和两个物体在整个视频中都清晰可见。当前模块支持和 OFT 一样的多 ROI / 多 arena 并行流程，因此同一视频里可以同时分析多个场地。',
+        'sec1.camera.title': '机位与场地',
+        'sec1.camera.li1': '尽量完整拍到每个 arena，四条边和四个角点不要被裁切。',
+        'sec1.camera.li2': '两个物体要在统计阶段内保持固定位置，不要在录制中途被移动。',
+        'sec1.camera.li3': '如果镜头边缘有明显广角畸变，后续建议单独绘制检测遮罩，而不是盲目把 arena 往外框大。',
+        'sec1.light.title': '光照与对比',
+        'sec1.light.li1': '背景和小鼠要有明显对比，尽量避免高光、阴影和物体反光。',
+        'sec1.light.li2': '多个 arena 同时拍摄时，尽量让各笼位亮度接近，便于使用统一参数。',
+        'sec1.light.li3': '如果边缘存在黑边或镜头暗角，优先靠检测遮罩隔离，不建议直接依赖阈值硬扛。',
+        'sec1.tip': 'NOR 更看重“场地边界清楚、物体位置固定、鼠体轮廓稳定”，并不是分辨率越高越好。',
+        'sec2.title': '上传视频',
+        'sec2.intro': '在上传页把实验模块切换为 <code>Novel Object Recognition</code>，之后可以使用网页上传或本地路径导入。上传页中的全局开始时间和结束时间会作为分析的默认统计时间范围。',
+        'sec2.li1': '如果只想统计识别测试期中的一小段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。',
+        'sec2.li2': '后续每个 ROI 还可以单独设置“跟随全局”或“精确时间窗”，便于多笼位共用一个视频时分别控制统计区间。',
+        'sec2.li3': '如果源视频是可变帧率，建议在上传页手动填写 FPS。',
+        'sec3.title': '多 ROI 与双物体标定',
+        'sec3.intro': '当前 NOR 模块使用“每个 ROI = 一个 arena + 两个物体中心点”的结构。每添加一个 ROI，都需要先点 4 个 arena 角点，再点 2 个物体中心点。',
+        'sec3.order.title': '标定顺序',
+        'sec3.order.li1': '点击“新增 ROI”后，依次点这个 arena 的 4 个角点。',
+        'sec3.order.li2': '再点 2 个物体的中心点。默认第 1 个是熟悉物体，第 2 个是新奇物体。',
+        'sec3.order.li3': '点满后系统会自动把这个 ROI 加入右侧列表，可以继续标下一个 arena。',
+        'sec3.mask.title': '检测遮罩',
+        'sec3.mask.intro': '如果镜头边缘存在广角畸变、黑边或局部暗角，可以在 ROI 卡片里额外绘制检测遮罩。检测遮罩和统计 arena 是分开的：',
+        'sec3.mask.li1': '4 点 arena 仍然负责透视矫正、中心区、物体距离和统计坐标。',
+        'sec3.mask.li2': '检测遮罩多边形只负责限制鼠体检测范围，推荐沿真实可见边界画 8 到 16 个点。',
+        'sec3.mask.li3': '如果不单独画遮罩，系统默认使用 arena 四边形作为检测区域。',
+        'sec3.warning': 'arena 角点误差会直接影响透视校正和距离统计；物体中心点误差会直接影响接近区、探索时长和偏好指标。',
+        'sec4.title': '阶段、角色与时间窗',
+        'sec4.intro': 'NOR 模块支持常见的两个分析阶段，并且每个 ROI 都可以单独设置时间窗。',
+        'sec4.table.recognition': 'Recognition',
+        'sec4.table.recognition_desc': '识别测试期。一个物体标记为 <code>familiar</code>，另一个标记为 <code>novel</code>，系统会输出新奇偏好相关指标。',
+        'sec4.table.familiarization': 'Familiarization',
+        'sec4.table.familiarization_desc': '熟悉 / 训练期。此时两个物体都按熟悉物体处理，更适合看总探索、探索均衡性和轨迹表现。',
+        'sec4.table.global': '跟随全局',
+        'sec4.table.global_desc': '沿用上传页里设置的全局起止时间。',
+        'sec4.table.precise': '精确时间窗',
+        'sec4.table.precise_desc': '按视频绝对时间统计，例如开始 <code>60</code>、结束 <code>360</code> 表示只统计第 60 秒到第 360 秒。',
+        'sec5.title': '调参与启动',
+        'sec5.intro': '进入第二步后，页面会显示原始画面和叠加预览。预览会同时显示所有 ROI 的 arena、中心区、物体交互范围以及鼠体检测结果，所以调参目标是让所有 ROI 尽量稳定，而不是只顾某一个框。',
+        'sec5.detect.title': '检测参数',
+        'sec5.detect.li1': '<strong>灰度阈值</strong>：传统前景分割方式，适合背景干净且光照稳定的视频。',
+        'sec5.detect.li2': '<strong>静态背景减除</strong>：更适合黑边、镜头畸变、局部阴影较明显但背景整体静止的情况。',
+        'sec5.detect.li3': '<strong>腐蚀 / 膨胀 / 最小面积</strong>：用于去噪、修补轮廓并过滤碎片。',
+        'sec5.stats.title': '统计参数',
+        'sec5.stats.li1': '<strong>Interaction Radius</strong>：定义物体周围多大范围算作接近区。',
+        'sec5.stats.li2': '<strong>Exploration Max Speed</strong>：只把靠近物体且速度不太快的片段记为探索，用来排除路过。',
+        'sec5.stats.li3': '<strong>Movement Threshold</strong>：区分移动与静止。',
+        'sec5.stats.li4': '<strong>Min Valid Exploration</strong>：样本是否达到基本探索量的质控阈值，不会改变单帧探索判定。',
+        'sec5.stats.li5': '<strong>Bin Seconds</strong>：控制分箱 CSV 的时间长度。',
+        'sec5.tip': '建议把帧滑块拖到多个不同时间点检查，特别要看小鼠在物体旁边、场地边缘和镜头畸变区域是否会漏检。',
+        'sec6.title': '结果与指标',
+        'sec6.intro': '分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、bins CSV、TXT 报告、热图和轨迹图。识别测试期最常用的核心指标如下：',
+        'sec6.table.novel': '对新奇物体的累计探索时长。',
+        'sec6.table.familiar': '对熟悉物体的累计探索时长。',
+        'sec6.table.di': '<code>(novel - familiar) / (novel + familiar)</code>，越大通常表示越偏好新奇物体。',
+        'sec6.table.pref': '<code>novel / (novel + familiar) * 100</code>，表示新奇物体探索占比。',
+        'sec6.table.bouts': '进入对应物体探索状态的次数。',
+        'sec6.table.latency': '首次探索该物体的潜伏期。',
+        'sec6.table.valid': '是否达到你设置的“最小有效探索时长”阈值，可作为质控提示。',
+        'sec6.outro': '此外还会输出总路程、平均速度、中心区时间、移动 / 静止时间等一般活动指标，方便同时观察探索偏好和整体运动状态。',
+        'sec7.title': '注意事项',
+        'sec7.li1': '当前版本的 NOR 探索判定是基于“接近物体 + 低速条件”的传统 CV 启发式，不是鼻尖级或姿态级追踪。',
+        'sec7.li2': '如果两个物体距离过近、反光严重，或者鼠体与背景对比太弱，探索统计会明显变得不稳定。',
+        'sec7.li3': '检测遮罩可以缓解镜头畸变和黑边问题，但它不能替代相机畸变标定；如果镜头桶形畸变非常明显，仍建议优先改善采集机位。',
+        'sec7.li4': '建议把 <code>meets_min_exploration</code> 当作质控提示，而不是直接替代人工核查结论。'
+    },
+    en: {
+        'flow.1': 'Video Requirements',
+        'flow.2': 'Upload Video',
+        'flow.3': 'Multi-ROI & Dual-Object Calibration',
+        'flow.4': 'Phase, Role & Time Windows',
+        'flow.5': 'Tuning & Start',
+        'flow.6': 'Results & Metrics',
+        'nav.video': 'Video Requirements',
+        'nav.upload': 'Upload Video',
+        'nav.calib': 'Multi-ROI & Dual-Object Calibration',
+        'nav.phase': 'Phase, Role & Time Windows',
+        'nav.debug': 'Tuning & Start',
+        'nav.output': 'Results & Metrics',
+        'nav.notes': 'Notes',
+        'sec1.title': 'Video Requirements',
+        'sec1.intro': 'NOR works best with a fixed top-down or near top-down camera, with arena boundaries and both objects clearly visible throughout the recording. Like OFT, this module supports parallel processing of multiple ROIs / arenas within one video.',
+        'sec1.camera.title': 'Camera Position & Arena',
+        'sec1.camera.li1': 'Capture each arena as completely as possible, without cutting off the four edges or corner points.',
+        'sec1.camera.li2': 'Both objects should remain fixed during the statistics window and should not be moved during recording.',
+        'sec1.camera.li3': 'If wide-angle distortion is obvious near the frame edges, it is better to draw a dedicated detection mask later instead of blindly enlarging the arena corners outward.',
+        'sec1.light.title': 'Lighting & Contrast',
+        'sec1.light.li1': 'The mouse should contrast clearly with the background, and glare, shadows, and object reflections should be minimized.',
+        'sec1.light.li2': 'When several arenas are recorded together, keep brightness as similar as possible so one shared parameter set remains usable.',
+        'sec1.light.li3': 'If there are black borders or vignetting near the image edges, isolate them with detection masks rather than relying on threshold tuning alone.',
+        'sec1.tip': 'NOR depends more on clear arena boundaries, fixed object positions, and stable mouse contours than on ultra-high resolution.',
+        'sec2.title': 'Upload Video',
+        'sec2.intro': 'On the upload page, switch the experiment module to <code>Novel Object Recognition</code>, then choose either web upload or local-path import. The global start and end times define the default statistics range.',
+        'sec2.li1': 'If you only want to analyze part of the recognition test, for example seconds 60 to 360, set the global time range first on the upload page.',
+        'sec2.li2': 'Each ROI can still override that later with its own "Follow Global" or "Precise Time Window" setting, which is useful when multiple arenas share one video.',
+        'sec2.li3': 'If the source video uses variable frame rate, entering FPS manually on the upload page is recommended.',
+        'sec3.title': 'Multi-ROI & Dual-Object Calibration',
+        'sec3.intro': 'The current NOR module uses the structure "one ROI = one arena + two object centers". For each ROI, first place 4 arena corners and then place 2 object centers.',
+        'sec3.order.title': 'Calibration Order',
+        'sec3.order.li1': 'Click "Add ROI", then click the 4 corners of that arena in order.',
+        'sec3.order.li2': 'Then click the 2 object centers. By default, object 1 is familiar and object 2 is novel.',
+        'sec3.order.li3': 'Once all points are set, the ROI is automatically added to the list and you can continue with the next arena.',
+        'sec3.mask.title': 'Detection Mask',
+        'sec3.mask.intro': 'If there is wide-angle distortion, black borders, or local vignetting near the image edges, you can draw an extra detection mask in each ROI card. The detection mask is separate from the statistics arena:',
+        'sec3.mask.li1': 'The 4-point arena still drives perspective correction, center-zone geometry, object distance, and statistics coordinates.',
+        'sec3.mask.li2': 'The detection-mask polygon only limits where the mouse detector runs. Drawing 8 to 16 points along the visible curved boundary is recommended.',
+        'sec3.mask.li3': 'If you do not draw a separate mask, the arena quadrilateral is used as the default detection region.',
+        'sec3.warning': 'Arena-corner errors directly affect perspective correction and distance metrics; object-center errors directly affect proximity regions, exploration duration, and preference metrics.',
+        'sec4.title': 'Phase, Role & Time Windows',
+        'sec4.intro': 'The NOR module supports two common analysis phases, and each ROI can use its own time window.',
+        'sec4.table.recognition': 'Recognition',
+        'sec4.table.recognition_desc': 'Recognition test phase. One object is labeled <code>familiar</code> and the other <code>novel</code>, allowing novelty-preference metrics to be calculated.',
+        'sec4.table.familiarization': 'Familiarization',
+        'sec4.table.familiarization_desc': 'Training / familiarization phase. Both objects are treated as familiar, which is more suitable for examining total exploration, balance across the two objects, and trajectories.',
+        'sec4.table.global': 'Follow Global',
+        'sec4.table.global_desc': 'Uses the global start/end time configured on the upload page.',
+        'sec4.table.precise': 'Precise Time Window',
+        'sec4.table.precise_desc': 'Uses absolute video time. For example, start <code>60</code> and end <code>360</code> means only seconds 60 to 360 are counted.',
+        'sec5.title': 'Tuning & Start',
+        'sec5.intro': 'In step 2, the page shows the original frame and the overlay preview. The preview combines all ROI arenas, center zones, object interaction ranges, and mouse detections at once, so tuning should aim for stable results across all ROIs rather than optimizing only one.',
+        'sec5.detect.title': 'Detection Parameters',
+        'sec5.detect.li1': '<strong>Gray Threshold</strong>: a traditional foreground-segmentation mode that works best when the background is clean and lighting is stable.',
+        'sec5.detect.li2': '<strong>Static Background Subtraction</strong>: often more robust when black borders, lens distortion, or local shadows are present but the background itself is still.',
+        'sec5.detect.li3': '<strong>Erosion / Dilation / Minimum Area</strong>: used to remove noise, repair contours, and filter tiny fragments.',
+        'sec5.stats.title': 'Statistics Parameters',
+        'sec5.stats.li1': '<strong>Interaction Radius</strong>: defines how large the object-proximity zone is.',
+        'sec5.stats.li2': '<strong>Exploration Max Speed</strong>: only counts near-object periods with sufficiently low speed as exploration, helping exclude pass-by events.',
+        'sec5.stats.li3': '<strong>Movement Threshold</strong>: separates moving from still frames.',
+        'sec5.stats.li4': '<strong>Min Valid Exploration</strong>: a QC threshold indicating whether total exploration is sufficient; it does not change the per-frame exploration rule.',
+        'sec5.stats.li5': '<strong>Bin Seconds</strong>: controls the time width used in the bins CSV.',
+        'sec5.tip': 'It is recommended to drag the frame slider to several different time points and check whether the mouse is missed near objects, near arena edges, or in distorted image regions.',
+        'sec6.title': 'Results & Metrics',
+        'sec6.intro': 'After analysis completes, the result page provides annotated video, track CSV, summary CSV, bins CSV, TXT report, heatmap, and track map. The most common recognition-phase metrics are listed below:',
+        'sec6.table.novel': 'Total exploration time directed toward the novel object.',
+        'sec6.table.familiar': 'Total exploration time directed toward the familiar object.',
+        'sec6.table.di': '<code>(novel - familiar) / (novel + familiar)</code>; larger values usually indicate stronger novelty preference.',
+        'sec6.table.pref': '<code>novel / (novel + familiar) * 100</code>; the percentage of exploration allocated to the novel object.',
+        'sec6.table.bouts': 'Number of entries into the exploration state for the corresponding object.',
+        'sec6.table.latency': 'Latency to the first exploration bout for that object.',
+        'sec6.table.valid': 'Whether the ROI reaches your configured minimum valid exploration threshold, which can be used as a QC flag.',
+        'sec6.outro': 'The module also exports general activity metrics such as total distance, average speed, center-zone time, and moving / still time, making it easier to compare novelty preference with overall locomotion.',
+        'sec7.title': 'Notes',
+        'sec7.li1': 'In the current version, NOR exploration is defined by a traditional CV heuristic of "near object + low speed", not by nose-point or posture-level tracking.',
+        'sec7.li2': 'Exploration statistics become much less stable when the two objects are too close together, strongly reflective, or poorly contrasted against the mouse/background.',
+        'sec7.li3': 'Detection masks help with lens distortion and black borders, but they do not replace true camera distortion calibration. If barrel distortion is severe, improving the recording setup is still recommended.',
+        'sec7.li4': 'Treat <code>meets_min_exploration</code> as a QC hint rather than as a full replacement for manual review.'
+    }
+};
+
+function applyNorManualLang() {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    const dict = NOR_MANUAL_I18N[lang] || NOR_MANUAL_I18N.zh;
+    document.title = `${lang === 'zh' ? 'NOR 使用手册' : 'NOR Manual'} - MouseScope`;
+    document.querySelectorAll('[data-nor-manual-i18n]').forEach(el => {
+        const key = el.getAttribute('data-nor-manual-i18n');
+        const val = dict[key];
+        if (val === undefined) return;
+        if (el.getAttribute('data-nor-manual-i18n-html') !== null) {
+            el.innerHTML = val;
+        } else {
+            el.textContent = val;
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', applyNorManualLang);
+document.addEventListener('mousescope:langchange', applyNorManualLang);
+</script>

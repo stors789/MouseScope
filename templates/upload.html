@@ -29,6 +29,7 @@
                                     <select class="form-select" id="experimentType" name="experiment_type">
                                         <option value="tst" selected data-i18n="upload.exp.tst_option">悬尾实验 TST</option>
                                         <option value="open_field" data-i18n="upload.exp.oft_option">旷场实验 Open Field Test</option>
+                                        <option value="novel_object" data-i18n="upload.exp.nor_option">新奇物体识别 Novel Object Recognition</option>
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -185,6 +186,7 @@
                 <div class="d-grid gap-2 mt-3">
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='tst') }}" target="_blank" data-i18n="upload.side.manual.tst">查看 TST 手册</a>
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='oft') }}" target="_blank" data-i18n="upload.side.manual.oft">查看 OFT 手册</a>
+                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='nor') }}" target="_blank" data-i18n="upload.side.manual.nor">查看 NOR 手册</a>
                 </div>
             </div>
         </div>
