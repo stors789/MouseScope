@@ -107,7 +107,7 @@
     <h1>MouseScope</h1>
     <p class="hero-subtitle" data-i18n="home.subtitle">
         基于计算机视觉的智能动物行为分析系统<br>
-        专为悬尾实验（TST）设计，自动检测小鼠不动状态
+        支持悬尾实验（TST）、旷场实验（Open Field Test）等多种实验范式
     </p>
     <div class="hero-version"><span data-i18n="home.version">Desktop Edition v1.0 · 学术研究专用</span></div>
     <div>
@@ -118,16 +118,16 @@
 
 <div class="feature-cards">
     <div class="feature-card">
-        <h5 data-i18n="home.feature1.title">视频上传</h5>
-        <p data-i18n="home.feature1.desc">支持网页拖拽上传或服务器本地路径，可选时间范围与输出目录</p>
+        <h5 data-i18n="home.feature1.title">多实验入口</h5>
+        <p data-i18n="home.feature1.desc">支持 TST 与 Open Field Test，可从网页上传或本地路径导入视频</p>
     </div>
     <div class="feature-card">
-        <h5 data-i18n="home.feature2.title">ROI 标定</h5>
-        <p data-i18n="home.feature2.desc">体长标定、多边形 ROI 绘制与参数调试，原帧与检测结果实时对比</p>
+        <h5 data-i18n="home.feature2.title">标定与配置</h5>
+        <p data-i18n="home.feature2.desc">支持体长标定、四角点场地标定、多 ROI 命名、时间窗与参数调试</p>
     </div>
     <div class="feature-card">
-        <h5 data-i18n="home.feature3.title">结果下载</h5>
-        <p data-i18n="home.feature3.desc">分析视频、CSV 日志、不动统计与报告，支持 ZIP 打包或打开结果文件夹</p>
+        <h5 data-i18n="home.feature3.title">结果导出</h5>
+        <p data-i18n="home.feature3.desc">输出标注视频、轨迹图、热图、CSV 与报告，支持 ZIP 打包和结果目录直达</p>
     </div>
 </div>
 {% endblock %}

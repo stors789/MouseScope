@@ -1,0 +1,167 @@
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="flow-steps justify-content-center">
+            <span class="flow-step">1. <span data-i18n="manual.oft.flow.1">视频采集要求</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">2. <span data-i18n="manual.oft.flow.2">上传视频</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">3. <span data-i18n="manual.oft.flow.3">多 arena 标定</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">4. <span data-i18n="manual.oft.flow.4">ROI 命名与时间窗</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">5. <span data-i18n="manual.oft.flow.5">调参与启动</span></span>
+            <i class="fas fa-chevron-right flow-arrow"></i>
+            <span class="flow-step">6. <span data-i18n="manual.oft.flow.6">结果与轨迹图</span></span>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-3 mb-4">
+        <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+            <a href="#sec-video" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span data-i18n="manual.oft.nav.video">视频采集要求</span>
+            </a>
+            <a href="#sec-upload" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span data-i18n="manual.oft.nav.upload">上传视频</span>
+            </a>
+            <a href="#sec-arena" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span data-i18n="manual.oft.nav.arena">多 arena 标定</span>
+            </a>
+            <a href="#sec-time" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span data-i18n="manual.oft.nav.time">ROI 命名与时间窗</span>
+            </a>
+            <a href="#sec-debug" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span data-i18n="manual.oft.nav.debug">调参与启动</span>
+            </a>
+            <a href="#sec-result" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span data-i18n="manual.oft.nav.result">结果与轨迹图</span>
+            </a>
+            <a href="#sec-notes" class="list-group-item list-group-item-action">
+                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span data-i18n="manual.oft.nav.notes">注意事项</span>
+            </a>
+        </div>
+    </div>
+    <div class="col-lg-9">
+        <div class="manual-section" id="sec-video">
+            <h3><span class="step-number">1</span><span data-i18n="manual.oft.sec1.title">视频采集要求</span></h3>
+            <p data-i18n="manual.oft.sec1.intro">旷场实验建议使用俯视或接近俯视的固定机位，整个录制过程中相机不能移动。画面里要完整看到每个场地的四条边，边界越清楚，后续的透视校正和轨迹标准化越稳定。</p>
+            <div class="sub-step">
+                <h5><i class="fas fa-camera me-2"></i><span data-i18n="manual.oft.sec1.camera.title">机位与场地</span></h5>
+                <ul class="mb-0">
+                    <li data-i18n="manual.oft.sec1.camera.li1">尽量让镜头居中，避免场地四角被裁切或被器材遮挡。</li>
+                    <li data-i18n="manual.oft.sec1.camera.li2">多个 arena 拼在一起拍时，建议所有场地保持同一平面、尽量平整排列。</li>
+                    <li data-i18n="manual.oft.sec1.camera.li3">画面中不要出现频繁移动的人手、线缆反光或其它干扰目标。</li>
+                </ul>
+            </div>
+            <div class="sub-step">
+                <h5><i class="fas fa-lightbulb me-2"></i><span data-i18n="manual.oft.sec1.light.title">光照与对比</span></h5>
+                <ul class="mb-0">
+                    <li data-i18n="manual.oft.sec1.light.li1">背景和小鼠要有明显对比，深色鼠配浅色底，浅色鼠配深色底。</li>
+                    <li data-i18n="manual.oft.sec1.light.li2">尽量避免强反光、阴影和局部热点，尤其不要让中心区出现大片高光。</li>
+                    <li data-i18n="manual.oft.sec1.light.li3">如果不同笼位亮度差异很大，建议先改善采集条件，再做统一参数分析。</li>
+                </ul>
+            </div>
+            <div class="tip-box">
+                <i class="fas fa-info-circle me-2 text-info"></i>
+                <span data-i18n="manual.oft.sec1.tip">OFT 结果主要依赖轨迹稳定性，所以“边界清晰”和“鼠体对比明显”通常比追求超高分辨率更重要。</span>
+            </div>
+        </div>
+
+        <div class="manual-section" id="sec-upload">
+            <h3><span class="step-number">2</span><span data-i18n="manual.oft.sec2.title">上传视频</span></h3>
+            <p data-i18n="manual.oft.sec2.intro" data-i18n-html>在上传页把实验模块切换为 <code>Open Field Test</code>，然后选择网页上传或本地路径导入。上传页中的全局开始时间和结束时间，会作为这次分析的总体统计窗口。</p>
+            <ul>
+                <li data-i18n="manual.oft.sec2.li1">如果只想分析视频中的一段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。</li>
+                <li data-i18n="manual.oft.sec2.li2">后续每个 ROI 还可以单独设置“跟随全局”或“精确时间段”，用于更细的统计控制。</li>
+                <li data-i18n="manual.oft.sec2.li3">如果源视频是可变帧率，建议在上传页手动填写 FPS。</li>
+            </ul>
+        </div>
+
+        <div class="manual-section" id="sec-arena">
+            <h3><span class="step-number">3</span><span data-i18n="manual.oft.sec3.title">多 arena 标定</span></h3>
+            <p data-i18n="manual.oft.sec3.intro">当前 OFT 模块支持在同一视频内并行分析多个 arena。每个 ROI 不是任意多边形，而是一个完整旷场的四个角点。</p>
+            <div class="sub-step">
+                <h5><i class="fas fa-vector-square me-2"></i><span data-i18n="manual.oft.sec3.method.title">标定方式</span></h5>
+                <ul class="mb-0">
+                    <li data-i18n="manual.oft.sec3.method.li1">点击“新增 arena”后，在画面中依次点这个旷场的 4 个边角。</li>
+                    <li data-i18n="manual.oft.sec3.method.li2">点满 4 个点后，系统会自动把这个 arena 保存到列表中。</li>
+                    <li data-i18n="manual.oft.sec3.method.li3">继续重复上面的操作，直到所有笼位都框完。</li>
+                </ul>
+            </div>
+            <div class="warning-box">
+                <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
+                <span data-i18n="manual.oft.sec3.warning">每个 ROI 框的是旷场本身，不是小鼠活动范围。角点如果偏差太大，透视校正后的轨迹图就会被拉伸。</span>
+            </div>
+            <p data-i18n="manual.oft.sec3.outro">页面里只需要输入一个“旷场边长”。当前版本默认所有 arena 按正方形场地处理，最后生成的轨迹图会统一校正为标准正方形坐标。</p>
+        </div>
+
+        <div class="manual-section" id="sec-time">
+            <h3><span class="step-number">4</span><span data-i18n="manual.oft.sec4.title">ROI 命名与时间窗</span></h3>
+            <p data-i18n="manual.oft.sec4.intro">每个 arena 都可以在右侧列表里独立设置名字和统计时间。建议直接用样本编号、组别编号或笼位编号命名，后续导出的 CSV、热图、轨迹图和报告都会沿用这些名称。</p>
+            <table class="mini-table">
+                <tr>
+                    <th data-i18n="manual.oft.sec4.table.global">跟随全局</th>
+                    <td data-i18n="manual.oft.sec4.table.global_desc">默认模式。该 ROI 的统计时间与上传页中的全局开始/结束时间一致。</td>
+                </tr>
+                <tr>
+                    <th data-i18n="manual.oft.sec4.table.precise">精确时间段</th>
+                    <td data-i18n="manual.oft.sec4.table.precise_desc" data-i18n-html>按视频绝对时间统计。比如开始 <code>60</code>、结束 <code>360</code>，表示只统计第 60 秒到第 360 秒。</td>
+                </tr>
+            </table>
+            <p class="mt-3 mb-0" data-i18n="manual.oft.sec4.outro">时间窗只影响统计和导出结果，不影响视频本身是否被读取。也就是说，轨迹图、中心区时间、总距离等指标都会严格按这个时间窗计算。</p>
+        </div>
+
+        <div class="manual-section" id="sec-debug">
+            <h3><span class="step-number">5</span><span data-i18n="manual.oft.sec5.title">调参与启动</span></h3>
+            <p data-i18n="manual.oft.sec5.intro">进入第二步后，你会看到原始画面和检测叠加预览。这里的检测参数是所有 ROI 共用的，所以调参目标不是“某一个框效果最好”，而是“所有 arena 都尽量稳定”。</p>
+            <ul>
+                <li data-i18n="manual.oft.sec5.li1" data-i18n-html><strong>灰度阈值</strong>：控制前景分割灵敏度。噪点多就往更严格方向调，漏检就往更宽松方向调。</li>
+                <li data-i18n="manual.oft.sec5.li2" data-i18n-html><strong>腐蚀 / 膨胀</strong>：用于去噪、修补轮廓，让鼠体更完整。</li>
+                <li data-i18n="manual.oft.sec5.li3" data-i18n-html><strong>最小面积</strong>：过滤太小的碎片，避免把噪点当成鼠体。</li>
+                <li data-i18n="manual.oft.sec5.li4" data-i18n-html><strong>中心区比例</strong>：定义中心区大小，用于中心停留时间和中心进入次数统计。</li>
+                <li data-i18n="manual.oft.sec5.li5" data-i18n-html><strong>墙区边界</strong>：定义贴边区的宽度，用于 wall zone / thigmotaxis 统计。</li>
+                <li data-i18n="manual.oft.sec5.li6" data-i18n-html><strong>运动阈值</strong>：区分移动帧和静止帧。</li>
+                <li data-i18n="manual.oft.sec5.li7" data-i18n-html><strong>分箱时长</strong>：控制 <code>bins_csv</code> 里每一段时间统计的长度。</li>
+            </ul>
+            <div class="tip-box">
+                <i class="fas fa-info-circle me-2 text-info"></i>
+                <span data-i18n="manual.oft.sec5.tip">预览页会同时叠加所有 arena 的检测结果。建议多拖几个不同时间点检查，确认所有 ROI 都能稳定识别后再开始分析。</span>
+            </div>
+        </div>
+
+        <div class="manual-section" id="sec-result">
+            <h3><span class="step-number">6</span><span data-i18n="manual.oft.sec6.title">结果与轨迹图</span></h3>
+            <p data-i18n="manual.oft.sec6.intro">分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、分箱 CSV、TXT 报告、热图和轨迹图。</p>
+            <table class="mini-table">
+                <tr>
+                    <th data-i18n="manual.oft.sec6.table.video">标注视频</th>
+                    <td data-i18n="manual.oft.sec6.table.video_desc">原始画面上叠加 arena 边界、中心区、当前检测轮廓和实时轨迹。</td>
+                </tr>
+                <tr>
+                    <th data-i18n="manual.oft.sec6.table.track">轨迹 CSV</th>
+                    <td data-i18n="manual.oft.sec6.table.track_desc">逐帧导出每个 ROI 的坐标、区域标签、速度、步进距离和累计距离。</td>
+                </tr>
+                <tr>
+                    <th data-i18n="manual.oft.sec6.table.summary">summary CSV</th>
+                    <td data-i18n="manual.oft.sec6.table.summary_desc">每个 ROI 一行，包含总距离、中心区时间、中心进入次数、壁区时间、平均速度等主要指标。</td>
+                </tr>
+                <tr>
+                    <th data-i18n="manual.oft.sec6.table.maps">热图 / 轨迹图</th>
+                    <td data-i18n="manual.oft.sec6.table.maps_desc">都会按标准化场地坐标生成，适合直接做图和组间比较。</td>
+                </tr>
+            </table>
+            <p class="mt-3" data-i18n="manual.oft.sec6.outro">这里使用的是基于四角点的透视变换。它可以把原始画面里不规则的平面视角映射到标准正方形坐标，所以即使视频里看起来不是完美正方形，最终轨迹图也会被校正成规则正方形。</p>
+        </div>
+
+        <div class="manual-section" id="sec-notes">
+            <h3><span class="step-number">7</span><span data-i18n="manual.oft.sec7.title">注意事项</span></h3>
+            <ul class="mb-0">
+                <li data-i18n="manual.oft.sec7.li1">透视变换能校正平面视角问题，但不能完全替代镜头畸变标定。如果镜头桶形畸变很明显，建议尽量使用畸变较小的镜头和更居中的机位。</li>
+                <li data-i18n="manual.oft.sec7.li2">当前版本的统计参数仍是全局共享的，不支持按 ROI 分别设置不同的中心区比例或墙区边界。</li>
+                <li data-i18n="manual.oft.sec7.li3">热图和轨迹图的统计范围会严格遵循 ROI 自己的时间窗设置。</li>
+                <li data-i18n="manual.oft.sec7.li4">如果不同 arena 的亮度差异非常大，建议优先优化采集条件，否则统一参数很难同时兼顾所有 ROI。</li>
+            </ul>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,706 @@
+{% extends "base.html" %}
+{% block title %}旷场实验配置 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.oft-shell { max-width: 1480px; margin: 0 auto; }
+.oft-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.oft-steps { display: inline-flex; gap: 0.5rem; padding: 0.4rem; border: 1px solid var(--border-card); background: var(--bg-card); border-radius: 999px; }
+.oft-step { border: 0; background: transparent; color: var(--text-muted); padding: 0.55rem 1rem; border-radius: 999px; font-weight: 600; }
+.oft-step.active { background: rgba(37, 99, 235, 0.12); color: var(--primary-color); }
+.oft-step.done { color: var(--success-color); }
+.oft-panel { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.25rem; margin-bottom: 1rem; }
+.oft-panel h5, .oft-panel h6 { margin-bottom: 0.9rem; color: var(--text-primary); }
+.oft-hint { color: var(--text-muted); font-size: 0.92rem; margin-bottom: 0.9rem; }
+.oft-canvas-wrap { background: #09101d; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 18px; padding: 0.75rem; }
+.oft-canvas-wrap canvas { display: block; width: 100%; max-width: 100%; height: auto; background: #000; border-radius: 14px; cursor: crosshair; }
+.oft-toolbar { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+.oft-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr); gap: 1rem; align-items: start; }
+.oft-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.oft-preview canvas { height: 320px; }
+.arena-list { display: grid; gap: 0.8rem; }
+.arena-card { border: 1px solid var(--border-card); border-radius: 16px; padding: 0.9rem; background: var(--bg-page); }
+.arena-card-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+.arena-card-title { font-weight: 700; color: var(--text-primary); }
+.arena-card small { color: var(--text-muted); }
+.compact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+.param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.param-stack { display: grid; gap: 0.85rem; }
+.step-pane { display: none; }
+.step-pane.active { display: block; }
+.range-line { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-muted); }
+.mini-note { font-size: 0.85rem; color: var(--text-muted); }
+.status-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; color: var(--text-muted); font-size: 0.9rem; }
+.status-pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--bg-page); border: 1px solid var(--border-card); }
+.loading-overlay { position: fixed; inset: 0; background: rgba(241, 245, 249, 0.78); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+.spinner { width: 48px; height: 48px; border: 3px solid var(--border-card); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1100px) {
+    .oft-row { grid-template-columns: 1fr; }
+    .oft-preview { grid-template-columns: 1fr; }
+    .param-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .compact-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;">
+    <div class="spinner"></div>
+</div>
+
+<div class="oft-shell">
+    <div class="oft-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-i18n="oft.calib.header.title">旷场实验配置</h1>
+            <div class="text-secondary" data-i18n="oft.calib.header.subtitle">多 arena 四角点标定、逐 ROI 命名和精确统计时间设置</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='oft') }}" target="_blank">
+                <i class="fas fa-book-open me-2"></i><span data-i18n="oft.calib.header.manual">OFT 使用手册</span>
+            </a>
+            <div class="oft-steps">
+                <button class="oft-step active" id="stepNav1" onclick="goToStep(1)" data-i18n="oft.calib.step1">1. 场地</button>
+                <button class="oft-step" id="stepNav2" onclick="goToStep(2)" data-i18n="oft.calib.step2">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="oft-row">
+            <div class="oft-panel">
+                <div class="compact-grid mb-3">
+                    <div>
+                        <label class="form-label" data-i18n="oft.calib.arena_side">旷场边长 (cm)</label>
+                        <input type="number" class="form-control" id="arenaSideCm" min="1" step="0.1" value="50" onchange="drawArenaCanvas(); updateDebugPreview();">
+                    </div>
+                    {% if is_batch %}
+                    <div>
+                        <label class="form-label" data-i18n="oft.calib.preview_video">预览视频</label>
+                        <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                            {% for video in video_list %}
+                            <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="oft-hint" data-i18n="oft.calib.hint">每个 ROI 对应一个旷场。点击 4 个角点即可完成一个 arena，系统会做透视矫正并把轨迹标准化到正方形坐标。</div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-i18n="oft.calib.select_frame">选择帧</label>
+                        <span id="frameLabelArena" class="mini-note">Frame 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderArena" min="0" max="0" value="0" oninput="onArenaFrameChange(this.value)">
+                </div>
+
+                <div class="oft-canvas-wrap">
+                    <canvas id="arenaCanvas"></canvas>
+                </div>
+
+                <div class="oft-toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="startNewArena()">
+                        <i class="fas fa-plus me-2"></i><span data-i18n="oft.calib.btn.add_arena">新增 arena</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoCurrentPoint()">
+                        <i class="fas fa-undo me-2"></i><span data-i18n="oft.calib.btn.undo">撤销一点</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearCurrentArena()">
+                        <i class="fas fa-eraser me-2"></i><span data-i18n="oft.calib.btn.clear_current">清空当前</span>
+                    </button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAllArenas()">
+                        <i class="fas fa-trash me-2"></i><span data-i18n="oft.calib.btn.clear_all">清空全部</span>
+                    </button>
+                    <button class="btn btn-success ms-auto" type="button" id="toDebugBtn" onclick="goToStep(2)" disabled>
+                        <i class="fas fa-arrow-right me-2"></i><span data-i18n="oft.calib.btn.to_debug">进入调参</span>
+                    </button>
+                </div>
+
+                <div class="status-strip">
+                    <div class="status-pill"><strong data-i18n="oft.calib.status.added">已添加:</strong> <span id="arenaCountText">0</span></div>
+                    <div class="status-pill"><strong data-i18n="oft.calib.status.points">当前点数:</strong> <span id="currentPointText">0 / 4</span></div>
+                    <div class="status-pill"><strong data-i18n="oft.calib.status.size">边长:</strong> <span id="arenaSizeText">50 cm</span></div>
+                </div>
+            </div>
+
+            <div class="oft-panel">
+                <h5 class="mb-3" data-i18n="oft.calib.roi_list.title">ROI 列表</h5>
+                <div class="oft-hint" data-i18n="oft.calib.roi_list.hint">每个 ROI 都可以单独命名，也可以设置精确统计时间段。默认跟随上传页的全局时间范围。</div>
+                <div id="arenaList" class="arena-list">
+                    <div class="mini-note" data-i18n="oft.calib.roi_list.empty">还没有添加 arena。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="oft-panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h5 class="mb-1" data-i18n="oft.calib.debug.title">调参与预览</h5>
+                    <div class="mini-note" data-i18n="oft.calib.debug.subtitle">参数是全局共享的，下面的预览会同时叠加所有 arena 的检测结果。</div>
+                </div>
+                <div class="oft-toolbar">
+                    <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)">
+                        <i class="fas fa-arrow-left me-2"></i><span data-i18n="oft.calib.btn.back">返回场地页</span>
+                    </button>
+                    <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()">
+                        <i class="fas fa-sync-alt me-2"></i><span data-i18n="oft.calib.btn.refresh">刷新预览</span>
+                    </button>
+                    <button class="btn btn-success" type="button" onclick="startAnalysis()">
+                        <i class="fas fa-play me-2"></i><span data-i18n="oft.calib.btn.start">开始 OFT 分析</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0" data-i18n="oft.calib.preview_frame">预览帧</label>
+                    <span id="frameLabelDebug" class="mini-note">Frame 0 / 0</span>
+                </div>
+                <input type="range" class="form-range" id="frameSliderDebug" min="0" max="0" value="0" oninput="onDebugFrameChange(this.value)">
+            </div>
+
+            <div class="oft-preview mb-4">
+                <div class="oft-canvas-wrap">
+                    <canvas id="previewOriginal"></canvas>
+                </div>
+                <div class="oft-canvas-wrap">
+                    <canvas id="previewResult"></canvas>
+                </div>
+            </div>
+
+            <div class="param-grid">
+                <div class="param-stack">
+                    <div class="oft-panel mb-0">
+                        <h6 data-i18n="oft.calib.detect.title">检测参数</h6>
+                        <div class="compact-grid">
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.bg_type">背景类型</label>
+                                <select class="form-select" id="bgType" onchange="updateDebugPreview()">
+                                    <option value="light" data-i18n="oft.calib.detect.bg_light">浅色背景 / 深色鼠</option>
+                                    <option value="dark" data-i18n="oft.calib.detect.bg_dark">深色背景 / 浅色鼠</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.min_area">最小面积</label>
+                                <input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncRangeLabel('minArea'); updateDebugPreview()">
+                                <div class="range-line"><span>20</span><span id="minAreaLabel">120</span><span>5000</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.gray_threshold">灰度阈值</label>
+                                <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.erosion_kernel">腐蚀核</label>
+                                <input type="range" class="form-range" id="erosionKernel" min="1" max="15" value="3" oninput="syncRangeLabel('erosionKernel'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="erosionKernelLabel">3</span><span>15</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.erosion_iter">腐蚀次数</label>
+                                <input type="range" class="form-range" id="erosionIter" min="0" max="8" value="1" oninput="syncRangeLabel('erosionIter'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="erosionIterLabel">1</span><span>8</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.dilation_kernel">膨胀核</label>
+                                <input type="range" class="form-range" id="dilationKernel" min="1" max="15" value="5" oninput="syncRangeLabel('dilationKernel'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="dilationKernelLabel">5</span><span>15</span></div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.detect.dilation_iter">膨胀次数</label>
+                                <input type="range" class="form-range" id="dilationIter" min="0" max="8" value="2" oninput="syncRangeLabel('dilationIter'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="dilationIterLabel">2</span><span>8</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="param-stack">
+                    <div class="oft-panel mb-0">
+                        <h6 data-i18n="oft.calib.stats.title">统计参数</h6>
+                        <div class="compact-grid">
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.stats.center_ratio_x">中心区宽度比例</label>
+                                <input type="number" class="form-control" id="centerRatioX" min="0.1" max="1.0" step="0.05" value="0.5" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.stats.center_ratio_y">中心区高度比例</label>
+                                <input type="number" class="form-control" id="centerRatioY" min="0.1" max="1.0" step="0.05" value="0.5" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.stats.wall_margin">壁区边界 (cm)</label>
+                                <input type="number" class="form-control" id="wallMarginCm" min="0" step="0.5" value="8.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.stats.movement_threshold">运动阈值 (cm/s)</label>
+                                <input type="number" class="form-control" id="movementThreshold" min="0" step="0.1" value="2.0" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-i18n="oft.calib.stats.bin_seconds">分箱时长 (s)</label>
+                                <input type="number" class="form-control" id="binSeconds" min="1" step="1" value="300">
+                            </div>
+                            <div class="d-flex align-items-end">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                    <label class="form-check-label" for="generateVideo" data-i18n="oft.calib.stats.generate_video">生成标注视频</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="status-strip mt-3">
+                            <div class="status-pill" id="previewStatus" data-i18n="oft.calib.preview.waiting">等待预览</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+const videoInfo = {{ video_info | tojson }};
+const isBatch = {{ is_batch | tojson }};
+{% if video_list %}
+const videoList = {{ video_list | tojson }};
+{% else %}
+const videoList = [];
+{% endif %}
+
+let baseFrame = null;
+let currentVideoIdx = 0;
+let rois = [];
+let currentROI = [];
+let isDrawingArena = false;
+let debounceTimers = {};
+
+function tr(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    if (typeof I18N !== 'undefined' && I18N[lang] && I18N[lang][key] !== undefined) {
+        return I18N[lang][key];
+    }
+    return fallback;
+}
+
+function frameLabelText(current, total) {
+    return `${tr('oft.common.frame', 'Frame')} ${current} / ${total}`;
+}
+
+function arenaDefaultName(index) {
+    return `${tr('oft.calib.roi.default_name', 'Arena')} ${index + 1}`;
+}
+
+function refreshLocalizedState() {
+    const totalFrames = Math.max(0, (videoInfo.total_frames || 1) - 1);
+    const arenaFrame = parseInt(document.getElementById('frameSliderArena').value || '0', 10);
+    const debugFrame = parseInt(document.getElementById('frameSliderDebug').value || '0', 10);
+    document.getElementById('frameLabelArena').textContent = frameLabelText(arenaFrame, totalFrames);
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(debugFrame, totalFrames);
+    updateArenaList();
+    drawArenaCanvas();
+    if (!rois.length) {
+        document.getElementById('previewStatus').textContent = tr('oft.calib.preview.waiting', 'Waiting for preview');
+    }
+}
+
+function debounce(key, fn, delay) {
+    clearTimeout(debounceTimers[key]);
+    debounceTimers[key] = setTimeout(fn, delay);
+}
+
+window.onload = function () {
+    const totalFrames = Math.max(0, (videoInfo.total_frames || 1) - 1);
+    document.getElementById('frameSliderArena').max = totalFrames;
+    document.getElementById('frameSliderDebug').max = totalFrames;
+    document.getElementById('frameLabelArena').textContent = frameLabelText(0, totalFrames);
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(0, totalFrames);
+    syncRangeLabel('grayThreshold');
+    syncRangeLabel('erosionKernel');
+    syncRangeLabel('erosionIter');
+    syncRangeLabel('dilationKernel');
+    syncRangeLabel('dilationIter');
+    syncRangeLabel('minArea');
+    loadFrame(0);
+    updateStepNav(1);
+};
+
+function loadFrame(frameIdx, callback) {
+    fetch(`/api/get_first_frame/${sessionId}?frame=${frameIdx}&video=${currentVideoIdx}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const img = new Image();
+            img.onload = function () {
+                baseFrame = img;
+                drawArenaCanvas();
+                if (callback) callback();
+            };
+            img.src = 'data:image/jpeg;base64,' + data.image;
+        })
+        .catch(err => console.error(err));
+}
+
+function drawArenaCanvas() {
+    const canvas = document.getElementById('arenaCanvas');
+    if (!canvas || !baseFrame) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = baseFrame.width;
+    canvas.height = baseFrame.height;
+    ctx.drawImage(baseFrame, 0, 0);
+
+    rois.forEach((roi, index) => {
+        const hue = (index * 53) % 360;
+        const points = roi.points;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
+        ctx.fillStyle = `hsla(${hue}, 75%, 55%, 0.16)`;
+        ctx.strokeStyle = `hsl(${hue}, 75%, 58%)`;
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+
+        points.forEach((p, pointIdx) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = pointIdx === 0 ? '#22c55e' : '#ffffff';
+            ctx.fill();
+        });
+
+        const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+        const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(centerX - 48, centerY - 18, 96, 26);
+        ctx.strokeStyle = `hsl(${hue}, 75%, 58%)`;
+        ctx.strokeRect(centerX - 48, centerY - 18, 96, 26);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '14px sans-serif';
+        ctx.fillText(roi.name || `Arena ${index + 1}`, centerX - 40, centerY);
+    });
+
+    if (currentROI.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(currentROI[0].x, currentROI[0].y);
+        currentROI.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        currentROI.forEach((p, index) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = index === 0 ? '#22c55e' : '#facc15';
+            ctx.fill();
+        });
+    }
+
+    document.getElementById('arenaCountText').textContent = String(rois.length);
+    document.getElementById('currentPointText').textContent = `${currentROI.length} / 4`;
+    document.getElementById('arenaSizeText').textContent = `${parseFloat(document.getElementById('arenaSideCm').value || '50')} cm`;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const canvas = document.getElementById('arenaCanvas');
+    canvas.addEventListener('click', function (e) {
+        if (!isDrawingArena) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = Math.round((e.clientX - rect.left) * scaleX);
+        const y = Math.round((e.clientY - rect.top) * scaleY);
+        if (currentROI.length < 4) {
+            currentROI.push({ x, y });
+            if (currentROI.length === 4) {
+                finishCurrentArena();
+            } else {
+                drawArenaCanvas();
+            }
+        }
+    });
+
+    canvas.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        undoCurrentPoint();
+        return false;
+    });
+
+    document.addEventListener('mousescope:langchange', function () {
+        refreshLocalizedState();
+        if (document.getElementById('step2').classList.contains('active') && rois.length) {
+            updateDebugPreview();
+        }
+    });
+});
+
+function startNewArena() {
+    currentROI = [];
+    isDrawingArena = true;
+    drawArenaCanvas();
+}
+
+function finishCurrentArena() {
+    if (currentROI.length !== 4) return;
+    rois.push({
+        points: JSON.parse(JSON.stringify(currentROI)),
+        name: arenaDefaultName(rois.length),
+        time_config: { mode: 'global', start: null, end: null }
+    });
+    currentROI = [];
+    isDrawingArena = false;
+    updateArenaList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+}
+
+function undoCurrentPoint() {
+    if (currentROI.length > 0) {
+        currentROI.pop();
+        drawArenaCanvas();
+    }
+}
+
+function clearCurrentArena() {
+    currentROI = [];
+    drawArenaCanvas();
+}
+
+function clearAllArenas() {
+    rois = [];
+    currentROI = [];
+    isDrawingArena = false;
+    updateArenaList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = true;
+}
+
+function deleteArena(index) {
+    rois.splice(index, 1);
+    updateArenaList();
+    drawArenaCanvas();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+}
+
+function updateArenaList() {
+    const list = document.getElementById('arenaList');
+    if (!rois.length) {
+        list.innerHTML = `<div class="mini-note">${tr('oft.calib.roi_list.empty', 'No arena added yet.')}</div>`;
+        return;
+    }
+    list.innerHTML = rois.map((roi, index) => {
+        const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
+        const preciseStyle = timeConfig.mode === 'precise' ? '' : 'display:none;';
+        return `
+            <div class="arena-card">
+                <div class="arena-card-head">
+                    <div>
+                        <div class="arena-card-title">ROI ${index + 1}</div>
+                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')}</small>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteArena(${index})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                <div class="compact-grid">
+                    <div>
+                        <label class="form-label">${tr('oft.calib.roi.name', 'Name')}</label>
+                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateArenaName(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${tr('oft.calib.roi.time_mode', 'Time Mode')}</label>
+                        <select class="form-select" onchange="updateArenaTimeMode(${index}, this.value)">
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('oft.calib.roi.mode.global', 'Follow Global')}</option>
+                            <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${tr('oft.calib.roi.mode.precise', 'Precise Time Window')}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="compact-grid mt-2" id="timeBox${index}" style="${preciseStyle}">
+                    <div>
+                        <label class="form-label">${tr('oft.calib.roi.start_time', 'Start Time (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.start == null ? '' : timeConfig.start}" onchange="updateArenaTimeValue(${index}, 'start', this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${tr('oft.calib.roi.end_time', 'End Time (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.end == null ? '' : timeConfig.end}" onchange="updateArenaTimeValue(${index}, 'end', this.value)">
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateArenaName(index, value) {
+    rois[index].name = value || arenaDefaultName(index);
+    drawArenaCanvas();
+}
+
+function updateArenaTimeMode(index, mode) {
+    if (!rois[index].time_config) {
+        rois[index].time_config = { mode: 'global', start: null, end: null };
+    }
+    rois[index].time_config.mode = mode;
+    if (mode === 'global') {
+        rois[index].time_config.start = null;
+        rois[index].time_config.end = null;
+    }
+    updateArenaList();
+}
+
+function updateArenaTimeValue(index, key, value) {
+    if (!rois[index].time_config) {
+        rois[index].time_config = { mode: 'precise', start: null, end: null };
+    }
+    rois[index].time_config[key] = value === '' ? null : parseFloat(value);
+}
+
+function onArenaFrameChange(value) {
+    document.getElementById('frameLabelArena').textContent = frameLabelText(value, videoInfo.total_frames - 1);
+    debounce('arenaFrame', () => loadFrame(parseInt(value, 10)), 180);
+}
+
+function onDebugFrameChange(value) {
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(value, videoInfo.total_frames - 1);
+    debounce('debugFrame', () => updateDebugPreview(parseInt(value, 10)), 180);
+}
+
+function onVideoChange(value) {
+    currentVideoIdx = parseInt(value, 10) || 0;
+    loadFrame(0, () => {
+        if (document.getElementById('step2').classList.contains('active')) {
+            updateDebugPreview(0);
+        }
+    });
+}
+
+function goToStep(step) {
+    if (step === 2 && rois.length === 0) {
+        alert(tr('oft.calib.alert.need_arena', 'Please complete at least one arena calibration.'));
+        return;
+    }
+    document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
+    document.getElementById(`step${step}`).classList.add('active');
+    updateStepNav(step);
+    if (step === 2) {
+        updateDebugPreview();
+    }
+}
+
+function updateStepNav(activeStep) {
+    [1, 2].forEach(step => {
+        const el = document.getElementById(`stepNav${step}`);
+        el.classList.remove('active', 'done');
+        if (step < activeStep) el.classList.add('done');
+        if (step === activeStep) el.classList.add('active');
+    });
+}
+
+function syncRangeLabel(id) {
+    const input = document.getElementById(id);
+    const label = document.getElementById(id + 'Label');
+    if (input && label) label.textContent = input.value;
+}
+
+function buildRequestBody(frameIdx) {
+    return {
+        frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
+        video: currentVideoIdx,
+        bg_method: 'threshold',
+        bg_type: document.getElementById('bgType').value,
+        gray_threshold: parseInt(document.getElementById('grayThreshold').value, 10),
+        erosion_kernel: parseInt(document.getElementById('erosionKernel').value, 10),
+        erosion_iter: parseInt(document.getElementById('erosionIter').value, 10),
+        dilation_kernel: parseInt(document.getElementById('dilationKernel').value, 10),
+        dilation_iter: parseInt(document.getElementById('dilationIter').value, 10),
+        min_area: parseInt(document.getElementById('minArea').value, 10),
+        arena_side_cm: parseFloat(document.getElementById('arenaSideCm').value),
+        rois: rois,
+        center_ratio_x: parseFloat(document.getElementById('centerRatioX').value),
+        center_ratio_y: parseFloat(document.getElementById('centerRatioY').value),
+        wall_margin_cm: parseFloat(document.getElementById('wallMarginCm').value),
+        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold').value),
+        bin_seconds: parseFloat(document.getElementById('binSeconds').value || '300'),
+        generate_video: document.getElementById('generateVideo').checked
+    };
+}
+
+function updateDebugPreview(frameIdx) {
+    if (!rois.length) return;
+    fetch(`/api/debug_preview/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRequestBody(frameIdx))
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('previewStatus').textContent = data.error;
+                return;
+            }
+            drawImageOnCanvas('previewOriginal', data.original);
+            drawImageOnCanvas('previewResult', data.result);
+            document.getElementById('previewStatus').textContent = tr('oft.calib.preview.detected', 'Detected {0} / {1} arena targets')
+                .replace('{0}', data.detections || 0)
+                .replace('{1}', data.arena_count || rois.length);
+        })
+        .catch(err => {
+            console.error(err);
+            document.getElementById('previewStatus').textContent = tr('oft.calib.preview.failed', 'Preview failed');
+        });
+}
+
+function startAnalysis() {
+    if (!rois.length) {
+        alert(tr('oft.calib.alert.finish_arena', 'Please finish arena calibration first.'));
+        return;
+    }
+    document.getElementById('loading').style.display = 'flex';
+    fetch(`/api/start_analysis/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRequestBody())
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = `/monitor/${sessionId}`;
+                return;
+            }
+            document.getElementById('loading').style.display = 'none';
+            alert(data.error || tr('oft.calib.alert.start_failed', 'Failed to start analysis'));
+        })
+        .catch(err => {
+            document.getElementById('loading').style.display = 'none';
+            alert(err);
+        });
+}
+
+function drawImageOnCanvas(canvasId, base64Data) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = function () {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+    };
+    img.src = 'data:image/jpeg;base64,' + base64Data;
+}
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+</script>
+{% endblock %}

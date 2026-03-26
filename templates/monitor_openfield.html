@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% block title %}旷场实验监控 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.oft-monitor { max-width: 1480px; margin: 0 auto; }
+.monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.monitor-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: 1rem; align-items: start; }
+.monitor-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.2rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.9rem; }
+.metric-box { background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 16px; padding: 1rem; }
+.metric-label { color: var(--text-muted); font-size: 0.85rem; }
+.metric-value { color: var(--text-primary); font-size: 1.4rem; font-weight: 700; margin-top: 0.2rem; }
+.download-grid { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.roi-table-wrap { overflow-x: auto; }
+.roi-table { width: 100%; border-collapse: collapse; }
+.roi-table th, .roi-table td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--border-card); white-space: nowrap; }
+.roi-table th { color: var(--text-muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.roi-table td { color: var(--text-primary); }
+.zone-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 72px; padding: 0.28rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
+.zone-pill.center { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+.zone-pill.wall { background: rgba(249, 115, 22, 0.14); color: #c2410c; }
+.zone-pill.outer { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+.zone-pill.unknown { background: rgba(148, 163, 184, 0.15); color: #475569; }
+.log-box { background: #0f172a; color: #e2e8f0; border-radius: 16px; padding: 1rem; font-family: Consolas, Monaco, monospace; font-size: 0.85rem; min-height: 220px; max-height: 420px; overflow-y: auto; }
+@media (max-width: 1180px) {
+    .monitor-grid { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+    .metric-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="oft-monitor">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-i18n="oft.monitor.header.title">旷场实验实时监控</h1>
+            <div class="text-secondary" data-i18n="oft.monitor.header.subtitle">同一视频内多 arena 并行分析，逐 ROI 展示轨迹统计</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()">
+                <i class="fas fa-stop me-2"></i><span data-i18n="oft.monitor.btn.stop">停止分析</span>
+            </button>
+            <button class="btn btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt me-2"></i><span data-i18n="oft.monitor.btn.refresh">刷新</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-i18n="oft.monitor.processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-i18n="oft.monitor.processing.waiting">等待引擎响应...</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-label" data-i18n="oft.monitor.processing.status_label">状态</div>
+                        <div class="metric-value" id="statusText" data-i18n="oft.monitor.status.waiting">等待中</div>
+                    </div>
+                </div>
+
+                <div class="progress mb-2" style="height: 14px;">
+                    <div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div>
+                </div>
+                <div class="text-secondary small"><span data-i18n="oft.monitor.processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
+
+            <div class="monitor-card">
+                <h5 class="mb-3" data-i18n="oft.monitor.overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="oft.monitor.overview.processed_frames">已处理帧</div>
+                        <div class="metric-value" id="processedFrames">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="oft.monitor.overview.elapsed">运行时间</div>
+                        <div class="metric-value" id="elapsedTime">0s</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="oft.monitor.overview.speed">处理速度</div>
+                        <div class="metric-value" id="processingSpeed">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-i18n="oft.monitor.overview.arena_count">Arena 数</div>
+                        <div class="metric-value" id="roiCount">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-i18n="oft.monitor.table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-i18n="oft.monitor.table.subtitle">每个 ROI 的距离、中心区比例和当前区域</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-i18n="oft.monitor.table.col.zone">当前区域</th>
+                                <th data-i18n="oft.monitor.table.col.speed">速度</th>
+                                <th data-i18n="oft.monitor.table.col.distance">距离</th>
+                                <th data-i18n="oft.monitor.table.col.center_percent">中心区%</th>
+                                <th data-i18n="oft.monitor.table.col.center_entries">中心进入</th>
+                                <th data-i18n="oft.monitor.table.col.wall_time">壁区时间</th>
+                                <th data-i18n="oft.monitor.table.col.stats">统计</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody">
+                            <tr><td colspan="8" class="text-secondary" data-i18n="oft.monitor.table.waiting">等待结果...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-i18n="oft.monitor.download.title">结果下载</h5>
+                <div class="download-grid">
+                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-i18n="oft.monitor.download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-i18n="oft.monitor.download.video">标注视频</a>
+                    <a href="#" id="dlTrack" class="btn btn-outline-primary" data-i18n="oft.monitor.download.track">轨迹 CSV</a>
+                    <a href="#" id="dlSummary" class="btn btn-outline-primary" data-i18n="oft.monitor.download.summary">汇总 CSV</a>
+                    <a href="#" id="dlBins" class="btn btn-outline-primary" data-i18n="oft.monitor.download.bins">分箱 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-i18n="oft.monitor.download.report">TXT 报告</a>
+                    <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-i18n="oft.monitor.download.heatmap">热图</a>
+                    <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-i18n="oft.monitor.download.trackmap">轨迹图</a>
+                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-i18n="oft.monitor.download.open_folder">打开结果目录</button>
+                </div>
+                <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
+                    <span data-i18n="oft.monitor.download.save_path">保存位置:</span> <code id="resultPathText"></code>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <h5 class="mb-3" data-i18n="oft.monitor.log.title">日志</h5>
+                <div id="logBox" class="log-box">$ <span data-i18n="oft.monitor.log.waiting">等待日志输出...</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+let updateInterval = null;
+
+function tr(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    if (typeof I18N !== 'undefined' && I18N[lang] && I18N[lang][key] !== undefined) {
+        return I18N[lang][key];
+    }
+    return fallback;
+}
+
+function zoneClass(zone) {
+    const value = String(zone || 'Unknown').toLowerCase();
+    if (value.includes('center')) return 'center';
+    if (value.includes('wall')) return 'wall';
+    if (value.includes('outer')) return 'outer';
+    return 'unknown';
+}
+
+function getStatusText(status) {
+    return {
+        waiting: tr('oft.monitor.status.waiting', 'Waiting'),
+        analyzing: tr('oft.monitor.status.analyzing', 'Analyzing'),
+        completed: tr('oft.monitor.status.completed', 'Completed'),
+        error: tr('oft.monitor.status.error', 'Error'),
+        stopped: tr('oft.monitor.status.stopped', 'Stopped')
+    }[status] || status;
+}
+
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`)
+        .then(r => {
+            if (!r.ok) throw new Error('session');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('statusText').textContent = getStatusText(data.status);
+            document.getElementById('messageText').textContent = data.message || '-';
+            document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+            document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+            document.getElementById('progressText').textContent = `${data.progress || 0}%`;
+
+            const stats = data.stats || {};
+            document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+            document.getElementById('elapsedTime').textContent = `${(stats.elapsed_time || 0).toFixed(1)}s`;
+            document.getElementById('processingSpeed').textContent = (stats.fps || 0).toFixed(1);
+
+            const rows = data.realtime_data || [];
+            document.getElementById('roiCount').textContent = rows.length || ((data.experiment_stats && data.experiment_stats.roi_count) || 0);
+            renderTable(rows);
+            renderLogs(data.logs || []);
+
+            if (data.status === 'completed') {
+                showDownloads();
+                clearInterval(updateInterval);
+                updateInterval = null;
+                fetchResultDir();
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+
+            if (data.status === 'error' || data.status === 'stopped') {
+                clearInterval(updateInterval);
+                updateInterval = null;
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+        })
+        .catch(() => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            document.getElementById('statusText').textContent = tr('oft.monitor.status.invalid', 'Session Invalid');
+            document.getElementById('messageText').textContent = tr('oft.monitor.status.expired', 'Analysis session not found or expired');
+            document.getElementById('stopBtn').style.display = 'none';
+        });
+}
+
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="8" class="text-secondary">${tr('oft.monitor.table.waiting', 'Waiting for results...')}</td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(row => {
+        const zone = row.zone || 'Unknown';
+        const paused = row.in_stats_window === false
+            ? tr('oft.monitor.table.paused', 'Paused')
+            : tr('oft.monitor.table.active', 'In Window');
+        return `
+            <tr>
+                <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+                <td><span class="zone-pill ${zoneClass(zone)}">${escapeHtml(zone)}</span></td>
+                <td>${Number(row.speed_cm_s || 0).toFixed(2)} cm/s</td>
+                <td>${Number(row.distance_cm || 0).toFixed(1)} cm</td>
+                <td>${Number(row.center_percent || 0).toFixed(1)}%</td>
+                <td>${row.center_entries || 0}</td>
+                <td>${Number(row.wall_time_s || 0).toFixed(1)} s</td>
+                <td>${paused}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    if (!logs.length) {
+        box.textContent = `$ ${tr('oft.monitor.log.waiting', 'Waiting for log output...')}`;
+        return;
+    }
+    box.innerHTML = logs.map(log => {
+        let cls = '#94a3b8';
+        if (/error|failed|失败/i.test(log)) cls = '#f87171';
+        else if (/saved|completed|完成/i.test(log)) cls = '#60a5fa';
+        else cls = '#e2e8f0';
+        return `<div style="color:${cls}; margin-bottom:0.35rem;">$ ${escapeHtml(log)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+}
+
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
+    document.getElementById('dlTrack').href = `/api/download/${sessionId}/track_csv`;
+    document.getElementById('dlSummary').href = `/api/download/${sessionId}/summary_csv`;
+    document.getElementById('dlBins').href = `/api/download/${sessionId}/bins_csv`;
+    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
+    document.getElementById('dlHeatmap').href = `/api/download/${sessionId}/heatmap`;
+    document.getElementById('dlTrackmap').href = `/api/download/${sessionId}/trackmap`;
+}
+
+function stopAnalysis() {
+    fetch(`/api/stop/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert(data.message || tr('oft.monitor.alert.stop_sent', 'Stop command sent')));
+}
+
+function openResultFolder() {
+    fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) alert(data.error || tr('oft.monitor.alert.open_folder_failed', 'Failed to open result folder'));
+        });
+}
+
+function fetchResultDir() {
+    fetch(`/api/result_dir/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('resultPathInfo').style.display = 'block';
+                document.getElementById('resultPathText').textContent = data.path;
+            }
+        });
+}
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+document.addEventListener('mousescope:langchange', function () {
+    updateStatus();
+});
+
+updateStatus();
+updateInterval = setInterval(updateStatus, 2000);
+</script>
+{% endblock %}

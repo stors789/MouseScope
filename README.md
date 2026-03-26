@@ -1,270 +1,268 @@
-# 🐭 MouseScope
+# MouseScope
 
 <p align="center">
-  <img src="static/img/logo.png" alt="MouseScope Logo" width="160" onerror="this.style.display='none'"/>
+  <img src="docs/assets/cover.png" alt="MouseScope cover" width="100%"/>
 </p>
 
 <p align="center">
-  <b>Automated Mouse Tail Suspension Test (TST) Analysis Software</b><br>
-  小鼠悬尾实验自动化分析软件
+  <img src="static/img/logo.png" alt="MouseScope Logo" width="120"/>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"/>
-  <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python"/>
+  <strong>Desktop software for automated mouse behavior analysis</strong><br/>
+  Supports <strong>Tail Suspension Test (TST)</strong> and <strong>Open Field Test (OFT)</strong>
+</p>
+
+<p align="center">
+  面向小鼠行为学视频分析的桌面软件，当前支持 <strong>悬尾实验（TST）</strong> 与 <strong>旷场实验（OFT）</strong>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-Windows-lightgrey.svg" alt="Platform"/>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python"/>
+  <img src="https://img.shields.io/badge/interface-Flask%20Desktop-2563eb.svg" alt="Interface"/>
+  <img src="https://img.shields.io/badge/experiments-TST%20%7C%20OFT-0f766e.svg" alt="Experiments"/>
   <img src="https://img.shields.io/github/stars/fujiacheng3/MouseScope?style=social" alt="GitHub stars"/>
-  <img src="https://img.shields.io/badge/version-1.0-orange" alt="Version"/>
 </p>
 
 ---
 
-## 📖 Overview | 项目简介
+## Overview
 
-**MouseScope** is a fully automated analysis tool for the **Mouse Tail Suspension Test (TST)**, a widely used behavioral assay in neuroscience research to evaluate depression-like phenotypes.
+**MouseScope** is a Windows-first desktop application for automated mouse behavior analysis from video.
+It provides a browser-based local UI, classical computer-vision pipelines, batch processing, and exportable reports for common behavioral assays.
 
-**MouseScope** 是一款专为小鼠悬尾实验（TST）设计的全自动化分析工具，用于神经科学研究中抑郁样行为表型的评估。
+**MouseScope** 是一个面向 Windows 的小鼠行为学视频分析桌面软件，采用本地 Web 界面，结合传统计算机视觉流程，支持批处理、结果导出与实验工作流管理。
 
-**Key Features | 核心功能：**
+### Current experiment modules
 
-- 🎯 **Automated Immobility Detection** — Computer vision-based tracking, no manual scoring
-  全自动不动性检测，无需人工评分
-- 📹 **Video Upload & Processing** — Supports common video formats (MP4, AVI, MOV)
-  支持主流视频格式上传与批量处理
-- 🔲 **Interactive ROI Calibration** — Flexible Region of Interest selection
-  可交互的感兴趣区域（ROI）标定
-- 📊 **Multi-format Output** — CSV data tables + detailed analysis reports
-  多格式输出：CSV 数据表 + 详细分析报告
-- 🖥️ **Desktop GUI** — Browser-based interface, no coding required
-  基于浏览器的桌面 GUI，零代码门槛
-- ⚡ **High Performance** — Multi-core CPU optimization, optional OpenCV CUDA acceleration
-  多核 CPU 优化，可选 OpenCV CUDA 加速
+| Module | What it does | Key outputs |
+|---|---|---|
+| **Tail Suspension Test (TST)** | Multi-ROI hanging-mouse analysis with immobility / struggle scoring | Annotated video, frame log CSV, immobility summary CSV, TXT report |
+| **Open Field Test (OFT)** | Multi-arena tracking with corner calibration, perspective normalization, center / wall statistics | Annotated video, track CSV, summary CSV, bins CSV, TXT report, heatmaps, track maps |
 
 ---
 
-## 🛠️ Technical Stack | 技术栈
+## Highlights
 
-| Component | Technology |
-|-----------|-----------|
-| Backend | Python 3.9+, Flask |
-| Computer Vision | OpenCV, Optical Flow, Background Subtraction |
-| Optional AI | YOLOv11-seg (Ultralytics) |
-| Data Processing | NumPy, Pandas |
-| Frontend | HTML5, CSS3, Vanilla JS |
-| Packaging | PyInstaller (Windows EXE) |
-
-**Algorithm Pipeline | 算法流程：**
-
-```
-Video Input → ROI Calibration → Background Subtraction
-    → Morphological Processing → Mouse Detection
-    → Optical Flow Analysis → Immobility Classification
-    → Report Generation (CSV + TXT)
-```
+- **One desktop app, multiple assays**: TST and OFT now live in the same workflow.
+- **No coding required**: upload files or paste local Windows paths directly in the UI.
+- **Multi-ROI / multi-arena ready**: suitable for stitched recordings containing multiple cages or arenas.
+- **Per-ROI naming and time windows**: each ROI can be named and assigned its own statistics window.
+- **Perspective-normalized OFT maps**: OFT track maps and heatmaps are rectified to standard square coordinates.
+- **Batch-friendly**: supports multi-video analysis with shared calibration where appropriate.
+- **Bilingual UI**: Chinese / English interface switching.
+- **Windows packaging**: can be distributed as a standalone EXE via PyInstaller.
 
 ---
 
-## 📸 Demo & Screenshots | 演示与界面展示
+## Demo
 
-### 🎬 Complete Tutorial | 完整使用教程
+### Open Field workflow preview
 
 <p align="center">
-  <img src="static/img/demo_tutorial.gif" alt="Usage Tutorial" width="700"/>
-  <br>
-  <em>📹 Complete workflow demonstration: Upload → Calibrate → Analyze → Export</em><br>
-  <em>📹 完整工作流演示：上传 → 标定 → 分析 → 导出</em>
+  <img src="docs/assets/oft_demo.gif" alt="Open Field demo GIF" width="900"/>
+  <br/>
+  <em>Short GIF excerpt from an analyzed OFT video</em>
 </p>
 
----
+### Open Field result maps
 
-### 🔬 Analysis Results | 分析结果展示
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/oft_heatmaps.png" alt="OFT heatmaps" width="430"/>
+      <br/>
+      <sub>Multi-arena OFT heatmaps</sub>
+    </td>
+    <td align="center">
+      <img src="docs/assets/oft_trackmaps.png" alt="OFT track maps" width="430"/>
+      <br/>
+      <sub>Perspective-normalized OFT track maps</sub>
+    </td>
+  </tr>
+</table>
+
+### TST desktop UI
 
 <p align="center">
-  <img src="static/img/demo_result.gif" alt="Analysis Results" width="700"/>
-  <br>
-  <em>🎯 Automated tracking with immobility detection visualization</em><br>
-  <em>🎯 自动追踪与不动性检测可视化</em>
+  <img src="static/img/ui_home.png" alt="MouseScope desktop UI" width="900"/>
 </p>
 
 ---
 
-## 🚀 Quick Start | 快速上手
+## TST validation snapshots
 
-### Option 1: Pre-built EXE (Windows) | 方式一：直接使用 EXE
+<table>
+  <tr>
+    <td align="center">
+      <img src="static/img/validation_correlation_33_mice.png" alt="TST validation correlation" width="420"/>
+      <br/>
+      <sub>Correlation between software and manual scoring</sub>
+    </td>
+    <td align="center">
+      <img src="static/img/validation_ethogram_33_mice.png" alt="TST validation ethogram" width="470"/>
+      <br/>
+      <sub>Ethogram-style comparison across 33 mice</sub>
+    </td>
+  </tr>
+</table>
 
-1. Download `MouseScope.zip` from [Releases](../../releases)
-2. Extract and double-click `MouseScope.exe`
-3. Browser opens automatically at `http://localhost:8080`
+---
 
-### Option 2: Run from Source | 方式二：从源码运行
+## Quick Start
+
+### Option 1: Run the packaged EXE
+
+1. Download the latest release from [Releases](https://github.com/fujiacheng3/MouseScope/releases).
+2. Extract the archive.
+3. Run `MouseScope.exe`.
+4. The app opens in your browser at `http://localhost:8080`.
+
+### Option 2: Run from source
 
 ```bash
-# Clone the repository
 git clone https://github.com/fujiacheng3/MouseScope.git
 cd MouseScope
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run
 python app.py
 ```
 
-Then open `http://localhost:8080` in your browser.
+Then open `http://localhost:8080`.
 
 ---
 
-## Desktop UI | 界面预览
+## Typical workflow
 
-<p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope Desktop UI" width="900"/>
-  <br>
-  <em>Desktop home interface for upload, ROI calibration, analysis, and result export</em><br>
-  <em>MouseScope 桌面端主界面，支持视频上传、ROI 标定、参数调试与结果导出</em>
-</p>
+### TST
 
----
+1. Upload one or more TST videos.
+2. Perform body-length calibration if needed.
+3. Draw one or more ROIs.
+4. Name each ROI and optionally set ROI-level time windows.
+5. Tune detection parameters and start analysis.
+6. Export annotated video, frame logs, immobility summary, and TXT report.
 
-## Validation Results (33 Mice) | 33 只小鼠验证结果
+### OFT
 
-<p align="center">
-  <img src="static/img/validation_correlation_33_mice.png" alt="Validation correlation across 33 mice" width="520"/>
-  <br>
-  <em>Pearson correlation between software scoring and human scoring across 33 mice</em><br>
-  <em>33 只小鼠数据中，软件评分与人工评分的相关性验证结果</em>
-</p>
-
-<p align="center">
-  <img src="static/img/validation_ethogram_33_mice.png" alt="Behavior raster for all 33 mice" width="600"/>
-  <br>
-  <em>Behavior raster (ethogram) comparing human and software immobility calls for all 33 mice</em><br>
-  <em>33 只小鼠的行为时序图，用于对比人工与软件的不动判定</em>
-</p>
-
+1. Upload one or more OFT videos.
+2. Switch the experiment type to `Open Field Test`.
+3. For each arena, click the four corners and enter the arena side length.
+4. Name each ROI / arena and optionally assign precise statistics windows.
+5. Tune shared tracking parameters with multi-arena preview.
+6. Export trajectory CSV, summary CSV, bin statistics, heatmaps, track maps, and report files.
 
 ---
 
-## 📋 Usage Workflow | 使用流程
+## Output files
 
+### TST outputs
+
+| File | Description |
+|---|---|
+| `*_analyzed.mp4` | Annotated analysis video |
+| `*_logs.csv` | Frame-by-frame logs |
+| `*_immobility.csv` | ROI summary statistics |
+| `*_report.txt` | Text report |
+
+### OFT outputs
+
+| File | Description |
+|---|---|
+| `*_oft_analyzed.mp4` | Annotated OFT video |
+| `*_oft_tracks.csv` | Frame-by-frame trajectory records |
+| `*_oft_summary.csv` | Per-ROI summary metrics |
+| `*_oft_bins.csv` | Time-binned statistics |
+| `*_oft_report.txt` | Text report |
+| `*_oft_heatmaps.png` | Heatmap output |
+| `*_oft_trackmaps.png` | Perspective-normalized track maps |
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python, Flask |
+| CV pipeline | OpenCV, background subtraction, contour detection, optical-flow-assisted TST analysis |
+| Data | NumPy, Pandas |
+| Frontend | HTML, CSS, Vanilla JavaScript |
+| Packaging | PyInstaller |
+
+---
+
+## Repository structure
+
+```text
+MouseScope/
+|- app.py                      # Flask app and workflow orchestration
+|- core/
+|  |- vision_tracker.py        # TST CV pipeline
+|  |- open_field.py            # OFT tracking / statistics / map rendering
+|  \- performance_utils.py
+|- templates/                  # UI pages
+|- static/                     # Static assets
+|- data/results/               # Example local outputs
+\- MouseScope.spec             # PyInstaller build spec
 ```
-1. Upload Video     →  上传实验视频（MP4 / AVI / MOV）
-2. Calibrate ROI    →  框选单只小鼠区域
-3. Start Analysis   →  自动运行 CV 分析
-4. Download Report  →  下载 CSV + 分析报告
-```
-
-### Output Files | 输出文件
-
-| File | Content |
-|------|---------|
-| `*_logs.csv` | Frame-by-frame tracking data 逐帧追踪数据 |
-| `*_immobility.csv` | Immobility statistics 不动性统计 |
-| `*_report.txt` | Full analysis report 完整分析报告 |
 
 ---
 
-## 📐 System Requirements | 系统要求
+## System requirements
 
-- **OS**: Windows 10 / 11 (x64)
-- **RAM**: ≥ 8 GB recommended
-- **CPU**: Multi-core (4+ cores recommended for faster processing)
-- **Storage**: ≥ 500 MB free space
-- **Python**: 3.9 – 3.11 (for source mode)
-
----
-
-## ⚠️ Disclaimer | 免责声明
-
-**Important Notice | 重要提示：**
-
-This software is provided as a **research tool** to assist in behavioral analysis. While we strive for accuracy, **results should be manually verified** before use in publications or critical decisions.
-
-本软件作为**研究辅助工具**提供。虽然我们力求准确，但**结果应经人工核验**后方可用于论文发表或重要决策。
-
-**Limitations | 使用限制：**
-- ⚠️ **Accuracy not guaranteed** — Algorithm performance may vary with video quality, lighting conditions, and experimental setup
-  算法准确率不保证 — 性能受视频质量、光照条件和实验设置影响
-- ⚠️ **Manual validation required** — Always cross-check automated results with manual observation
-  需人工验证 — 务必将自动化结果与人工观察交叉核对
-- ⚠️ **For research use only** — Not intended for clinical diagnosis or regulatory submissions
-  仅供研究使用 — 不适用于临床诊断或监管申报
-
-**No Warranty | 无担保条款：**
-
-THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The authors assume no liability for any damages resulting from the use of this software.
-
-本软件按"现状"提供，不提供任何形式的担保。作者不对使用本软件造成的任何损失承担责任。
+- Windows 10 / 11 x64
+- Python 3.9 to 3.11 for source mode
+- 8 GB RAM recommended
+- Multi-core CPU recommended for faster batch analysis
 
 ---
 
-## 📚 Citation | 引用说明
+## Disclaimer
 
-If you use MouseScope in your research, **please cite**:
+This software is intended as a **research tool**.
+Behavioral analysis quality can be affected by video quality, lighting, camera angle, and experimental setup.
+Please manually review results before using them in publications or critical decisions.
 
-如果您在研究中使用了本软件，**请务必引用**：
+本软件仅作为**科研辅助工具**使用。
+分析结果会受到视频质量、光照、机位和实验条件影响，正式使用前请务必进行人工复核。
 
-> 📌 **Note**: When reporting results in publications, please mention that automated data were manually validated.
->
-> 📌 **注意**：在论文中报告结果时，请说明自动化数据已经过人工验证。
+---
+
+## Citation
+
+If MouseScope helps your research, please cite:
 
 ```bibtex
 @software{fu2026mousescope,
-  author  = {Fu, Jiacheng (付家丞)},
-  title   = {MouseScope: Automated Mouse Tail Suspension Test Analysis Software},
+  author  = {Fu, Jiacheng},
+  title   = {MouseScope: Automated Mouse Behavior Analysis Software for Tail Suspension Test and Open Field Test},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
   version = {1.0}
 }
 ```
 
-**Plain text format | 纯文本格式：**
+Plain text:
 
-> Fu, J. (2026). *MouseScope: Automated mouse tail suspension test analysis software* (Version 1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
-
----
-
-## ⚖️ License | 许可证
-
-This software is **free for academic and non-commercial use only**.
-
-本软件**仅供学术研究和非商业用途免费使用**。
-
-| Use Case | Allowed |
-|----------|---------|
-| Academic research 学术研究 | ✅ Free |
-| Educational use 教学使用 | ✅ Free |
-| Publication (with citation) 发表论文（需引用） | ✅ Free |
-| Commercial use (Proprietary) 商业使用（闭源） | ⚠️ License required |
-| Enterprise internal use 企业内部使用 | ⚠️ License required |
-| CRO / pharma companies CRO/制药公司 | ⚠️ License required |
-
-For commercial licensing, please contact the author.
-如需商业授权，请联系作者。
-
-See [LICENSE](LICENSE) for full terms.
+> Fu, J. (2026). *MouseScope: Automated mouse behavior analysis software for tail suspension test and open field test* (Version 1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ---
 
-## 📬 Contact | 联系方式
+## License
 
-**Author | 作者**: 付家丞 (Jiacheng Fu)
-
-**Email**: 2583348593@qq.com
-
-**For commercial licensing | 商业合作**: Please email with subject line `[MouseScope Commercial License]`
+Academic and non-commercial use only.
+See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Acknowledgements | 致谢
+## Contact
 
-Built with:
-- [OpenCV](https://opencv.org/) — Computer vision library
-- [Flask](https://flask.palletsprojects.com/) — Web framework
-- [Ultralytics YOLOv11](https://github.com/ultralytics/ultralytics) — Optional AI backbone
+- **Author**: Jiacheng Fu
+- **Email**: 2583348593@qq.com
+- **GitHub**: https://github.com/fujiacheng3/MouseScope
 
 ---
 
 <p align="center">
-  Made with ❤️ for the neuroscience research community<br>
-  为神经科学研究社区用心打造
+  Built for practical behavioral video analysis in real lab workflows.
 </p>
