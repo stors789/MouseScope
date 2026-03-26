@@ -58,19 +58,31 @@
 
 ## 展示与效果 | Demo
 
+### 软件主界面
+
+<p align="center">
+  <img src="static/img/ui_home.png" alt="MouseScope desktop UI" width="900"/>
+</p>
+
 ### 悬尾实验（TST）演示
+
+<p align="center">
+  <img src="static/img/demo_result.gif" alt="TST result visualization" width="900"/>
+  <br/>
+  <sub>自动识别不动状态并输出可视化结果</sub>
+</p>
 
 <table>
   <tr>
     <td align="center">
-      <img src="static/img/demo_tutorial.gif" alt="TST workflow tutorial" width="430"/>
+      <img src="static/img/validation_correlation_33_mice.png" alt="TST validation correlation" width="420"/>
       <br/>
-      <sub>上传、标定、绘制 ROI、分析与导出结果</sub>
+      <sub>软件分析与人工评分的一致性</sub>
     </td>
     <td align="center">
-      <img src="static/img/demo_result.gif" alt="TST result visualization" width="430"/>
+      <img src="static/img/validation_ethogram_33_mice.png" alt="TST validation ethogram" width="470"/>
       <br/>
-      <sub>自动识别不动状态并输出可视化结果</sub>
+      <sub>33 只小鼠逐段行为对照示意</sub>
     </td>
   </tr>
 </table>
@@ -94,29 +106,6 @@
       <img src="docs/assets/oft_trackmaps.png" alt="OFT track maps" width="430"/>
       <br/>
       <sub>透视校正后的轨迹图（track maps）</sub>
-    </td>
-  </tr>
-</table>
-
-### 软件主界面
-
-<p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope desktop UI" width="900"/>
-</p>
-
-### TST 验证示意
-
-<table>
-  <tr>
-    <td align="center">
-      <img src="static/img/validation_correlation_33_mice.png" alt="TST validation correlation" width="420"/>
-      <br/>
-      <sub>软件分析与人工评分的一致性</sub>
-    </td>
-    <td align="center">
-      <img src="static/img/validation_ethogram_33_mice.png" alt="TST validation ethogram" width="470"/>
-      <br/>
-      <sub>33 只小鼠逐段行为对照示意</sub>
     </td>
   </tr>
 </table>
