@@ -62,7 +62,7 @@
 ### 1. 软件主界面
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope desktop UI" width="900"/>
+  <img src="docs/assets/cover.png" alt="MouseScope main interface" width="900"/>
   <br/>
   <sub>统一入口支持 TST 与 OFT，适合实验室日常分析流程</sub>
 </p>
