@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>面向小鼠行为学视频分析的桌面软件平台</strong><br/>
-  当前已集成 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>，更多实验模块将持续加入
+  当前已支持 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>，更多实验模块持续开发中
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Language-中文%20%7C%20English-f59e0b" alt="Language"/>
 </p>
 
-> 鼠行为视频分析不应该被繁琐的脚本和手工统计拖慢。MouseScope 希望把常见实验逐步汇聚到同一套真正能落地的软件工作流中。
+> 小鼠行为视频分析不应该被繁琐的脚本和手工统计拖慢。MouseScope 希望将常见行为学实验逐步整合到同一套真正能落地的软件工作流中。
 
 ---
 
