@@ -2523,6 +2523,9 @@ class NovelObjectMultiArenaAnalysisSession:
                     center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
                     interaction_radius_cm=float(self.config.get('interaction_radius_cm', 4.0)),
                     exploration_max_speed_cm_s=float(self.config.get('exploration_max_speed_cm_s', 12.0)),
+                    use_head_direction=bool(self.config.get('use_head_direction', True)),
+                    head_angle_threshold_deg=float(self.config.get('head_angle_threshold_deg', 50.0)),
+                    head_confidence_threshold=float(self.config.get('head_confidence_threshold', 0.35)),
                     movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
                     min_valid_exploration_s=float(self.config.get('min_valid_exploration_s', 20.0)),
                 )
@@ -2760,7 +2763,7 @@ class NovelObjectMultiArenaAnalysisSession:
                     f.write(f"Video: {summaries[0].get('video_name', '')}\n")
                     f.write(f"Phase: {summaries[0].get('phase', 'recognition')}\n")
                 f.write(f"ROI count: {len(summaries)}\n")
-                f.write("Rule: exploration is counted with a proximity-based contour heuristic.\n\n")
+                f.write("Rule: exploration uses contour proximity with head-direction gating when the nose estimate is confident; low-confidence frames fall back to proximity.\n\n")
 
                 for summary in summaries:
                     f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
@@ -2780,10 +2783,15 @@ class NovelObjectMultiArenaAnalysisSession:
                         ('Object 1 exploration', 'object_1_exploration_s', 's'),
                         ('Object 2 exploration', 'object_2_exploration_s', 's'),
                         ('Total exploration', 'total_object_exploration_s', 's'),
+                        ('Head-supported exploration', 'head_supported_exploration_s', 's'),
+                        ('Fallback exploration', 'fallback_exploration_s', 's'),
                         ('Novel exploration', 'novel_exploration_s', 's'),
                         ('Familiar exploration', 'familiar_exploration_s', 's'),
                         ('Discrimination index', 'discrimination_index', ''),
                         ('Preference index', 'preference_index_percent', '%'),
+                        ('Head estimated rate', 'head_estimated_rate_percent', '%'),
+                        ('Head confident rate', 'head_confident_rate_percent', '%'),
+                        ('Head angle threshold', 'head_angle_threshold_deg', 'deg'),
                     ]:
                         value = summary.get(key)
                         if value is None:
@@ -3172,6 +3180,9 @@ def _novel_object_debug_preview(frame, data, video_path):
             center_ratio_y=float(data.get('center_ratio_y', 0.5)),
             interaction_radius_cm=float(data.get('interaction_radius_cm', 4.0)),
             exploration_max_speed_cm_s=float(data.get('exploration_max_speed_cm_s', 12.0)),
+            use_head_direction=bool(data.get('use_head_direction', True)),
+            head_angle_threshold_deg=float(data.get('head_angle_threshold_deg', 50.0)),
+            head_confidence_threshold=float(data.get('head_confidence_threshold', 0.35)),
             movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
             min_valid_exploration_s=float(data.get('min_valid_exploration_s', 20.0)),
         )
@@ -3356,6 +3367,9 @@ def start_analysis(session_id):
             'center_ratio_y': float(data.get('center_ratio_y', 0.5)),
             'interaction_radius_cm': float(data.get('interaction_radius_cm', 4.0)),
             'exploration_max_speed_cm_s': float(data.get('exploration_max_speed_cm_s', 12.0)),
+            'use_head_direction': bool(data.get('use_head_direction', True)),
+            'head_angle_threshold_deg': float(data.get('head_angle_threshold_deg', 50.0)),
+            'head_confidence_threshold': float(data.get('head_confidence_threshold', 0.35)),
             'movement_threshold_cm_s': float(data.get('movement_threshold_cm_s', 2.0)),
             'min_valid_exploration_s': float(data.get('min_valid_exploration_s', 20.0)),
             'bin_seconds': float(data.get('bin_seconds', 300.0)),

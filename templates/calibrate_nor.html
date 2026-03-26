@@ -276,6 +276,20 @@
                                 <label class="form-label" data-nor-i18n="stats.exploration_max_speed">探索最大速度 (cm/s)</label>
                                 <input type="number" class="form-control" id="explorationMaxSpeed" min="0" step="0.1" value="12.0" onchange="updateDebugPreview()">
                             </div>
+                            <div class="d-flex align-items-end">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="useHeadDirection" checked onchange="updateDebugPreview()">
+                                    <label class="form-check-label" for="useHeadDirection" data-nor-i18n="stats.use_head_direction">启用头向辅助探索</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.head_angle_threshold">头向角度阈值 (°)</label>
+                                <input type="number" class="form-control" id="headAngleThreshold" min="5" max="180" step="1" value="50" onchange="updateDebugPreview()">
+                            </div>
+                            <div>
+                                <label class="form-label" data-nor-i18n="stats.head_confidence_threshold">头向置信度阈值</label>
+                                <input type="number" class="form-control" id="headConfidenceThreshold" min="0" max="1" step="0.05" value="0.35" onchange="updateDebugPreview()">
+                            </div>
                             <div>
                                 <label class="form-label" data-nor-i18n="stats.movement_threshold">运动阈值 (cm/s)</label>
                                 <input type="number" class="form-control" id="movementThreshold" min="0" step="0.1" value="2.0" onchange="updateDebugPreview()">
@@ -294,6 +308,9 @@
                                     <label class="form-check-label" for="generateVideo" data-nor-i18n="stats.generate_video">生成标注视频</label>
                                 </div>
                             </div>
+                        </div>
+                        <div class="mini-note mt-3" data-nor-i18n="stats.head_direction_hint">
+                            头向估计主要依据鼠体前缘形状和前后帧连续性，不依赖完整尾巴；当置信度不足时，会自动回退到原来的距离阈值规则。
                         </div>
                         <div class="status-strip mt-3">
                             <div class="status-pill" id="previewStatus" data-nor-i18n="debug.preview_waiting">等待预览</div>
@@ -393,10 +410,14 @@ const NOR_I18N = {
         'stats.center_ratio_y': '中心区高度比例',
         'stats.interaction_radius': '交互半径 (cm)',
         'stats.exploration_max_speed': '探索最大速度 (cm/s)',
+        'stats.use_head_direction': '启用头向辅助探索',
+        'stats.head_angle_threshold': '头向角度阈值 (°)',
+        'stats.head_confidence_threshold': '头向置信度阈值',
         'stats.movement_threshold': '运动阈值 (cm/s)',
         'stats.min_valid_exploration': '最小有效探索时长 (s)',
         'stats.bin_seconds': '分箱时长 (s)',
         'stats.generate_video': '生成标注视频',
+        'stats.head_direction_hint': '头向估计主要依据鼠体前缘形状和前后帧连续性，不依赖完整尾巴；当置信度不足时，会自动回退到原来的距离阈值规则。',
         'common.frame': '帧',
         'common.phase.recognition': '识别测试期',
         'common.phase.familiarization': '熟悉期',
@@ -491,10 +512,14 @@ const NOR_I18N = {
         'stats.center_ratio_y': 'Center Height Ratio',
         'stats.interaction_radius': 'Interaction Radius (cm)',
         'stats.exploration_max_speed': 'Exploration Max Speed (cm/s)',
+        'stats.use_head_direction': 'Use Head-direction Assisted Exploration',
+        'stats.head_angle_threshold': 'Head-angle Threshold (deg)',
+        'stats.head_confidence_threshold': 'Head-confidence Threshold',
         'stats.movement_threshold': 'Movement Threshold (cm/s)',
         'stats.min_valid_exploration': 'Minimum Valid Exploration (s)',
         'stats.bin_seconds': 'Bin Length (s)',
         'stats.generate_video': 'Generate Annotated Video',
+        'stats.head_direction_hint': 'Head direction is estimated mainly from the mouse front contour and frame-to-frame continuity, without requiring a full tail. Low-confidence frames automatically fall back to the original proximity rule.',
         'common.frame': 'Frame',
         'common.phase.recognition': 'Recognition',
         'common.phase.familiarization': 'Familiarization',
@@ -1269,6 +1294,9 @@ function buildRequestBody(frameIdx) {
         center_ratio_y: parseFloat(document.getElementById('centerRatioY').value || '0.5'),
         interaction_radius_cm: parseFloat(document.getElementById('interactionRadius').value || '4'),
         exploration_max_speed_cm_s: parseFloat(document.getElementById('explorationMaxSpeed').value || '12'),
+        use_head_direction: document.getElementById('useHeadDirection').checked,
+        head_angle_threshold_deg: parseFloat(document.getElementById('headAngleThreshold').value || '50'),
+        head_confidence_threshold: parseFloat(document.getElementById('headConfidenceThreshold').value || '0.35'),
         movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold').value || '2'),
         min_valid_exploration_s: parseFloat(document.getElementById('minValidExploration').value || '20'),
         bin_seconds: parseFloat(document.getElementById('binSeconds').value || '300'),

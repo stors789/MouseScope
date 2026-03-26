@@ -4,9 +4,8 @@
 """
 Novel Object Recognition (NOR) helpers.
 
-This module provides per-ROI tracking, proximity-based object exploration
-metrics, perspective normalization, and visualization helpers for a multi-ROI
-NOR workflow.
+This module provides per-ROI tracking, object-exploration metrics, perspective
+normalization, and visualization helpers for a multi-ROI NOR workflow.
 """
 
 from __future__ import annotations
@@ -53,6 +52,29 @@ def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: 
     if pts.ndim != 2 or pts.shape[1] != 2 or pts.shape[0] < min_points:
         raise ValueError(f"Novel object detection mask requires at least {min_points} points.")
     return pts
+
+
+def _clip01(value: float) -> float:
+    return float(np.clip(float(value), 0.0, 1.0))
+
+
+def _unit_vector(vec: Sequence[float]) -> Optional[np.ndarray]:
+    arr = np.asarray(vec, dtype=np.float32).reshape(-1)
+    if arr.size < 2:
+        return None
+    norm = float(np.linalg.norm(arr[:2]))
+    if norm < 1e-6:
+        return None
+    return arr[:2] / norm
+
+
+def _angle_deg(vec_a: Sequence[float], vec_b: Sequence[float]) -> Optional[float]:
+    a = _unit_vector(vec_a)
+    b = _unit_vector(vec_b)
+    if a is None or b is None:
+        return None
+    dot = float(np.clip(np.dot(a, b), -1.0, 1.0))
+    return float(math.degrees(math.acos(dot)))
 
 
 def sanitize_name(text: str, fallback: str = "nor") -> str:
@@ -217,6 +239,9 @@ class NovelObjectTracker:
         center_ratio_y: float = 0.5,
         interaction_radius_cm: float = 4.0,
         exploration_max_speed_cm_s: float = 12.0,
+        use_head_direction: bool = True,
+        head_angle_threshold_deg: float = 50.0,
+        head_confidence_threshold: float = 0.35,
         movement_threshold_cm_s: float = 2.0,
         min_valid_exploration_s: float = 20.0,
     ) -> None:
@@ -248,6 +273,9 @@ class NovelObjectTracker:
         self.center_ratio_y = float(np.clip(center_ratio_y, 0.1, 1.0))
         self.interaction_radius_cm = max(0.5, float(interaction_radius_cm))
         self.exploration_max_speed_cm_s = max(0.0, float(exploration_max_speed_cm_s))
+        self.use_head_direction = bool(use_head_direction)
+        self.head_angle_threshold_deg = float(np.clip(head_angle_threshold_deg, 5.0, 180.0))
+        self.head_confidence_threshold = _clip01(head_confidence_threshold)
         self.movement_threshold_cm_s = max(0.0, float(movement_threshold_cm_s))
         self.min_valid_exploration_s = max(0.0, float(min_valid_exploration_s))
 
@@ -290,6 +318,13 @@ class NovelObjectTracker:
         self.prev_in_center_stats = False
         self.missing_frames = 0
         self.max_gap_frames = 5
+        self.prev_head_vector_cm: Optional[Tuple[float, float]] = None
+        self.last_head_point_px: Optional[Tuple[float, float]] = None
+        self.last_head_point_cm: Optional[Tuple[float, float]] = None
+        self.head_estimated_frames = 0
+        self.head_confident_frames = 0
+        self.head_supported_exploration_frames = 0
+        self.fallback_exploration_frames = 0
 
         self.object_zone_frames = [0, 0]
         self.object_exploration_frames = [0, 0]
@@ -509,6 +544,209 @@ class NovelObjectTracker:
                 distances.append(None)
         return distances
 
+    @staticmethod
+    def _contour_pointiness(points_px: np.ndarray, index: int, step: int) -> float:
+        n = int(points_px.shape[0])
+        if n < max(8, step * 2 + 1):
+            return 0.0
+
+        prev_pt = points_px[(index - step) % n]
+        pt = points_px[index % n]
+        next_pt = points_px[(index + step) % n]
+
+        v1 = prev_pt - pt
+        v2 = next_pt - pt
+        norm1 = float(np.linalg.norm(v1))
+        norm2 = float(np.linalg.norm(v2))
+        if norm1 < 1e-6 or norm2 < 1e-6:
+            return 0.0
+
+        cos_theta = float(np.clip(np.dot(v1, v2) / (norm1 * norm2), -1.0, 1.0))
+        angle = float(math.degrees(math.acos(cos_theta)))
+        return _clip01((180.0 - angle) / 180.0)
+
+    def _estimate_head_direction(
+        self,
+        contour: Optional[np.ndarray],
+        centroid_px: Optional[Tuple[float, float]],
+        arena_xy_cm: Optional[Tuple[float, float]],
+        motion_vector_cm: Optional[Tuple[float, float]],
+    ) -> Dict[str, Any]:
+        empty = {
+            "point_px": None,
+            "point_cm": None,
+            "vector_cm": None,
+            "confidence": 0.0,
+            "estimated": False,
+            "axis_ratio": None,
+            "nose_distances_cm": [None for _ in self.objects],
+            "object_angles_deg": [None for _ in self.objects],
+        }
+
+        if contour is None or centroid_px is None or arena_xy_cm is None:
+            return empty
+
+        points_px = contour.reshape(-1, 2).astype(np.float32)
+        if points_px.shape[0] < 10:
+            return empty
+
+        centroid_arr = np.asarray(centroid_px, dtype=np.float32)
+        centered = points_px - centroid_arr
+        if float(np.max(np.linalg.norm(centered, axis=1))) < 1e-3:
+            return empty
+
+        cov = np.cov(centered.T)
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        order = np.argsort(eigvals)[::-1]
+        eigvals = eigvals[order]
+        major_axis = eigvecs[:, order[0]]
+        major_axis = _unit_vector(major_axis)
+        if major_axis is None:
+            return empty
+
+        axis_ratio = float((eigvals[0] + 1e-6) / (eigvals[1] + 1e-6)) if eigvals.size > 1 else 999.0
+        projections = centered @ major_axis
+        if float(np.max(projections) - np.min(projections)) < 1e-3:
+            return empty
+
+        candidate_count = int(np.clip(points_px.shape[0] // 12, 4, 12))
+        sorted_idx = np.argsort(projections)
+        step = max(2, min(10, max(2, points_px.shape[0] // 16)))
+        projection_scale = max(float(np.max(np.abs(projections))), 1e-6)
+        movement_unit = _unit_vector(motion_vector_cm) if motion_vector_cm is not None else None
+        previous_head_unit = _unit_vector(self.prev_head_vector_cm) if self.prev_head_vector_cm is not None else None
+
+        body_to_object_vectors = []
+        body_to_object_distances = []
+        for obj in self.objects:
+            vec = (
+                float(obj["point_cm"][0] - arena_xy_cm[0]),
+                float(obj["point_cm"][1] - arena_xy_cm[1]),
+            )
+            body_to_object_vectors.append(vec)
+            body_to_object_distances.append(float(math.hypot(vec[0], vec[1])))
+
+        def _support_score(unit_head: np.ndarray, obj_vec: Optional[Tuple[float, float]] = None, obj_distance: Optional[float] = None) -> Tuple[float, float, float]:
+            continuity = 0.5
+            if previous_head_unit is not None:
+                continuity = (float(np.dot(unit_head, previous_head_unit)) + 1.0) * 0.5
+
+            motion = 0.5
+            if movement_unit is not None:
+                motion = (float(np.dot(unit_head, movement_unit)) + 1.0) * 0.5
+
+            object_align = 0.5
+            if obj_vec is not None and obj_distance is not None and obj_distance <= self.interaction_radius_cm * 2.0:
+                obj_unit = _unit_vector(obj_vec)
+                if obj_unit is not None:
+                    proximity_weight = _clip01(1.0 - obj_distance / max(self.interaction_radius_cm * 2.0, 1e-6))
+                    object_align = 0.5 * (1.0 - proximity_weight) + ((float(np.dot(unit_head, obj_unit)) + 1.0) * 0.5) * proximity_weight
+            return continuity, motion, object_align
+
+        def _pick_candidate(indices: np.ndarray) -> Optional[Dict[str, Any]]:
+            best: Optional[Dict[str, Any]] = None
+            for raw_idx in indices.tolist():
+                idx = int(raw_idx)
+                point_px = (float(points_px[idx][0]), float(points_px[idx][1]))
+                point_cm = self.project_point_to_cm(point_px)
+                vector_cm = (
+                    float(point_cm[0] - arena_xy_cm[0]),
+                    float(point_cm[1] - arena_xy_cm[1]),
+                )
+                unit_head = _unit_vector(vector_cm)
+                if unit_head is None:
+                    continue
+
+                pointiness = self._contour_pointiness(points_px, idx, step)
+                extremeness = abs(float(projections[idx])) / projection_scale
+
+                nearest_idx = int(
+                    min(
+                        range(len(self.objects)),
+                        key=lambda obj_idx: math.hypot(
+                            point_cm[0] - self.objects[obj_idx]["point_cm"][0],
+                            point_cm[1] - self.objects[obj_idx]["point_cm"][1],
+                        ),
+                    )
+                )
+                continuity, motion, object_align = _support_score(
+                    unit_head,
+                    body_to_object_vectors[nearest_idx],
+                    body_to_object_distances[nearest_idx],
+                )
+                score = (
+                    0.35 * pointiness
+                    + 0.20 * extremeness
+                    + 0.20 * continuity
+                    + 0.15 * motion
+                    + 0.10 * object_align
+                )
+
+                candidate = {
+                    "idx": idx,
+                    "point_px": point_px,
+                    "point_cm": point_cm,
+                    "vector_cm": vector_cm,
+                    "pointiness": pointiness,
+                    "extremeness": extremeness,
+                    "continuity": continuity,
+                    "motion": motion,
+                    "object_align": object_align,
+                    "score": score,
+                }
+                if best is None or candidate["score"] > best["score"]:
+                    best = candidate
+            return best
+
+        forward = _pick_candidate(sorted_idx[-candidate_count:])
+        backward = _pick_candidate(sorted_idx[:candidate_count])
+        if forward is None and backward is None:
+            return empty
+        if backward is None:
+            winner = forward
+            other = None
+        elif forward is None:
+            winner = backward
+            other = None
+        else:
+            winner, other = (forward, backward) if forward["score"] >= backward["score"] else (backward, forward)
+
+        assert winner is not None
+        score_margin = winner["score"] - (other["score"] if other is not None else 0.0)
+        support_strength = max(winner["continuity"], winner["motion"], winner["object_align"])
+        elongation = _clip01((axis_ratio - 1.2) / 2.0)
+        confidence = _clip01(
+            0.38 * _clip01(score_margin)
+            + 0.24 * elongation
+            + 0.20 * winner["pointiness"]
+            + 0.18 * support_strength
+        )
+
+        nose_distances_cm: List[Optional[float]] = []
+        object_angles_deg: List[Optional[float]] = []
+        for obj in self.objects:
+            nose_vec = (
+                float(obj["point_cm"][0] - winner["point_cm"][0]),
+                float(obj["point_cm"][1] - winner["point_cm"][1]),
+            )
+            nose_distances_cm.append(float(math.hypot(nose_vec[0], nose_vec[1])))
+            body_vec = (
+                float(obj["point_cm"][0] - arena_xy_cm[0]),
+                float(obj["point_cm"][1] - arena_xy_cm[1]),
+            )
+            object_angles_deg.append(_angle_deg(winner["vector_cm"], body_vec))
+
+        return {
+            "point_px": winner["point_px"],
+            "point_cm": winner["point_cm"],
+            "vector_cm": winner["vector_cm"],
+            "confidence": confidence,
+            "estimated": True,
+            "axis_ratio": axis_ratio,
+            "nose_distances_cm": nose_distances_cm,
+            "object_angles_deg": object_angles_deg,
+        }
+
     def update(
         self,
         frame: np.ndarray,
@@ -546,6 +784,7 @@ class NovelObjectTracker:
         instant_distance_cm = 0.0
         speed_cm_s = 0.0
         zone_flags = {"in_center": False, "in_outer": False}
+        motion_vector_cm: Optional[Tuple[float, float]] = None
 
         if arena_xy_cm is not None:
             if self.prev_all_arena_xy_cm is not None:
@@ -553,6 +792,7 @@ class NovelObjectTracker:
                 dy = arena_xy_cm[1] - self.prev_all_arena_xy_cm[1]
                 instant_distance_cm = float(math.hypot(dx, dy))
                 speed_cm_s = instant_distance_cm * self.fps
+                motion_vector_cm = (float(dx), float(dy))
             self.prev_all_arena_xy_cm = arena_xy_cm
             zone_flags = self._zone_flags(arena_xy_cm)
         else:
@@ -605,20 +845,72 @@ class NovelObjectTracker:
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
+        head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm)
+        head_confidence = float(head_state.get("confidence") or 0.0)
+        head_confident = bool(
+            self.use_head_direction
+            and head_state.get("estimated")
+            and head_confidence >= self.head_confidence_threshold
+        )
+        if head_state.get("estimated"):
+            self.last_head_point_px = tuple(float(v) for v in head_state["point_px"])
+            self.last_head_point_cm = tuple(float(v) for v in head_state["point_cm"])
+            if head_confident and head_state.get("vector_cm") is not None:
+                self.prev_head_vector_cm = tuple(float(v) for v in head_state["vector_cm"])
+        else:
+            self.last_head_point_px = None
+            self.last_head_point_cm = None
+
+        if self.use_head_direction and in_stats_window and head_state.get("estimated"):
+            self.head_estimated_frames += 1
+            if head_confident:
+                self.head_confident_frames += 1
+
         distances_cm = self._object_distances_cm(contour, arena_xy_cm)
+        nose_distances_cm = head_state.get("nose_distances_cm") or [None for _ in self.objects]
+        object_angles_deg = head_state.get("object_angles_deg") or [None for _ in self.objects]
         near_flags = [
             bool(detected) and dist is not None and dist <= self.interaction_radius_cm
             for dist in distances_cm
         ]
+        head_aligned_flags = [
+            bool(detected)
+            and nose_distances_cm[idx] is not None
+            and float(nose_distances_cm[idx]) <= self.interaction_radius_cm
+            and object_angles_deg[idx] is not None
+            and float(object_angles_deg[idx]) <= self.head_angle_threshold_deg
+            for idx in range(len(self.objects))
+        ]
 
         exploring_idx = None
+        exploration_mode = None
         if detected and in_stats_window and speed_cm_s <= self.exploration_max_speed_cm_s:
             candidates = [idx for idx, is_near in enumerate(near_flags) if is_near]
             if candidates:
-                exploring_idx = min(
-                    candidates,
-                    key=lambda idx: distances_cm[idx] if distances_cm[idx] is not None else 1e9,
-                )
+                if self.use_head_direction:
+                    if head_confident:
+                        oriented = [idx for idx in candidates if head_aligned_flags[idx]]
+                        if oriented:
+                            exploring_idx = min(
+                                oriented,
+                                key=lambda idx: (
+                                    nose_distances_cm[idx] if nose_distances_cm[idx] is not None else 1e9,
+                                    distances_cm[idx] if distances_cm[idx] is not None else 1e9,
+                                ),
+                            )
+                            exploration_mode = "head"
+                    else:
+                        exploring_idx = min(
+                            candidates,
+                            key=lambda idx: distances_cm[idx] if distances_cm[idx] is not None else 1e9,
+                        )
+                        exploration_mode = "fallback"
+                else:
+                    exploring_idx = min(
+                        candidates,
+                        key=lambda idx: distances_cm[idx] if distances_cm[idx] is not None else 1e9,
+                    )
+                    exploration_mode = "proximity"
 
         if in_stats_window:
             for idx, is_near in enumerate(near_flags):
@@ -629,6 +921,10 @@ class NovelObjectTracker:
 
             if exploring_idx is not None:
                 self.object_exploration_frames[exploring_idx] += 1
+                if exploration_mode == "head":
+                    self.head_supported_exploration_frames += 1
+                elif exploration_mode == "fallback":
+                    self.fallback_exploration_frames += 1
                 if self.object_latency_s[exploring_idx] is None:
                     self.object_latency_s[exploring_idx] = max(0.0, float(current_time) - self._stats_window_origin_abs())
                 if self.first_explored_object_idx is None:
@@ -663,6 +959,11 @@ class NovelObjectTracker:
             "in_center": bool(zone_flags["in_center"]) if in_stats_window else False,
             "zone_label": proximity_label if arena_xy_cm is not None else "Unknown",
             "current_object": self.objects[exploring_idx]["name"] if exploring_idx is not None else None,
+            "nose_x_cm": round(float(head_state["point_cm"][0]), 3) if head_state.get("point_cm") is not None else None,
+            "nose_y_cm": round(float(head_state["point_cm"][1]), 3) if head_state.get("point_cm") is not None else None,
+            "head_direction_confidence": round(head_confidence, 3) if head_state.get("estimated") else None,
+            "head_direction_confident": bool(head_confident) if in_stats_window else False,
+            "exploration_mode": exploration_mode,
         }
 
         for idx, obj in enumerate(self.objects):
@@ -670,7 +971,10 @@ class NovelObjectTracker:
             record[f"{prefix}_name"] = obj["name"]
             record[f"{prefix}_role"] = obj["role"]
             record[f"{prefix}_distance_cm"] = round(float(distances_cm[idx]), 3) if distances_cm[idx] is not None else None
+            record[f"{prefix}_nose_distance_cm"] = round(float(nose_distances_cm[idx]), 3) if nose_distances_cm[idx] is not None else None
+            record[f"{prefix}_head_angle_deg"] = round(float(object_angles_deg[idx]), 3) if object_angles_deg[idx] is not None else None
             record[f"{prefix}_near"] = bool(near_flags[idx]) if in_stats_window else False
+            record[f"{prefix}_head_aligned"] = bool(head_aligned_flags[idx]) if in_stats_window else False
             record[f"{prefix}_exploring"] = bool(exploring_idx == idx) if in_stats_window else False
 
         self.frame_records.append(record)
@@ -692,10 +996,18 @@ class NovelObjectTracker:
             "trajectory_px": list(self.trajectory_px_live),
             "in_stats_window": bool(in_stats_window),
             "object_distances_cm": distances_cm,
+            "object_nose_distances_cm": nose_distances_cm,
+            "object_head_angles_deg": object_angles_deg,
             "near_flags": near_flags,
+            "head_aligned_flags": head_aligned_flags,
             "current_object_idx": exploring_idx,
             "current_object_name": self.objects[exploring_idx]["name"] if exploring_idx is not None else None,
             "current_object_role": self.objects[exploring_idx]["role"] if exploring_idx is not None else None,
+            "head_point": head_state.get("point_px"),
+            "head_point_cm": head_state.get("point_cm"),
+            "head_direction_confidence": head_confidence if head_state.get("estimated") else None,
+            "head_direction_confident": bool(head_confident),
+            "exploration_mode": exploration_mode,
             "record": record,
         }
 
@@ -706,6 +1018,8 @@ class NovelObjectTracker:
         immobile_time_s = self.immobile_frames / self.fps if self.fps > 0 else 0.0
         mean_speed_cm_s = self.total_distance_cm / max(total_time_s, 1e-6)
         detection_rate = self.detected_frames_in_window / max(self.frames_in_window, 1) * 100.0
+        head_estimated_rate = self.head_estimated_frames / max(self.frames_in_window, 1) * 100.0
+        head_confident_rate = self.head_confident_frames / max(self.frames_in_window, 1) * 100.0
 
         summary: Dict[str, Any] = {
             "roi_id": self.roi_id,
@@ -729,6 +1043,11 @@ class NovelObjectTracker:
             "center_latency_s": round(self.center_latency_s, 3) if self.center_latency_s is not None else None,
             "interaction_radius_cm": self.interaction_radius_cm,
             "exploration_max_speed_cm_s": self.exploration_max_speed_cm_s,
+            "use_head_direction": self.use_head_direction,
+            "head_angle_threshold_deg": self.head_angle_threshold_deg,
+            "head_confidence_threshold": self.head_confidence_threshold,
+            "head_estimated_rate_percent": round(head_estimated_rate, 2),
+            "head_confident_rate_percent": round(head_confident_rate, 2),
             "movement_threshold_cm_s": self.movement_threshold_cm_s,
             "min_valid_exploration_s": self.min_valid_exploration_s,
             "arena_width_cm": self.arena_width_cm,
@@ -753,6 +1072,8 @@ class NovelObjectTracker:
             summary[f"{prefix}_latency_s"] = round(self.object_latency_s[idx], 3) if self.object_latency_s[idx] is not None else None
 
         summary["total_object_exploration_s"] = round(total_exploration, 3)
+        summary["head_supported_exploration_s"] = round(self.head_supported_exploration_frames / self.fps, 3)
+        summary["fallback_exploration_s"] = round(self.fallback_exploration_frames / self.fps, 3)
         summary["meets_min_exploration"] = bool(total_exploration >= self.min_valid_exploration_s)
         summary["first_explored_object"] = self.objects[self.first_explored_object_idx]["name"] if self.first_explored_object_idx is not None else None
         summary["first_explored_role"] = self.objects[self.first_explored_object_idx]["role"] if self.first_explored_object_idx is not None else None
@@ -898,6 +1219,20 @@ def draw_novel_object_results(
         if centroid is not None:
             cx, cy = int(centroid[0]), int(centroid[1])
             cv2.circle(output, (cx, cy), 4, (34, 197, 94), -1)
+
+        head_point = result.get("head_point")
+        head_confidence = float(result.get("head_direction_confidence") or 0.0)
+        if tracker.use_head_direction and centroid is not None and head_point is not None:
+            head_pt = (int(head_point[0]), int(head_point[1]))
+            center_pt = (int(centroid[0]), int(centroid[1]))
+            if head_confidence >= tracker.head_confidence_threshold:
+                line_color = (255, 214, 10) if result.get("exploration_mode") == "head" else (16, 185, 241)
+                thickness = 2
+            else:
+                line_color = (148, 163, 184)
+                thickness = 1
+            cv2.line(output, center_pt, head_pt, line_color, thickness, cv2.LINE_AA)
+            cv2.circle(output, head_pt, 3, line_color, -1)
 
         traj = result.get("trajectory_px") or []
         for idx in range(1, len(traj)):
