@@ -83,6 +83,23 @@ It provides a browser-based local UI, classical computer-vision pipelines, batch
   </tr>
 </table>
 
+### Tail Suspension Test demos
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="static/img/demo_tutorial.gif" alt="TST workflow tutorial" width="430"/>
+      <br/>
+      <sub>TST workflow: upload, calibrate, analyze, export</sub>
+    </td>
+    <td align="center">
+      <img src="static/img/demo_result.gif" alt="TST result visualization" width="430"/>
+      <br/>
+      <sub>TST analysis visualization with automated immobility scoring</sub>
+    </td>
+  </tr>
+</table>
+
 ### TST desktop UI
 
 <p align="center">
