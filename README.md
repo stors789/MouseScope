@@ -1,10 +1,6 @@
 # MouseScope
 
 <p align="center">
-  <img src="docs/assets/cover.png" alt="MouseScope cover" width="100%"/>
-</p>
-
-<p align="center">
   <img src="static/img/logo.png" alt="MouseScope logo" width="112"/>
 </p>
 
@@ -58,18 +54,22 @@
 
 ## 展示与效果 | Demo
 
-### 软件主界面
+> 下面按照实际浏览顺序展示软件界面与分析结果：先看主界面，再看悬尾实验和旷场实验的典型输出。
+
+### 1. 软件主界面
 
 <p align="center">
   <img src="static/img/ui_home.png" alt="MouseScope desktop UI" width="900"/>
+  <br/>
+  <sub>统一入口支持 TST 与 OFT，适合实验室日常分析流程</sub>
 </p>
 
-### 悬尾实验（TST）演示
+### 2. 悬尾实验（TST）
 
 <p align="center">
   <img src="static/img/demo_result.gif" alt="TST result visualization" width="900"/>
   <br/>
-  <sub>自动识别不动状态并输出可视化结果</sub>
+  <sub>自动识别不动状态，并在视频中实时输出可视化分析结果</sub>
 </p>
 
 <table>
@@ -87,12 +87,12 @@
   </tr>
 </table>
 
-### 旷场实验（OFT）演示
+### 3. 旷场实验（OFT）
 
 <p align="center">
   <img src="docs/assets/oft_demo.gif" alt="Open Field demo GIF" width="900"/>
   <br/>
-  <sub>多 arena 旷场视频分析示例</sub>
+  <sub>多 arena 旷场视频分析示例，支持轨迹统计、中心区分析与透视校正</sub>
 </p>
 
 <table>
