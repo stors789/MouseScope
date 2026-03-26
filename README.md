@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>面向小鼠行为学视频分析的桌面软件</strong><br/>
-  支持 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>
+  当前已支持 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>，更多实验模块持续扩展中
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-2563eb" alt="Platform"/>
   <img src="https://img.shields.io/badge/Python-3.9%2B-0f766e" alt="Python"/>
   <img src="https://img.shields.io/badge/UI-Flask%20Desktop-1d4ed8" alt="UI"/>
-  <img src="https://img.shields.io/badge/Experiments-TST%20%7C%20OFT-0369a1" alt="Experiments"/>
+  <img src="https://img.shields.io/badge/Experiments-TST%20%7C%20OFT%20%7C%20More%20Soon-0369a1" alt="Experiments"/>
   <img src="https://img.shields.io/badge/Language-中文%20%7C%20English-f59e0b" alt="Language"/>
 </p>
 
@@ -30,12 +30,15 @@
 **MouseScope** 是一个面向实验室日常使用场景的 Windows 桌面软件。  
 它采用本地浏览器界面（local web UI）+ Python / OpenCV 分析后端的方式，帮助用户完成从视频导入、参数标定、批量分析到结果导出的完整流程。
 
-当前版本已经支持两类实验：
+当前版本已经集成以下实验模块：
 
 | 实验模块 Module | 主要用途 | 典型输出 |
 |---|---|---|
 | **悬尾实验 TST** | 多 ROI 小鼠不动 / 挣扎自动分析 | 标注视频、逐帧日志 CSV、不动性汇总 CSV、TXT 报告 |
 | **旷场实验 OFT** | 多 arena 轨迹追踪、中心区 / 墙区统计、轨迹图与热图输出 | 标注视频、轨迹 CSV、summary CSV、bins CSV、热图、轨迹图、TXT 报告 |
+
+> 更多行为学实验模块正在持续开发中，敬请期待。  
+> More behavioral assay modules are in development and will be added progressively.
 
 ---
 
@@ -246,7 +249,7 @@ MouseScope/
 ```bibtex
 @software{fu2026mousescope,
   author  = {Fu, Jiacheng},
-  title   = {MouseScope: Automated Mouse Behavior Analysis Software for Tail Suspension Test and Open Field Test},
+  title   = {MouseScope: Automated Mouse Behavior Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
   version = {1.0}
@@ -255,7 +258,7 @@ MouseScope/
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Automated mouse behavior analysis software for tail suspension test and open field test* (Version 1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Automated mouse behavior analysis platform* (Version 1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ---
 
