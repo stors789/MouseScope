@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}MouseScope - 智能动物行为分析系统{% endblock %}
+{% block title %}MouseScope - 小鼠行为学视频分析平台{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -105,9 +105,9 @@
 <section class="hero-banner">
     <img src="{{ url_for('static', filename='img/logo.png') }}" alt="MouseScope" class="hero-logo mb-3">
     <h1>MouseScope</h1>
-    <p class="hero-subtitle" data-i18n="home.subtitle">
-        基于计算机视觉的智能动物行为分析系统<br>
-        支持悬尾实验（TST）、旷场实验（Open Field Test）等多种实验范式
+    <p class="hero-subtitle" data-i18n="home.subtitle" data-i18n-html>
+        面向小鼠行为学视频分析的桌面软件平台<br>
+        当前支持悬尾实验、旷场实验，并将持续扩展更多实验模块
     </p>
     <div class="hero-version"><span data-i18n="home.version">Desktop Edition v1.0 · 学术研究专用</span></div>
     <div>
@@ -119,7 +119,7 @@
 <div class="feature-cards">
     <div class="feature-card">
         <h5 data-i18n="home.feature1.title">多实验入口</h5>
-        <p data-i18n="home.feature1.desc">支持 TST 与 Open Field Test，可从网页上传或本地路径导入视频</p>
+        <p data-i18n="home.feature1.desc">统一实验入口，当前支持 TST 与 OFT，更多行为学实验模块将持续加入</p>
     </div>
     <div class="feature-card">
         <h5 data-i18n="home.feature2.title">标定与配置</h5>

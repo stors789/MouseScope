@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>面向小鼠行为学视频分析的桌面软件</strong><br/>
-  当前已支持 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>，更多实验模块持续扩展中
+  <strong>面向小鼠行为学视频分析的桌面软件平台</strong><br/>
+  当前已集成 <strong>悬尾实验（Tail Suspension Test, TST）</strong> 与 <strong>旷场实验（Open Field Test, OFT）</strong>，更多实验模块将持续加入
 </p>
 
 <p align="center">
-  A Windows-first desktop app for automated mouse behavior analysis.
+  A modular desktop platform for automated mouse behavioral video analysis.
 </p>
 
 <p align="center">
@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/Language-中文%20%7C%20English-f59e0b" alt="Language"/>
 </p>
 
-> 鼠行为视频分析不应该被繁琐的脚本和手工统计拖慢。MouseScope 希望把常用实验做成真正能落地的桌面工具。
+> 鼠行为视频分析不应该被繁琐的脚本和手工统计拖慢。MouseScope 希望把常见实验逐步汇聚到同一套真正能落地的软件工作流中。
 
 ---
 
 ## 项目简介 | Overview
 
-**MouseScope** 是一个面向实验室日常使用场景的 Windows 桌面软件。  
-它采用本地浏览器界面（local web UI）+ Python / OpenCV 分析后端的方式，帮助用户完成从视频导入、参数标定、批量分析到结果导出的完整流程。
+**MouseScope** 是一个面向实验室日常使用场景的小鼠行为学视频分析平台。  
+它采用本地浏览器界面（local web UI）+ Python / OpenCV 分析后端的方式，帮助用户完成从视频导入、参数标定、批量分析到结果导出的完整流程，并以模块化方式持续扩展不同实验范式。
 
 当前版本已经集成以下实验模块：
 

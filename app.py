@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MouseScope Desktop Edition — 简化版 Flask 应用
+MouseScope Behavior Analysis Platform — 简化版 Flask 应用
 去除：用户认证、数据库、YOLO、多语言
 保留：视频上传、ROI标定、传统CV分析、结果下载
 """
@@ -2157,7 +2157,7 @@ def get_result_dir(session_id):
 # ==================== 启动 ====================
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='MouseScope Desktop Edition')
+    parser = argparse.ArgumentParser(description='MouseScope Behavior Analysis Platform')
     parser.add_argument('--port', type=int, default=8080, help='端口号')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='监听地址')
     parser.add_argument('--no-browser', action='store_true', help='不自动打开浏览器')
@@ -2179,7 +2179,7 @@ if __name__ == '__main__':
     browse_url = f'http://{local_ip}:{args.port}'
 
     print(f"\n{'='*60}")
-    print(f"  MouseScope Desktop Edition")
+    print(f"  MouseScope Behavior Analysis Platform")
     print(f"  访问地址: {browse_url}")
     print(f"{'='*60}\n")
 
