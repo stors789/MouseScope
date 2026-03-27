@@ -335,7 +335,10 @@
                         statusText.innerHTML = `<i class="fas fa-check-circle me-2 text-success"></i><span>${result.paths.length} <span data-i18n="upload.status.done">个文件已上传</span></span>`;
 
                         const msgUpload = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.upload.success'].replace('{}', result.paths.length) : result.paths.length + ' 个文件已上传并添加到路径列表';
-                        fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgUpload + '</strong><div class="small text-muted mt-1">' + result.paths.map(p => p.split('/').pop()).join(', ') + '</div></div>';
+                        const uploadedNames = Array.isArray(result.names) && result.names.length === result.paths.length
+                            ? result.names
+                            : result.paths.map(p => p.split('/').pop());
+                        fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgUpload + '</strong><div class="small text-muted mt-1">' + uploadedNames.join(', ') + '</div></div>';
                         configSection.style.display = 'block';
 
                         setTimeout(() => {

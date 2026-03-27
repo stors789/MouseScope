@@ -45,6 +45,8 @@ import threading
 import time
 import shutil
 import zipfile
+import hashlib
+import re
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from collections import deque
@@ -88,6 +90,13 @@ from novel_object import (
     render_novel_object_heatmap,
     render_novel_object_trackmap,
 )
+from file_utils import (
+    build_ascii_file_name,
+    clean_display_name,
+    clean_display_stem,
+    contains_non_ascii,
+    normalized_path_key,
+)
 from performance_utils import enable_opencv_optimizations
 
 try:
@@ -110,14 +119,113 @@ else:
 DATA_DIR = BASE_DIR / 'data'
 UPLOAD_DIR = DATA_DIR / 'uploads'
 RESULT_DIR = DATA_DIR / 'results'
+WORK_DIR = RESULT_DIR / '_work'
 
-for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR]:
+for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR, WORK_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 CHINA_TZ = timezone(timedelta(hours=8))
+CSV_ENCODING = 'utf-8-sig'
+VALID_VIDEO_EXTS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+staged_original_names = {}
 
 def china_now():
     return datetime.now(CHINA_TZ)
+
+
+def _register_original_name(path, original_name):
+    staged_original_names[normalized_path_key(path)] = clean_display_name(original_name, fallback='video')
+
+
+def _get_original_name_for_path(path):
+    return staged_original_names.get(normalized_path_key(path))
+
+
+def _safe_display_stem(original_name, fallback='video'):
+    return clean_display_stem(original_name, fallback=fallback)
+
+
+def _build_ascii_result_stem(original_name, session_id, fallback='video'):
+    display_stem = _safe_display_stem(original_name, fallback=fallback)
+    digest = hashlib.sha1(str(original_name or display_stem).encode('utf-8', 'ignore')).hexdigest()[:10]
+    stem = re.sub(r'[^0-9A-Za-z._-]+', '_', display_stem.encode('ascii', 'ignore').decode('ascii')).strip('._-')
+    stem = (stem or fallback)[:48]
+    session_prefix = re.sub(r'[^0-9A-Za-z]+', '', str(session_id or ''))[:12] or 'session'
+    return f"{session_prefix}_{stem}_{digest}"
+
+
+def _prepare_output_paths(session_id, original_name, suffix, result_folder=None, fallback='video'):
+    final_dir = Path(_resolve_result_dir(result_folder))
+    final_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = WORK_DIR / str(session_id)
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    display_stem = _safe_display_stem(original_name, fallback=fallback)
+    ascii_stem = _build_ascii_result_stem(original_name, session_id=session_id, fallback=fallback)
+    return {
+        'final_dir': final_dir,
+        'work_dir': work_dir,
+        'display_stem': display_stem,
+        'work_base': str(work_dir / f"{ascii_stem}_{suffix}"),
+        'final_base': str(final_dir / f"{display_stem}_{suffix}"),
+    }
+
+
+def _export_result_file(work_path, final_path):
+    if not work_path or not os.path.exists(work_path):
+        return None
+
+    final_path = str(final_path)
+    os.makedirs(os.path.dirname(final_path), exist_ok=True)
+    if normalized_path_key(work_path) != normalized_path_key(final_path):
+        shutil.copy2(work_path, final_path)
+    return final_path
+
+
+def _write_dataframe_csv(rows, path):
+    if not HAS_PANDAS:
+        return False
+    pd.DataFrame(rows).to_csv(path, index=False, encoding=CSV_ENCODING)
+    return os.path.exists(path)
+
+
+def _resolve_result_dir(output_dir):
+    if not output_dir:
+        return str(RESULT_DIR)
+
+    raw = os.path.expandvars(str(output_dir).strip())
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return str(path)
+
+
+def _save_uploaded_video(file_storage, prefix):
+    original_name = clean_display_name(file_storage.filename, fallback='video.mp4')
+    staged_dir = UPLOAD_DIR / '_staged' / str(prefix)
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    staged_name = build_ascii_file_name(original_name, prefix=str(prefix), fallback='video')
+    save_path = staged_dir / staged_name
+    file_storage.save(str(save_path))
+    _register_original_name(save_path, original_name)
+    return str(save_path), original_name
+
+
+def _stage_local_video_if_needed(path, session_id, original_name=None):
+    source = Path(path).expanduser()
+    display_name = clean_display_name(original_name or _get_original_name_for_path(source) or source.name, fallback='video')
+    source_path = str(source)
+    if not contains_non_ascii(source_path):
+        return source_path, display_name
+
+    staged_dir = UPLOAD_DIR / '_staged' / str(session_id)
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    staged_name = build_ascii_file_name(display_name, prefix=str(session_id), fallback='video')
+    staged_path = staged_dir / staged_name
+    if not staged_path.exists() or staged_path.stat().st_size != source.stat().st_size:
+        shutil.copy2(source, staged_path)
+    _register_original_name(staged_path, display_name)
+    return str(staged_path), display_name
 
 # ==================== 性能优化 ====================
 enable_opencv_optimizations()
@@ -242,11 +350,17 @@ class VisionAnalysisSession:
 
         # 结果文件夹（优先使用自定义输出目录）
         result_folder = self.config.get('output_dir') or str(RESULT_DIR)
-        os.makedirs(result_folder, exist_ok=True)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='tst',
+            result_folder=result_folder,
+            fallback='video',
+        )
 
-        video_name = Path(video_info.get('original_name', 'video')).stem
-        output_name = f"{video_name}_analyzed.mp4"
-        output_path = os.path.join(result_folder, output_name)
+        video_name = output_info['display_stem']
+        output_path = f"{output_info['work_base']}_analyzed.mp4"
+        final_output_path = f"{output_info['final_base']}_analyzed.mp4"
 
         generate_video = vision_config.get('generate_video', True)
 
@@ -551,11 +665,13 @@ class VisionAnalysisSession:
 
         # 保存 CSV
         if len(logs) > 0 and HAS_PANDAS:
-            csv_path = output_path.replace('.mp4', '_logs.csv')
-            pd.DataFrame(logs).to_csv(csv_path, index=False)
-            self.result_files.append(csv_path)
-            self.csv_path = csv_path
-            self._log(f"日志已保存: {csv_path}")
+            csv_work_path = output_path.replace('.mp4', '_logs.csv')
+            if _write_dataframe_csv(logs, csv_work_path):
+                csv_path = _export_result_file(csv_work_path, f"{output_info['final_base']}_logs.csv")
+                if csv_path:
+                    self.result_files.append(csv_path)
+                    self.csv_path = csv_path
+                    self._log(f"日志已保存: {csv_path}")
 
         # 保存不动时间统计
         immobility_summaries = []
@@ -565,21 +681,30 @@ class VisionAnalysisSession:
                 immobility_summaries.append(summary)
 
         if len(immobility_summaries) > 0 and HAS_PANDAS:
-            immobility_csv = output_path.replace('.mp4', '_immobility.csv')
-            pd.DataFrame(immobility_summaries).to_csv(immobility_csv, index=False)
-            self.result_files.append(immobility_csv)
-            self.immobility_csv_path = immobility_csv
+            immobility_csv_work = output_path.replace('.mp4', '_immobility.csv')
+            if _write_dataframe_csv(immobility_summaries, immobility_csv_work):
+                immobility_csv = _export_result_file(
+                    immobility_csv_work,
+                    f"{output_info['final_base']}_immobility.csv",
+                )
+                if immobility_csv:
+                    self.result_files.append(immobility_csv)
+                    self.immobility_csv_path = immobility_csv
 
-            txt_path = output_path.replace('.mp4', '_report.txt')
-            self._generate_txt_report(immobility_summaries, txt_path)
-            self.result_files.append(txt_path)
-            self.immobility_txt_path = txt_path
+            txt_work_path = output_path.replace('.mp4', '_report.txt')
+            self._generate_txt_report(immobility_summaries, txt_work_path)
+            txt_path = _export_result_file(txt_work_path, f"{output_info['final_base']}_report.txt")
+            if txt_path:
+                self.result_files.append(txt_path)
+                self.immobility_txt_path = txt_path
 
         # 保存分析视频
         if generate_video and os.path.exists(output_path):
-            file_size = os.path.getsize(output_path) / (1024*1024)
-            self._log(f"分析视频已保存: {output_path} ({file_size:.1f} MB)")
-            self.result_files.append(output_path)
+            exported_video = _export_result_file(output_path, final_output_path)
+            if exported_video:
+                file_size = os.path.getsize(exported_video) / (1024 * 1024)
+                self._log(f"分析视频已保存: {exported_video} ({file_size:.1f} MB)")
+                self.result_files.append(exported_video)
 
         if batch_index is None:
             self.status = 'completed'
@@ -722,11 +847,19 @@ class OpenFieldAnalysisSession:
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
         result_folder = self.config.get('output_dir') or str(RESULT_DIR)
-        os.makedirs(result_folder, exist_ok=True)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='nor',
+            result_folder=result_folder,
+            fallback='video',
+        )
 
-        video_name = Path(video_info.get('original_name', 'video')).stem
-        output_base = os.path.join(result_folder, f"{video_name}_nor")
+        video_name = output_info['display_stem']
+        output_base = output_info['work_base']
+        final_base = output_info['final_base']
         output_video_path = f"{output_base}_analyzed.mp4"
+        final_output_video_path = f"{final_base}_analyzed.mp4"
         generate_video = bool(self.config.get('generate_video', True))
 
         cap = cv2.VideoCapture(video_path)
@@ -905,58 +1038,82 @@ class OpenFieldAnalysisSession:
                 bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
-            track_csv_path = f"{output_base}_track.csv"
-            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
-            self._append_result_file(track_csv_path, 'track_csv')
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
 
         if HAS_PANDAS and summary_rows:
-            summary_csv_path = f"{output_base}_summary.csv"
-            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
-            self._append_result_file(summary_csv_path, 'summary_csv')
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
 
         if HAS_PANDAS and bins_rows:
-            bins_csv_path = f"{output_base}_bins.csv"
-            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
-            self._append_result_file(bins_csv_path, 'bins_csv')
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
 
-        report_txt_path = f"{output_base}_report.txt"
-        self._generate_txt_report(summary_rows, report_txt_path)
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
         self._append_result_file(report_txt_path, 'report')
 
-        heatmap_paths = []
-        trackmap_paths = []
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
-            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
-            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_novel_object_heatmap(tracker, heatmap_path):
-                heatmap_paths.append(heatmap_path)
-                self._append_result_file(heatmap_path)
-
-            if render_novel_object_trackmap(tracker, trackmap_path):
-                trackmap_paths.append(trackmap_path)
-                self._append_result_file(trackmap_path)
-
-        if heatmap_paths:
-            if len(heatmap_paths) == 1:
-                self._append_result_file(heatmap_paths[0], 'heatmap')
+            if render_novel_object_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
             else:
-                heatmap_grid_path = f"{output_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
-                    self._append_result_file(heatmap_grid_path, 'heatmap')
+                self._log(f"Failed to save NOR heatmap: {heatmap_final_path}")
 
-        if trackmap_paths:
-            if len(trackmap_paths) == 1:
-                self._append_result_file(trackmap_paths[0], 'trackmap')
+            if render_novel_object_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
             else:
-                trackmap_grid_path = f"{output_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
-                    self._append_result_file(trackmap_grid_path, 'trackmap')
+                self._log(f"Failed to save NOR trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save NOR heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save NOR trackmap grid: {trackmap_grid_final_path}")
 
         if generate_video and os.path.exists(output_video_path):
-            self._append_result_file(output_video_path, 'video')
-            self._log(f"NOR annotated video saved: {output_video_path}")
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"NOR annotated video saved: {exported_video}")
 
         self.realtime_data = [
             {
@@ -1068,11 +1225,19 @@ class OpenFieldAnalysisSession:
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
         result_folder = self.config.get('output_dir') or str(RESULT_DIR)
-        os.makedirs(result_folder, exist_ok=True)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='nor',
+            result_folder=result_folder,
+            fallback='video',
+        )
 
-        video_name = Path(video_info.get('original_name', 'video')).stem
-        output_base = os.path.join(result_folder, f"{video_name}_nor")
+        video_name = output_info['display_stem']
+        output_base = output_info['work_base']
+        final_base = output_info['final_base']
         output_video_path = f"{output_base}_analyzed.mp4"
+        final_output_video_path = f"{final_base}_analyzed.mp4"
         generate_video = bool(self.config.get('generate_video', True))
 
         cap = cv2.VideoCapture(video_path)
@@ -1251,58 +1416,82 @@ class OpenFieldAnalysisSession:
                 bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
-            track_csv_path = f"{output_base}_track.csv"
-            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
-            self._append_result_file(track_csv_path, 'track_csv')
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
 
         if HAS_PANDAS and summary_rows:
-            summary_csv_path = f"{output_base}_summary.csv"
-            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
-            self._append_result_file(summary_csv_path, 'summary_csv')
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
 
         if HAS_PANDAS and bins_rows:
-            bins_csv_path = f"{output_base}_bins.csv"
-            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
-            self._append_result_file(bins_csv_path, 'bins_csv')
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
 
-        report_txt_path = f"{output_base}_report.txt"
-        self._generate_txt_report(summary_rows, report_txt_path)
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
         self._append_result_file(report_txt_path, 'report')
 
-        heatmap_paths = []
-        trackmap_paths = []
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
-            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
-            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_novel_object_heatmap(tracker, heatmap_path):
-                heatmap_paths.append(heatmap_path)
-                self._append_result_file(heatmap_path)
-
-            if render_novel_object_trackmap(tracker, trackmap_path):
-                trackmap_paths.append(trackmap_path)
-                self._append_result_file(trackmap_path)
-
-        if heatmap_paths:
-            if len(heatmap_paths) == 1:
-                self._append_result_file(heatmap_paths[0], 'heatmap')
+            if render_novel_object_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
             else:
-                heatmap_grid_path = f"{output_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
-                    self._append_result_file(heatmap_grid_path, 'heatmap')
+                self._log(f"Failed to save NOR heatmap: {heatmap_final_path}")
 
-        if trackmap_paths:
-            if len(trackmap_paths) == 1:
-                self._append_result_file(trackmap_paths[0], 'trackmap')
+            if render_novel_object_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
             else:
-                trackmap_grid_path = f"{output_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
-                    self._append_result_file(trackmap_grid_path, 'trackmap')
+                self._log(f"Failed to save NOR trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save NOR heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save NOR trackmap grid: {trackmap_grid_final_path}")
 
         if generate_video and os.path.exists(output_video_path):
-            self._append_result_file(output_video_path, 'video')
-            self._log(f"NOR annotated video saved: {output_video_path}")
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"NOR annotated video saved: {exported_video}")
 
         self.realtime_data = [
             {
@@ -1586,58 +1775,82 @@ class OpenFieldAnalysisSession:
                 bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
-            track_csv_path = f"{output_base}_track.csv"
-            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
-            self._append_result_file(track_csv_path, 'track_csv')
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
 
         if HAS_PANDAS and summary_rows:
-            summary_csv_path = f"{output_base}_summary.csv"
-            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
-            self._append_result_file(summary_csv_path, 'summary_csv')
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
 
         if HAS_PANDAS and bins_rows:
-            bins_csv_path = f"{output_base}_bins.csv"
-            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
-            self._append_result_file(bins_csv_path, 'bins_csv')
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
 
-        report_txt_path = f"{output_base}_report.txt"
-        self._generate_txt_report(summary_rows, report_txt_path)
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
         self._append_result_file(report_txt_path, 'report')
 
-        heatmap_paths = []
-        trackmap_paths = []
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"arena_{tracker.roi_id:02d}")
-            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
-            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_open_field_heatmap(tracker, heatmap_path):
-                heatmap_paths.append(heatmap_path)
-                self._append_result_file(heatmap_path)
-
-            if render_open_field_trackmap(tracker, trackmap_path):
-                trackmap_paths.append(trackmap_path)
-                self._append_result_file(trackmap_path)
-
-        if heatmap_paths:
-            if len(heatmap_paths) == 1:
-                self._append_result_file(heatmap_paths[0], 'heatmap')
+            if render_open_field_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
             else:
-                heatmap_grid_path = f"{output_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | Heatmaps"):
-                    self._append_result_file(heatmap_grid_path, 'heatmap')
+                self._log(f"Failed to save OFT heatmap: {heatmap_final_path}")
 
-        if trackmap_paths:
-            if len(trackmap_paths) == 1:
-                self._append_result_file(trackmap_paths[0], 'trackmap')
+            if render_open_field_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
             else:
-                trackmap_grid_path = f"{output_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | Trajectory Maps"):
-                    self._append_result_file(trackmap_grid_path, 'trackmap')
+                self._log(f"Failed to save OFT trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save OFT heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save OFT trackmap grid: {trackmap_grid_final_path}")
 
         if generate_video and os.path.exists(output_video_path):
-            self._append_result_file(output_video_path, 'video')
-            self._log(f"OFT annotated video saved: {output_video_path}")
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"OFT annotated video saved: {exported_video}")
 
         self.realtime_data = [
             {
@@ -1975,11 +2188,19 @@ class OpenFieldMultiArenaAnalysisSession:
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
         result_folder = self.config.get('output_dir') or str(RESULT_DIR)
-        os.makedirs(result_folder, exist_ok=True)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='oft',
+            result_folder=result_folder,
+            fallback='video',
+        )
 
-        video_name = Path(video_info.get('original_name', 'video')).stem
-        output_base = os.path.join(result_folder, f"{video_name}_oft")
+        video_name = output_info['display_stem']
+        output_base = output_info['work_base']
+        final_base = output_info['final_base']
         output_video_path = f"{output_base}_analyzed.mp4"
+        final_output_video_path = f"{final_base}_analyzed.mp4"
         generate_video = bool(self.config.get('generate_video', True))
 
         cap = cv2.VideoCapture(video_path)
@@ -2148,58 +2369,82 @@ class OpenFieldMultiArenaAnalysisSession:
                 bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
-            track_csv_path = f"{output_base}_track.csv"
-            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
-            self._append_result_file(track_csv_path, 'track_csv')
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
 
         if HAS_PANDAS and summary_rows:
-            summary_csv_path = f"{output_base}_summary.csv"
-            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
-            self._append_result_file(summary_csv_path, 'summary_csv')
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
 
         if HAS_PANDAS and bins_rows:
-            bins_csv_path = f"{output_base}_bins.csv"
-            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
-            self._append_result_file(bins_csv_path, 'bins_csv')
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
 
-        report_txt_path = f"{output_base}_report.txt"
-        self._generate_txt_report(summary_rows, report_txt_path)
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
         self._append_result_file(report_txt_path, 'report')
 
-        heatmap_paths = []
-        trackmap_paths = []
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"arena_{tracker.roi_id:02d}")
-            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
-            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_open_field_heatmap(tracker, heatmap_path):
-                heatmap_paths.append(heatmap_path)
-                self._append_result_file(heatmap_path)
-
-            if render_open_field_trackmap(tracker, trackmap_path):
-                trackmap_paths.append(trackmap_path)
-                self._append_result_file(trackmap_path)
-
-        if heatmap_paths:
-            if len(heatmap_paths) == 1:
-                self._append_result_file(heatmap_paths[0], 'heatmap')
+            if render_open_field_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
             else:
-                heatmap_grid_path = f"{output_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | Heatmaps"):
-                    self._append_result_file(heatmap_grid_path, 'heatmap')
+                self._log(f"Failed to save OFT heatmap: {heatmap_final_path}")
 
-        if trackmap_paths:
-            if len(trackmap_paths) == 1:
-                self._append_result_file(trackmap_paths[0], 'trackmap')
+            if render_open_field_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
             else:
-                trackmap_grid_path = f"{output_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | Trajectory Maps"):
-                    self._append_result_file(trackmap_grid_path, 'trackmap')
+                self._log(f"Failed to save OFT trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save OFT heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save OFT trackmap grid: {trackmap_grid_final_path}")
 
         if generate_video and os.path.exists(output_video_path):
-            self._append_result_file(output_video_path, 'video')
-            self._log(f"OFT annotated video saved: {output_video_path}")
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"OFT annotated video saved: {exported_video}")
 
         self.realtime_data = [
             {
@@ -2643,58 +2888,82 @@ class NovelObjectMultiArenaAnalysisSession:
                 bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
-            track_csv_path = f"{output_base}_track.csv"
-            pd.DataFrame(track_rows).to_csv(track_csv_path, index=False)
-            self._append_result_file(track_csv_path, 'track_csv')
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
 
         if HAS_PANDAS and summary_rows:
-            summary_csv_path = f"{output_base}_summary.csv"
-            pd.DataFrame(summary_rows).to_csv(summary_csv_path, index=False)
-            self._append_result_file(summary_csv_path, 'summary_csv')
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
 
         if HAS_PANDAS and bins_rows:
-            bins_csv_path = f"{output_base}_bins.csv"
-            pd.DataFrame(bins_rows).to_csv(bins_csv_path, index=False)
-            self._append_result_file(bins_csv_path, 'bins_csv')
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
 
-        report_txt_path = f"{output_base}_report.txt"
-        self._generate_txt_report(summary_rows, report_txt_path)
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
         self._append_result_file(report_txt_path, 'report')
 
-        heatmap_paths = []
-        trackmap_paths = []
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
-            heatmap_path = f"{output_base}_{roi_slug}_heatmap.png"
-            trackmap_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_novel_object_heatmap(tracker, heatmap_path):
-                heatmap_paths.append(heatmap_path)
-                self._append_result_file(heatmap_path)
-
-            if render_novel_object_trackmap(tracker, trackmap_path):
-                trackmap_paths.append(trackmap_path)
-                self._append_result_file(trackmap_path)
-
-        if heatmap_paths:
-            if len(heatmap_paths) == 1:
-                self._append_result_file(heatmap_paths[0], 'heatmap')
+            if render_novel_object_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
             else:
-                heatmap_grid_path = f"{output_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_paths, heatmap_grid_path, title=f"{video_name} | NOR Heatmaps"):
-                    self._append_result_file(heatmap_grid_path, 'heatmap')
+                self._log(f"Failed to save NOR heatmap: {heatmap_final_path}")
 
-        if trackmap_paths:
-            if len(trackmap_paths) == 1:
-                self._append_result_file(trackmap_paths[0], 'trackmap')
+            if render_novel_object_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
             else:
-                trackmap_grid_path = f"{output_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_paths, trackmap_grid_path, title=f"{video_name} | NOR Trajectory Maps"):
-                    self._append_result_file(trackmap_grid_path, 'trackmap')
+                self._log(f"Failed to save NOR trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | NOR Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save NOR heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | NOR Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save NOR trackmap grid: {trackmap_grid_final_path}")
 
         if generate_video and os.path.exists(output_video_path):
-            self._append_result_file(output_video_path, 'video')
-            self._log(f"NOR annotated video saved: {output_video_path}")
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"NOR annotated video saved: {exported_video}")
 
         self.realtime_data = [
             {
@@ -2876,24 +3145,23 @@ def api_upload_files():
     if not files:
         return jsonify({'success': False, 'error': '没有接收到文件'}), 400
 
-    valid_exts = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
     saved_paths = []
+    saved_names = []
     upload_id = secrets.token_hex(8)
 
     for f in files:
         if f and f.filename:
             ext = os.path.splitext(f.filename)[1].lower()
-            if ext not in valid_exts:
+            if ext not in VALID_VIDEO_EXTS:
                 continue
-            safe_name = f.filename
-            save_path = str(UPLOAD_DIR / f"{upload_id}_{safe_name}")
-            f.save(save_path)
+            save_path, original_name = _save_uploaded_video(f, upload_id)
             saved_paths.append(save_path)
+            saved_names.append(original_name)
 
     if not saved_paths:
         return jsonify({'success': False, 'error': '没有有效的视频文件'}), 400
 
-    return jsonify({'success': True, 'paths': saved_paths})
+    return jsonify({'success': True, 'paths': saved_paths, 'names': saved_names})
 
 
 @app.route('/do_upload', methods=['POST'])
@@ -2916,28 +3184,31 @@ def do_upload():
     # 处理上传的文件
     for f in uploaded_files:
         if f and f.filename:
-            safe_name = f.filename
-            save_path = str(UPLOAD_DIR / f"{session_id}_{safe_name}")
-            f.save(save_path)
+            save_path, original_name = _save_uploaded_video(f, session_id)
             video_paths.append(save_path)
-            video_infos.append({'path': save_path, 'original_name': safe_name})
+            video_infos.append({'path': save_path, 'original_name': original_name})
 
     # 处理本地路径
     if local_paths_raw:
-        valid_exts = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
         for line in local_paths_raw.split('\n'):
             p = line.strip().strip('"').strip("'").strip('“”').strip('‘’').strip()
             if not p:
                 continue
             p = Path(p).expanduser()
-            if p.is_file() and p.suffix.lower() in valid_exts:
-                video_paths.append(str(p))
-                video_infos.append({'path': str(p), 'original_name': p.name})
+            if p.is_file() and p.suffix.lower() in VALID_VIDEO_EXTS:
+                staged_path, original_name = _stage_local_video_if_needed(
+                    p,
+                    session_id,
+                    original_name=_get_original_name_for_path(p) or p.name,
+                )
+                video_paths.append(staged_path)
+                video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(p)})
             elif p.is_dir():
                 for vf in sorted(p.iterdir()):
-                    if vf.is_file() and vf.suffix.lower() in valid_exts:
-                        video_paths.append(str(vf))
-                        video_infos.append({'path': str(vf), 'original_name': vf.name})
+                    if vf.is_file() and vf.suffix.lower() in VALID_VIDEO_EXTS:
+                        staged_path, original_name = _stage_local_video_if_needed(vf, session_id, original_name=vf.name)
+                        video_paths.append(staged_path)
+                        video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(vf)})
 
     if not video_paths:
         flash('请选择或输入至少一个视频文件', 'error')
@@ -2947,6 +3218,7 @@ def do_upload():
     start_seconds = request.form.get('start_seconds', '').strip()
     end_seconds = request.form.get('end_seconds', '').strip()
     output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
+    resolved_output_dir = _resolve_result_dir(output_dir) if output_dir else None
     fps_override = request.form.get('fps_override', '').strip()
 
     # 读取第一个视频的基本信息
@@ -2969,7 +3241,7 @@ def do_upload():
         'video_info': video_info_data,
         'start_seconds': start_seconds if start_seconds else None,
         'end_seconds': end_seconds if end_seconds else None,
-        'output_dir': output_dir if output_dir else None,
+        'output_dir': resolved_output_dir,
         'fps_override': float(fps_override) if fps_override else None,
         'is_batch': len(video_paths) > 1,
     }
@@ -3495,7 +3767,7 @@ def download_file(session_id, file_type):
     if len(files) == 1:
         return send_file(files[0], as_attachment=True)
 
-    result_dir = sess.get('output_dir') or str(RESULT_DIR)
+    result_dir = _resolve_result_dir(sess.get('output_dir'))
     os.makedirs(result_dir, exist_ok=True)
     zip_path = os.path.join(result_dir, f'{session_id}_{file_type}.zip')
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -3512,7 +3784,7 @@ def open_folder(session_id):
         return jsonify({'error': '会话不存在'}), 404
 
     # 确定结果文件夹
-    result_dir = sess.get('output_dir') or str(RESULT_DIR)
+    result_dir = _resolve_result_dir(sess.get('output_dir'))
 
     if not os.path.isdir(result_dir):
         os.makedirs(result_dir, exist_ok=True)
@@ -3540,7 +3812,7 @@ def get_result_dir(session_id):
     if not sess:
         return jsonify({'error': '会话不存在'}), 404
 
-    result_dir = sess.get('output_dir') or str(RESULT_DIR)
+    result_dir = _resolve_result_dir(sess.get('output_dir'))
     return jsonify({'path': result_dir})
 
 

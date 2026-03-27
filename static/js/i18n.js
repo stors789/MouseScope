@@ -6,7 +6,7 @@ const I18N = {
         'nav.license':        '许可协议',
         'lang.toggle':        'English',
 
-        'footer.rights':      'MouseScope Desktop v1.2 © 2026 All Rights Reserved | 版权所有',
+        'footer.rights':      'MouseScope Desktop v1.2.1 © 2026 All Rights Reserved | 版权所有',
         'footer.academic':    '仅限学术研究使用 · 禁止商业用途 · 禁止二次分发',
         'footer.viewlicense': '查看完整许可协议',
 
@@ -18,7 +18,7 @@ const I18N = {
         'license.loading':       '加载中...',
 
         'home.subtitle':     '面向小鼠行为学视频分析的桌面软件平台<br>当前支持悬尾实验、旷场实验、新奇物体识别，并将持续扩展更多实验模块',
-        'home.version':      'Desktop Edition v1.2 · 学术研究专用',
+        'home.version':      'Desktop Edition v1.2.1 · 学术研究专用',
         'home.btn.start':    '开始分析',
         'home.btn.manual':   '查看手册',
         'home.feature1.title': '多实验入口',
@@ -594,7 +594,7 @@ const I18N = {
         'nav.license':        'License',
         'lang.toggle':        '中文',
 
-        'footer.rights':      'MouseScope Desktop v1.2 © 2026 All Rights Reserved',
+        'footer.rights':      'MouseScope Desktop v1.2.1 © 2026 All Rights Reserved',
         'footer.academic':    'For Academic Research Only · No Commercial Use · No Redistribution',
         'footer.viewlicense': 'View Full License',
 
@@ -606,7 +606,7 @@ const I18N = {
         'license.loading':       'Loading...',
 
         'home.subtitle':     'A modular desktop platform for automated mouse behavioral video analysis<br>Currently supports TST, OFT, and Novel Object Recognition, with more assay modules coming soon',
-        'home.version':      'Desktop Edition v1.2 · Academic Research Only',
+        'home.version':      'Desktop Edition v1.2.1 · Academic Research Only',
         'home.btn.start':    'Start Analysis',
         'home.btn.manual':   'User Manual',
         'home.feature1.title': 'Multi-Experiment',

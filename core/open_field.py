@@ -10,12 +10,13 @@ result rendering so the Flask app can focus on workflow orchestration.
 from __future__ import annotations
 
 import math
-import re
 from collections import deque
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+
+from file_utils import ascii_slug, read_image_unicode, write_image_unicode
 
 
 def _order_quad(points: Sequence[Sequence[float]]) -> np.ndarray:
@@ -46,9 +47,7 @@ def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: 
 
 
 def sanitize_name(text: str, fallback: str = "arena") -> str:
-    cleaned = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", str(text or "").strip())
-    cleaned = cleaned.strip("._-")
-    return cleaned[:80] or fallback
+    return ascii_slug(text, fallback=fallback, max_length=80)
 
 
 class OpenFieldTracker:
@@ -625,8 +624,9 @@ def render_open_field_heatmap(
     cv2.putText(color, tracker.roi_name, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
     cv2.putText(color, "Heatmap", (12, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
 
-    cv2.imwrite(output_path, color)
-    return output_path
+    if write_image_unicode(output_path, color):
+        return output_path
+    return None
 
 
 def render_open_field_trackmap(
@@ -674,8 +674,9 @@ def render_open_field_trackmap(
 
     cv2.putText(canvas, tracker.roi_name, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 40, 40), 2, cv2.LINE_AA)
     cv2.putText(canvas, "Trajectory Map", (12, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (40, 40, 40), 2, cv2.LINE_AA)
-    cv2.imwrite(output_path, canvas)
-    return output_path
+    if write_image_unicode(output_path, canvas):
+        return output_path
+    return None
 
 
 def render_open_field_image_grid(
@@ -691,7 +692,7 @@ def render_open_field_image_grid(
 
     images = []
     for path in valid_paths:
-        img = cv2.imread(path)
+        img = read_image_unicode(path)
         if img is not None:
             images.append(img)
     if not images:
@@ -718,5 +719,6 @@ def render_open_field_image_grid(
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
         cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), (220, 226, 232), 1)
 
-    cv2.imwrite(output_path, canvas)
-    return output_path
+    if write_image_unicode(output_path, canvas):
+        return output_path
+    return None

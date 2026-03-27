@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import math
 import os
-import re
 from collections import deque
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+from file_utils import ascii_slug, write_image_unicode
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -78,9 +78,7 @@ def _angle_deg(vec_a: Sequence[float], vec_b: Sequence[float]) -> Optional[float
 
 
 def sanitize_name(text: str, fallback: str = "nor") -> str:
-    cleaned = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", str(text or "").strip())
-    cleaned = cleaned.strip("._-")
-    return cleaned[:80] or fallback
+    return ascii_slug(text, fallback=fallback, max_length=80)
 
 
 _TEXT_FONT_CACHE: Dict[int, Any] = {}
@@ -1286,8 +1284,9 @@ def render_novel_object_heatmap(
         color_bgr = _object_color(obj["role"])
         cv2.circle(color, (ox, oy), radius, color_bgr, 2)
 
-    cv2.imwrite(output_path, color)
-    return output_path
+    if write_image_unicode(output_path, color):
+        return output_path
+    return None
 
 
 def render_novel_object_trackmap(
@@ -1340,5 +1339,6 @@ def render_novel_object_trackmap(
         color = _object_color(obj["role"])
         cv2.circle(canvas, (ox, oy), radius, color, 2)
 
-    cv2.imwrite(output_path, canvas)
-    return output_path
+    if write_image_unicode(output_path, canvas):
+        return output_path
+    return None
