@@ -529,16 +529,6 @@ def _zone_color(zone_label: str, detected: bool) -> Tuple[int, int, int]:
         return (249, 115, 22)
     return (59, 130, 246)
 
-
-def draw_open_field_result(
-    frame: np.ndarray,
-    tracker: OpenFieldTracker,
-    result: Dict[str, Any],
-    inplace: bool = False,
-) -> np.ndarray:
-    return draw_open_field_results(frame, [(tracker, result)], inplace=inplace)
-
-
 def draw_open_field_results(
     frame: np.ndarray,
     tracker_results: Sequence[Tuple[OpenFieldTracker, Dict[str, Any]]],
