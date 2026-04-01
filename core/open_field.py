@@ -576,6 +576,104 @@ def draw_open_field_results(
     return output
 
 
+_PAPER_BG = (255, 255, 255)
+_PAPER_BORDER = (18, 18, 18)
+_PAPER_GUIDE = (110, 110, 110)
+_PAPER_TRAJECTORY = (58, 58, 58)
+_PAPER_HEAT_STOPS = np.array([0.0, 0.12, 0.35, 0.62, 1.0], dtype=np.float32)
+_PAPER_HEAT_COLORS = np.array(
+    [
+        (255, 255, 255),
+        (208, 240, 255),
+        (145, 217, 253),
+        (84, 160, 253),
+        (38, 44, 196),
+    ],
+    dtype=np.float32,
+)
+
+
+def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
+    flat = np.clip(norm, 0.0, 1.0).reshape(-1)
+    scaled = np.power(flat, 0.82)
+    scaled = np.where(scaled > 0.02, scaled, 0.0)
+    channels = [
+        np.interp(scaled, _PAPER_HEAT_STOPS, _PAPER_HEAT_COLORS[:, channel])
+        for channel in range(3)
+    ]
+    heat = np.stack(channels, axis=1)
+    return heat.reshape(norm.shape[0], norm.shape[1], 3).astype(np.uint8)
+
+
+def _paper_border_thickness(pixels_per_cm: int) -> int:
+    return max(2, int(round(pixels_per_cm / 6.0)))
+
+
+def _paper_guide_thickness(pixels_per_cm: int) -> int:
+    return max(1, _paper_border_thickness(pixels_per_cm) - 1)
+
+
+def _paper_path_thickness(pixels_per_cm: int) -> int:
+    return max(1, int(round(pixels_per_cm / 10.0)))
+
+
+def _paper_dash_length(pixels_per_cm: int) -> int:
+    return max(8, int(round(pixels_per_cm * 0.8)))
+
+
+def _paper_gap_length(pixels_per_cm: int) -> int:
+    return max(4, int(round(pixels_per_cm * 0.35)))
+
+
+def _paper_draw_dashed_line(
+    image: np.ndarray,
+    start: Tuple[int, int],
+    end: Tuple[int, int],
+    color: Tuple[int, int, int],
+    thickness: int,
+    dash_length: int,
+    gap_length: int,
+) -> None:
+    start_arr = np.array(start, dtype=np.float32)
+    end_arr = np.array(end, dtype=np.float32)
+    direction = end_arr - start_arr
+    total = float(np.linalg.norm(direction))
+    if total <= 1e-6:
+        return
+
+    unit = direction / total
+    distance = 0.0
+    while distance < total:
+        seg_start = start_arr + unit * distance
+        seg_end = start_arr + unit * min(total, distance + dash_length)
+        cv2.line(
+            image,
+            tuple(np.round(seg_start).astype(int)),
+            tuple(np.round(seg_end).astype(int)),
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
+        distance += dash_length + gap_length
+
+
+def _paper_draw_dashed_rect(
+    image: np.ndarray,
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int],
+    color: Tuple[int, int, int],
+    thickness: int,
+    dash_length: int,
+    gap_length: int,
+) -> None:
+    x0, y0 = top_left
+    x1, y1 = bottom_right
+    _paper_draw_dashed_line(image, (x0, y0), (x1, y0), color, thickness, dash_length, gap_length)
+    _paper_draw_dashed_line(image, (x1, y0), (x1, y1), color, thickness, dash_length, gap_length)
+    _paper_draw_dashed_line(image, (x1, y1), (x0, y1), color, thickness, dash_length, gap_length)
+    _paper_draw_dashed_line(image, (x0, y1), (x0, y0), color, thickness, dash_length, gap_length)
+
+
 def render_open_field_heatmap(
     tracker: OpenFieldTracker,
     output_path: str,
@@ -599,20 +697,23 @@ def render_open_field_heatmap(
         return None
 
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    img = (norm * 255).astype(np.uint8)
-    color = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+    color = _paper_blend_heatmap(norm)
+    border_thickness = _paper_border_thickness(pixels_per_cm)
+    guide_thickness = _paper_guide_thickness(pixels_per_cm)
+    dash_length = _paper_dash_length(pixels_per_cm)
+    gap_length = _paper_gap_length(pixels_per_cm)
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
-    cv2.rectangle(
+    _paper_draw_dashed_rect(
         color,
         (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
         (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        (255, 255, 255),
-        2,
+        _PAPER_GUIDE,
+        guide_thickness,
+        dash_length,
+        gap_length,
     )
-    cv2.rectangle(color, (0, 0), (width - 1, height - 1), (255, 255, 255), 2)
-    cv2.putText(color, tracker.roi_name, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(color, "Heatmap", (12, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.rectangle(color, (0, 0), (width - 1, height - 1), _PAPER_BORDER, border_thickness, cv2.LINE_AA)
 
     if write_image_unicode(output_path, color):
         return output_path
@@ -630,23 +731,23 @@ def render_open_field_trackmap(
 
     width = max(160, int(round(tracker.arena_width_cm * pixels_per_cm)))
     height = max(160, int(round(tracker.arena_height_cm * pixels_per_cm)))
-    canvas = np.full((height, width, 3), 246, dtype=np.uint8)
+    canvas = np.full((height, width, 3), _PAPER_BG, dtype=np.uint8)
+    border_thickness = _paper_border_thickness(pixels_per_cm)
+    guide_thickness = _paper_guide_thickness(pixels_per_cm)
+    path_thickness = _paper_path_thickness(pixels_per_cm)
+    dash_length = _paper_dash_length(pixels_per_cm)
+    gap_length = _paper_gap_length(pixels_per_cm)
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
-    cv2.rectangle(
+    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), _PAPER_BORDER, border_thickness, cv2.LINE_AA)
+    _paper_draw_dashed_rect(
         canvas,
         (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
         (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        (218, 234, 255),
-        thickness=-1,
-    )
-    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), (70, 70, 70), 2)
-    cv2.rectangle(
-        canvas,
-        (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
-        (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        (66, 133, 244),
-        2,
+        _PAPER_GUIDE,
+        guide_thickness,
+        dash_length,
+        gap_length,
     )
 
     points = []
@@ -656,14 +757,8 @@ def render_open_field_trackmap(
         points.append((px, py))
 
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], (34, 91, 179), 1, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], _PAPER_TRAJECTORY, path_thickness, cv2.LINE_AA)
 
-    if points:
-        cv2.circle(canvas, points[0], 5, (16, 185, 129), -1)
-        cv2.circle(canvas, points[-1], 5, (229, 57, 53), -1)
-
-    cv2.putText(canvas, tracker.roi_name, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 40, 40), 2, cv2.LINE_AA)
-    cv2.putText(canvas, "Trajectory Map", (12, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (40, 40, 40), 2, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None
@@ -692,14 +787,11 @@ def render_open_field_image_grid(
     max_w = max(img.shape[1] for img in images)
     cols = max(1, min(int(columns), len(images)))
     rows = int(math.ceil(len(images) / cols))
-    title_h = 56 if title else 20
+    title_h = 0
 
     canvas_h = title_h + rows * max_h + (rows + 1) * padding
     canvas_w = cols * max_w + (cols + 1) * padding
-    canvas = np.full((canvas_h, canvas_w, 3), 248, dtype=np.uint8)
-
-    if title:
-        cv2.putText(canvas, title, (padding, 36), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (30, 41, 59), 2, cv2.LINE_AA)
+    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
 
     for idx, img in enumerate(images):
         row = idx // cols
@@ -707,7 +799,9 @@ def render_open_field_image_grid(
         y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
-        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), (220, 226, 232), 1)
+        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), _PAPER_BORDER, 1, cv2.LINE_AA)
+
+    cv2.rectangle(canvas, (0, 0), (canvas_w - 1, canvas_h - 1), _PAPER_BORDER, 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path

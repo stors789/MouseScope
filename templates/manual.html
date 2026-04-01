@@ -221,20 +221,27 @@
             </h1>
             <p class="text-secondary mb-0" data-i18n="manual.subtitle">从视频采集到拿到结果，每一步该怎么做</p>
         </div>
-        <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
-            <i class="fas fa-arrow-left me-2"></i><span data-i18n="manual.btn.back">返回首页</span>
-        </a>
+        <div class="d-flex gap-2 flex-wrap">
+            {% if manual_return_to %}
+            <a href="{{ manual_return_to }}" class="btn btn-primary">
+                <i class="fas fa-rotate-left me-2"></i><span>返回上一界面</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                <i class="fas fa-arrow-left me-2"></i><span data-i18n="manual.btn.back">返回首页</span>
+            </a>
+        </div>
     </div>
     <div class="manual-switch">
         <div class="manual-switch-label" data-i18n="manual.switch.label">实验手册</div>
         <div class="manual-switch-group">
-            <a href="{{ url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
+            <a href="{{ url_for('manual', module='tst', return_to=manual_return_to) if manual_return_to else url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
                 <span data-i18n="manual.switch.tst">TST 手册</span>
             </a>
-            <a href="{{ url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
+            <a href="{{ url_for('manual', module='oft', return_to=manual_return_to) if manual_return_to else url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
                 <span data-i18n="manual.switch.oft">OFT 手册</span>
             </a>
-            <a href="{{ url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
+            <a href="{{ url_for('manual', module='nor', return_to=manual_return_to) if manual_return_to else url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
                 <span data-i18n="manual.switch.nor">NOR 手册</span>
             </a>
         </div>

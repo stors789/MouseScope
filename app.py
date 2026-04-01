@@ -52,6 +52,7 @@ from datetime import datetime, timezone, timedelta
 from collections import deque
 import subprocess
 import platform
+from urllib.parse import urlsplit
 from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, jsonify, send_file, session
@@ -239,6 +240,94 @@ app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 # 会话存储（内存中，无数据库）
 analysis_sessions = {}
 debug_static_bg_cache = {}
+
+
+def _experiment_type_to_manual_module(experiment_type):
+    exp = str(experiment_type or '').strip().lower()
+    if exp == 'open_field':
+        return 'oft'
+    if exp == 'novel_object':
+        return 'nor'
+    return 'tst'
+
+
+def _safe_internal_return_to(value):
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+
+    parsed = urlsplit(raw)
+    if parsed.scheme or parsed.netloc:
+        return None
+
+    path = parsed.path or ''
+    if not path.startswith('/') or path.startswith('//'):
+        return None
+
+    safe = path
+    if parsed.query:
+        safe += f'?{parsed.query}'
+    if parsed.fragment:
+        safe += f'#{parsed.fragment}'
+    return safe
+
+
+def _current_request_target():
+    query = request.query_string.decode('utf-8', 'ignore') if request.query_string else ''
+    return f'{request.path}?{query}' if query else request.path
+
+
+def _request_session_id():
+    view_args = getattr(request, 'view_args', None) or {}
+    return view_args.get('session_id')
+
+
+def _request_experiment_type():
+    session_id = _request_session_id()
+    if not session_id:
+        return None
+
+    sess = analysis_sessions.get(session_id) or {}
+    if sess.get('experiment_type'):
+        return sess.get('experiment_type')
+
+    analysis = sess.get('analysis')
+    if analysis is not None:
+        return getattr(analysis, 'experiment_type', None)
+    return None
+
+
+@app.context_processor
+def inject_navigation_context():
+    endpoint = request.endpoint or ''
+    manual_return_to = _safe_internal_return_to(request.args.get('return_to'))
+
+    if endpoint == 'manual':
+        manual_module = str(request.args.get('module', 'tst')).strip().lower()
+        if manual_module not in {'tst', 'oft', 'nor'}:
+            manual_module = 'tst'
+        manual_nav_target = None
+        manual_nav_rel = None
+        if manual_return_to:
+            manual_nav_url = url_for('manual', module=manual_module, return_to=manual_return_to)
+        else:
+            manual_nav_url = url_for('manual', module=manual_module)
+    else:
+        manual_module = _experiment_type_to_manual_module(_request_experiment_type())
+        current_target = _safe_internal_return_to(_current_request_target())
+        if current_target:
+            manual_nav_url = url_for('manual', module=manual_module, return_to=current_target)
+        else:
+            manual_nav_url = url_for('manual', module=manual_module)
+        manual_nav_target = '_blank' if endpoint in {'calibrate', 'monitor'} else None
+        manual_nav_rel = 'noopener noreferrer' if manual_nav_target else None
+
+    return {
+        'manual_nav_url': manual_nav_url,
+        'manual_nav_target': manual_nav_target,
+        'manual_nav_rel': manual_nav_rel,
+        'manual_return_to': manual_return_to,
+    }
 
 
 def _coerce_point_list(points, min_points=4):
@@ -1850,12 +1939,18 @@ def manual():
 @app.route('/manual/open_field')
 def manual_open_field():
     """Open field manual."""
+    return_to = _safe_internal_return_to(request.args.get('return_to'))
+    if return_to:
+        return redirect(url_for('manual', module='oft', return_to=return_to))
     return redirect(url_for('manual', module='oft'))
 
 
 @app.route('/manual/novel_object')
 def manual_novel_object():
     """Novel object recognition manual."""
+    return_to = _safe_internal_return_to(request.args.get('return_to'))
+    if return_to:
+        return redirect(url_for('manual', module='nor', return_to=return_to))
     return redirect(url_for('manual', module='nor'))
 
 

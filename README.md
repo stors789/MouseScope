@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.2.2-2563eb" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-1.2.3-2563eb" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-1d4ed8" alt="Platform"/>
   <img src="https://img.shields.io/badge/Python-3.9%2B-0f766e" alt="Python"/>
   <img src="https://img.shields.io/badge/UI-Flask%20Desktop-0369a1" alt="UI"/>
@@ -299,13 +299,13 @@ MouseScope/
   title   = {MouseScope: Automated Mouse Behavior Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {1.2.2}
+  version = {1.2.3}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Automated mouse behavior analysis platform* (Version 1.2.2) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Automated mouse behavior analysis platform* (Version 1.2.3) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ---
 
