@@ -1,167 +1,703 @@
-<div class="card mb-4">
-    <div class="card-body py-3">
-        <div class="flow-steps justify-content-center">
-            <span class="flow-step">1. <span data-i18n="manual.oft.flow.1">视频采集要求</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">2. <span data-i18n="manual.oft.flow.2">上传视频</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">3. <span data-i18n="manual.oft.flow.3">多 arena 标定</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">4. <span data-i18n="manual.oft.flow.4">ROI 命名与时间窗</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">5. <span data-i18n="manual.oft.flow.5">调参与启动</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">6. <span data-i18n="manual.oft.flow.6">结果与轨迹图</span></span>
-        </div>
-    </div>
-</div>
+<div id="oft-manual-root"></div>
 
-<div class="row">
-    <div class="col-lg-3 mb-4">
-        <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
-            <a href="#sec-video" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span data-i18n="manual.oft.nav.video">视频采集要求</span>
-            </a>
-            <a href="#sec-upload" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span data-i18n="manual.oft.nav.upload">上传视频</span>
-            </a>
-            <a href="#sec-arena" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span data-i18n="manual.oft.nav.arena">多 arena 标定</span>
-            </a>
-            <a href="#sec-time" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span data-i18n="manual.oft.nav.time">ROI 命名与时间窗</span>
-            </a>
-            <a href="#sec-debug" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span data-i18n="manual.oft.nav.debug">调参与启动</span>
-            </a>
-            <a href="#sec-result" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span data-i18n="manual.oft.nav.result">结果与轨迹图</span>
-            </a>
-            <a href="#sec-notes" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span data-i18n="manual.oft.nav.notes">注意事项</span>
-            </a>
-        </div>
-    </div>
-    <div class="col-lg-9">
-        <div class="manual-section" id="sec-video">
-            <h3><span class="step-number">1</span><span data-i18n="manual.oft.sec1.title">视频采集要求</span></h3>
-            <p data-i18n="manual.oft.sec1.intro">旷场实验建议使用俯视或接近俯视的固定机位，整个录制过程中相机不能移动。画面里要完整看到每个场地的四条边，边界越清楚，后续的透视校正和轨迹标准化越稳定。</p>
-            <div class="sub-step">
-                <h5><i class="fas fa-camera me-2"></i><span data-i18n="manual.oft.sec1.camera.title">机位与场地</span></h5>
-                <ul class="mb-0">
-                    <li data-i18n="manual.oft.sec1.camera.li1">尽量让镜头居中，避免场地四角被裁切或被器材遮挡。</li>
-                    <li data-i18n="manual.oft.sec1.camera.li2">多个 arena 拼在一起拍时，建议所有场地保持同一平面、尽量平整排列。</li>
-                    <li data-i18n="manual.oft.sec1.camera.li3">画面中不要出现频繁移动的人手、线缆反光或其它干扰目标。</li>
-                </ul>
+<script>
+(function () {
+    const OFT_MANUAL = {
+        zh: {
+            heroEyebrow: 'Open Field Test / OFT',
+            heroTitle: '旷场实验完整操作手册',
+            heroSubtitle: '本手册覆盖多 arena 标定、检测遮罩、每个参数的作用、全部结果字段含义，以及批量模式下每个视频应该如何独立配置。',
+            heroChips: ['4 角点标定', '透视校正到厘米坐标', '每视频独立批量', 'track / summary / bins', '热图 + 轨迹图'],
+            heroCards: [
+                ['fas fa-border-all', '模块真正输出的是什么', 'OFT 不只是“有无进中心区”。系统会在透视校正后的厘米坐标里统计距离、速度、中心区、壁区、移动 / 静止时间，并导出逐帧轨迹、分箱结果和图像。'],
+                ['fas fa-clone', '批量模式现在怎么工作', '现在批量模式已经支持每个视频独立保存 arena、遮罩、时间窗和调参参数；但在同一个视频内部，多 arena 仍共享这一视频的检测与统计参数。'],
+                ['fas fa-compass-drafting', '为什么 arena 角点这么重要', 'arena 四角不只是画个框。它决定透视矫正、厘米坐标、中心区位置、距离统计和热图坐标系，角点一旦偏，后面所有空间指标都会跟着偏。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', 'arena 标定', 'ROI 命名与时间窗', '调参与预览', '结果与图像'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['arena', 'arena / 遮罩 / 时间窗'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: 'OFT 模块适合分析旷场实验中的总距离、速度、中心区活动和壁区偏好。它会把每个 arena 透视校正到标准厘米坐标，然后在这个标准化空间里做统计。',
+                    points: [
+                        '每个 ROI 在 OFT 里代表一个完整 arena，不是任意多边形活动区。',
+                        '如果同一视频里有多个 arena，系统会并行处理它们，但所有 arena 会共享这一视频的一套检测参数和统计参数。',
+                        '导出的轨迹、热图和 CSV 都基于透视矫正后的坐标，而不是原始像素。'
+                    ],
+                    callouts: [
+                        ['warning', '最容易被误读的一点', '<code>outer_time_s</code> / <code>outer_percent</code> 表示“非中心区时间”，其中已经包含壁区；它不是“去掉壁区之后剩余的中间环带”。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: 'OFT 对“固定俯视、边界完整、照明稳定”非常敏感。旷场边界和鼠体对比越清晰，后续透视校正和轨迹统计越稳定。',
+                    blocks: [
+                        {
+                            title: '机位与边界',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '优先使用俯视或接近俯视的固定机位，整个实验过程中不要移动相机。',
+                                '画面里必须完整看到 arena 四边和四角；角点被裁切后，厘米坐标和轨迹图都会失真。',
+                                '多个 arena 同时拍摄时，尽量让各 arena 位于同一平面、排列规整。'
+                            ]
+                        },
+                        {
+                            title: '背景与光照',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                '让鼠体和地面保持明显对比，减少中心区高光、阴影和反光。',
+                                '如果不同笼位亮度差异很大，虽然现在可以逐视频独立调参，但同一视频内多个 arena 仍共享参数，所以最好先改善采集。',
+                                '镜头边缘黑边、暗角或畸变明显时，优先用检测遮罩去掉脏区域，而不是把 arena 硬往外画。'
+                            ]
+                        },
+                        {
+                            title: '画面干扰',
+                            icon: 'fas fa-eye-slash',
+                            items: [
+                                '不要让人手、标签纸、线缆、风扇阴影或其他移动物体进入 arena 检测区域。',
+                                '如果 arena 旁边有固定但不属于场地的亮边或结构，推荐单独画检测遮罩。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', '高分辨率不是第一优先级', '对 OFT 来说，“arena 边界准确”和“轨迹连续稳定”通常比盲目追求超高分辨率更重要。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页负责定义本批次视频、默认统计时间和输出目录。之后每个 arena 还能继续设置自己的时间模式和时间窗。',
+                    points: [
+                        '上传页的全局开始时间 / 结束时间是默认统计窗口；arena 如果设置为“跟随全局”，就直接沿用这里的时间。',
+                        '如果视频 FPS 元数据不稳定或你用了可变帧率素材，建议在上传页手动覆盖 FPS。',
+                        '批量时建议先把同类视频放在同一批，比如同机位、同 arena 尺寸、同采集条件的视频。虽然现在支持逐视频独立配置，但这样仍然最稳。'
+                    ],
+                    callouts: [
+                        ['success', '输出目录会怎么写', '批量分析时，系统会在你选定的总输出目录下自动创建每个视频各自的子文件夹，并把该视频对应的 CSV、报告、热图、轨迹图和结果视频都放进去。']
+                    ]
+                },
+                arena: {
+                    title: 'arena、检测遮罩与时间窗',
+                    lead: 'OFT 的空间统计都围绕 arena 建立。你需要先给每个 arena 点 4 个角点；如果画面边缘有黑边或畸变，再额外给这个 arena 画检测遮罩。',
+                    blocks: [
+                        {
+                            title: '4 角点 arena 标定',
+                            icon: 'fas fa-vector-square',
+                            items: [
+                                '每个 arena 必须恰好 4 个角点，建议按顺时针或逆时针连续点击，避免自交。',
+                                '输入的 arena 边长 <code>arena_side_cm</code> 会决定透视校正后的厘米尺度。',
+                                '如果 arena 实际不是正方形，请务必确认当前实验设计是否允许使用方形边长近似；当前 OFT GUI 默认按正方形 arena 处理。'
+                            ]
+                        },
+                        {
+                            title: '检测遮罩 detection mask',
+                            icon: 'fas fa-mask',
+                            items: [
+                                '检测遮罩只限制“鼠体在哪些区域允许被检测”，不会改变 arena 的几何尺寸和中心区计算。',
+                                '推荐在边缘畸变、黑边、器材遮挡或 arena 外亮区会误检时使用。',
+                                '如果不单独画遮罩，系统默认直接用 arena 四边形作为检测区域。'
+                            ]
+                        },
+                        {
+                            title: '命名与时间窗',
+                            icon: 'fas fa-clock',
+                            items: [
+                                '每个 arena 都可以独立命名，名称会写入 CSV、报告、热图和轨迹图文件名。',
+                                '可选时间模式包括 <code>global</code> 和 <code>precise</code>。',
+                                '精确时间窗只影响统计，不影响视频本身被读取。也就是说，逐帧 CSV 会标记哪些帧在统计窗内，summary 和 bins 只统计窗口内的内容。'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['模式', '含义', '什么时候用'],
+                        rows: [
+                            ['<code>global</code>', '跟随上传页的全局开始 / 结束时间。', '多 arena 共用同一实验时长时。'],
+                            ['<code>precise</code>', '直接按视频绝对时间指定开始 / 结束秒数。', '不同 arena 需要各自统计不同时间段时。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'arena 和遮罩不要混为一谈', 'arena 决定厘米坐标、中心区和空间统计；遮罩只决定哪里允许做前景检测。arena 画错是空间结果错误，遮罩画错是检测结果错误。']
+                    ]
+                },
+                params: {
+                    title: '参数字典',
+                    lead: '下面列的是当前 OFT GUI 暴露出来的参数。它们可以分成两类：一类负责检测鼠体，另一类负责定义中心区、壁区和时间分箱等统计规则。',
+                    detectTable: {
+                        headers: ['参数', '位置', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '调参页', '检测方式。<code>threshold</code> 用灰度阈值分割，<code>static</code> 用静态背景减除。', '背景稳定、arena 边界清晰时两者都可用；阈值法更直观，静态背景法更适合固定背景差分。'],
+                            ['<code>bg_type</code>', '调参页', '指示背景偏浅还是偏深，决定阈值分割方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '调参页', '灰度阈值法下的分割阈值。', '噪点多就提高；鼠体断裂或漏检就降低。'],
+                            ['<code>min_area</code>', '调参页', '允许通过的最小轮廓面积。', '误检碎点多就提高；鼠体太小被过滤就降低。'],
+                            ['<code>erosion_kernel</code>', '调参页', '腐蚀核大小，去掉小噪点。', '噪点多时增大；轮廓被削弱时减小。'],
+                            ['<code>erosion_iter</code>', '调参页', '腐蚀次数。', '与腐蚀核一起决定去噪强度。'],
+                            ['<code>dilation_kernel</code>', '调参页', '膨胀核大小，用于补回轮廓缺口。', '轮廓破碎时增大；误把背景粘进来时减小。'],
+                            ['<code>dilation_iter</code>', '调参页', '膨胀次数。', '和膨胀核一起决定轮廓修补力度。']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['参数', '作用', '结果影响'],
+                        rows: [
+                            ['<code>arena_side_cm</code>', '定义 arena 的真实边长，建立像素到厘米的空间映射。', '影响距离、速度、热图、轨迹图和中心区尺寸。'],
+                            ['<code>center_ratio_x</code>', '中心区在宽度方向占 arena 的比例。', '影响 <code>center_time_s</code>、<code>center_entries</code> 和中心潜伏期。'],
+                            ['<code>center_ratio_y</code>', '中心区在高度方向占 arena 的比例。', '和 <code>center_ratio_x</code> 一起决定中心区矩形。'],
+                            ['<code>wall_margin_cm</code>', '从 arena 边界向内定义壁区厚度。', '影响 <code>wall_time_s</code> 和 <code>wall_percent</code>。'],
+                            ['<code>movement_threshold_cm_s</code>', '速度高于这个值时记为移动，否则记为静止。', '影响 <code>moving_time_s</code>、<code>immobility_time_s</code> 和分箱统计。'],
+                            ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每一行覆盖多长时间。'],
+                            ['<code>generate_video</code>', '是否导出带叠加标注的结果视频。', '关闭可加速，但失去最直观的人工复核材料。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '同一视频里的共享规则', '现在 OFT 已经支持“每个视频独立调参”，但一个视频里的多个 arena 仍共享该视频的检测参数和统计参数。也就是说，参数是按视频独立，不是按 arena 独立。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: 'OFT 会导出结果视频、逐帧轨迹 CSV、summary CSV、分箱 CSV、TXT 报告，以及每个 arena 的热图和轨迹图。多个 arena 时还会生成热图 / 轨迹图拼图。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '带 arena 边界、中心区、当前区域标签和轨迹叠加的结果视频。'],
+                        ['<code>*_track.csv</code>', '逐帧轨迹表，适合做自定义行为时序和质控。'],
+                        ['<code>*_summary.csv</code>', '每个 arena 一行的核心统计结果表。'],
+                        ['<code>*_bins.csv</code>', '按固定时间箱汇总的距离、速度和区域停留。'],
+                        ['<code>*_report.txt</code>', '基于 summary 生成的可直接阅读的文本报告。'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', '每个 arena 的热图和轨迹图；多 arena 时还会有拼图版本。']
+                    ],
+                    trackTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量汇总或跨文件拼接时用于回溯来源。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'arena 编号与名称。', '用于识别同一视频中的不同 arena。'],
+                            ['<code>frame</code>', '原视频帧号。', '可定位回结果视频。'],
+                            ['<code>time_s</code>', '视频绝对时间，单位秒。', '整个视频时间轴上的时间。'],
+                            ['<code>window_time_s</code>', '统计窗口内相对时间，窗口外为空。', '用于分箱和窗口内轨迹分析。'],
+                            ['<code>detected</code>', '这一帧是否检测到了鼠体。', '低检测率通常意味着追踪质量问题。'],
+                            ['<code>in_stats_window</code>', '这一帧是否落在统计时间窗内。', 'summary 和 bins 只统计为 <code>true</code> 的帧。'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', '透视校正后的厘米坐标。', '不是像素坐标，可直接用于空间分析。'],
+                            ['<code>speed_cm_s</code>', '当前帧速度，单位 cm/s。', '由厘米坐标差分得到。'],
+                            ['<code>step_distance_cm</code>', '这一帧相对于上一统计帧的位移。', '用于累计总距离。'],
+                            ['<code>cumulative_distance_cm</code>', '截至当前统计帧的累计总距离。', '只在统计窗口内增长。'],
+                            ['<code>in_center</code>', '是否位于中心区。', '和中心区时间、进入次数对应。'],
+                            ['<code>in_outer</code>', '是否位于非中心区。', '注意它包含壁区。'],
+                            ['<code>in_wall</code>', '是否位于壁区。', '壁区是按 <code>wall_margin_cm</code> 定义的边缘带。'],
+                            ['<code>zone</code>', '当前区域标签。', '<code>Center</code>、<code>Wall</code>、<code>Outer</code> 或 <code>Unknown</code>。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '用于跨文件回溯。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'arena 编号和名称。', '每个 arena 一行。'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', '该 arena 使用的时间模式与起止时间。', '便于确认 summary 到底统计了哪一段。'],
+                            ['<code>analysis_window_start_s</code>', '该统计窗口的实际起点。', '用于和窗口内相对时间对齐。'],
+                            ['<code>total_time_s</code>', '参与统计的总时长。', '只统计窗口内时长。'],
+                            ['<code>detected_frames</code>', '窗口内检测到鼠体的帧数。', '越低越应警惕轨迹可靠性。'],
+                            ['<code>detected_rate_percent</code>', '窗口内检测成功率。', '非常实用的质控字段。'],
+                            ['<code>total_distance_cm</code>', '总移动距离，单位 cm。', '基于透视校正后的厘米轨迹。'],
+                            ['<code>mean_speed_cm_s</code>', '平均速度。', '等于总距离除以总时长。'],
+                            ['<code>max_speed_cm_s</code>', '窗口内最大瞬时速度。', '对突发跑动敏感。'],
+                            ['<code>center_time_s</code> / <code>center_percent</code>', '中心区停留时长和比例。', '常用于焦虑样行为分析。'],
+                            ['<code>outer_time_s</code> / <code>outer_percent</code>', '非中心区停留时长和比例。', '包含壁区，不是排除壁区后的剩余区域。'],
+                            ['<code>wall_time_s</code> / <code>wall_percent</code>', '壁区停留时长和比例。', '壁区是 outer 的子集。'],
+                            ['<code>moving_time_s</code>', '速度高于运动阈值的时长。', '阈值由 <code>movement_threshold_cm_s</code> 决定。'],
+                            ['<code>immobility_time_s</code>', '速度低于运动阈值的时长。', '和 moving time 互补。'],
+                            ['<code>center_entries</code>', '进入中心区的次数。', '进入中心区但不离开不会重复计数。'],
+                            ['<code>center_latency_s</code>', '首次进入中心区潜伏期。', '从该 arena 统计窗口起点开始计时。'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', '透视校正采用的 arena 尺寸。', '默认按正方形输入。'],
+                            ['<code>center_ratio_x</code> / <code>center_ratio_y</code>', 'summary 记录下来的中心区比例。', '便于追溯统计定义。'],
+                            ['<code>wall_margin_cm</code>', 'summary 记录下来的壁区边界厚度。', '便于追溯统计定义。'],
+                            ['<code>movement_threshold_cm_s</code>', 'summary 记录下来的运动阈值。', '便于追溯移动 / 静止判定。']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code> / <code>roi_id</code> / <code>roi_name</code>', '该时间箱属于哪个视频、哪个 arena。', '做时间序列图时先按这三列分组。'],
+                            ['<code>bin_index</code>', '第几个时间箱，从 1 开始。', '不是从 0 开始。'],
+                            ['<code>start_s</code> / <code>end_s</code>', '该时间箱的起止秒数。', '相对于窗口内时间轴。'],
+                            ['<code>duration_s</code>', '这个箱实际覆盖的时长。', '最后一个箱可能短于设定箱长。'],
+                            ['<code>distance_cm</code>', '该时间箱内累计距离。', '适合观察活动随时间衰减。'],
+                            ['<code>mean_speed_cm_s</code>', '该时间箱内平均速度。', '等于该箱距离除以箱时长。'],
+                            ['<code>center_time_s</code>', '该时间箱内中心区停留时长。', '用于做中心区时间时间序列。'],
+                            ['<code>wall_time_s</code>', '该时间箱内壁区停留时长。', '用于做壁区时间时间序列。'],
+                            ['<code>moving_time_s</code>', '该时间箱内移动时长。', '由运动阈值判定。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', '关于 outer 和 wall 的关系', '<code>outer_time_s</code> 是所有“非中心区”时间，壁区本来就在 outer 里面。所以不要把 <code>outer_time_s + wall_time_s</code> 当成两块可直接相加的独立区域。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: '现在 OFT 已经可以做到“每个视频单独配置，然后统一批量运行”。正确流程是先把每个视频的 arena 和参数都配完，再开始整批分析。',
+                    steps: [
+                        '上传多个 OFT 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '进入 arena 标定页后，逐个视频切换并分别输入 arena 边长，画完该视频里的所有 arena。',
+                        '如果某个视频边缘存在黑边、畸变或额外亮区，为对应 arena 单独画检测遮罩。',
+                        '分别给每个 arena 命名，并设置该 arena 的时间模式和精确时间窗。',
+                        '切到调参步骤，针对当前视频调好检测参数和统计参数，预览确认所有 arena 都稳定。',
+                        '继续切到下一个视频，重复上述操作，直到每个视频都配置完成。',
+                        '启动批量分析。系统会按视频顺序运行，并把每个视频的结果写进自己的子文件夹。'
+                    ],
+                    rules: [
+                        '批量模式下，每个视频独立保存 <code>arena_side_cm</code>、arena 列表、检测遮罩、时间窗以及调参参数。',
+                        '同一个视频内如果有多个 arena，它们共享这一视频的一套检测与统计参数。',
+                        '开始前如果有视频缺 arena 或遮罩配置非法，系统会拦截，不会带着不完整配置继续跑。',
+                        'ZIP 下载会保留按视频拆开的子目录结构。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: '如果 OFT 已经能跑出结果，但你怀疑某些图和数值不对，通常先从 arena 角点、遮罩和检测率看起，而不是先看最终 summary。',
+                    items: [
+                        '热图和轨迹图整体被拉歪：优先怀疑 arena 四角点顺序或位置偏差。',
+                        '边缘误检多：优先补检测遮罩，再考虑继续调阈值和形态学参数。',
+                        'summary 里检测率很低：说明跟踪本身不稳，这时总距离、中心区时间等空间指标都要谨慎解释。',
+                        '多个 arena 中只有一个表现很差：先检查这个 arena 自己的角点、遮罩和光照，而不是马上改全视频参数。'
+                    ],
+                    callouts: [
+                        ['danger', '什么时候不能只看 summary', '当 <code>detected_rate_percent</code> 很低、轨迹明显跳点、arena 角点不准或结果视频中区域标签频繁异常切换时，不能只看 summary 数值，必须回看结果视频和 track.csv。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Open Field Test / OFT',
+            heroTitle: 'Complete Open Field Manual',
+            heroSubtitle: 'This manual explains multi-arena calibration, detection masks, every exposed parameter, every exported result field, and the correct per-video batch workflow.',
+            heroChips: ['4-corner calibration', 'Perspective-corrected cm space', 'Per-video batch configs', 'track / summary / bins', 'Heatmap + trackmap'],
+            heroCards: [
+                ['fas fa-border-all', 'What the module really outputs', 'OFT is not only “time in center.” The system measures distance, speed, center occupancy, wall occupancy, movement and immobility time inside perspective-corrected centimeter coordinates, then exports frame-level tracks, time bins, and figures.'],
+                ['fas fa-clone', 'How batch mode works now', 'Batch mode now stores arena layout, masks, time windows, and tuning parameters per video. However, within a single video, all arenas still share one parameter set for detection and statistics.'],
+                ['fas fa-compass-drafting', 'Why arena corners matter so much', 'The four arena corners do not just draw a box. They define the perspective transform, centimeter coordinates, center-zone location, distance metrics, and the heatmap coordinate system. If the corners drift, all spatial outputs drift with them.'],
+            ],
+            flow: ['Recording requirements', 'Upload and analysis range', 'Arena calibration', 'Arena naming and time window', 'Tuning and preview', 'Results and figures'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Recording requirements'],
+                ['upload', 'Upload and analysis range'],
+                ['arena', 'Arena / mask / time window'],
+                ['params', 'Parameter dictionary'],
+                ['outputs', 'Result dictionary'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Common issues and troubleshooting'],
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The OFT module quantifies total distance, speed, center occupancy, and wall preference in the open field test. Every arena is transformed into standardized centimeter coordinates before statistics are calculated.',
+                    points: [
+                        'In OFT, each ROI represents one full arena, not an arbitrary polygonal activity patch.',
+                        'If one video contains multiple arenas, they are processed in parallel, but those arenas still share one tuning set for that video.',
+                        'The exported trajectories, heatmaps, and CSV files are based on perspective-corrected coordinates rather than raw pixels.'
+                    ],
+                    callouts: [
+                        ['warning', 'The most common misread', '<code>outer_time_s</code> / <code>outer_percent</code> means “all non-center time,” and therefore already includes wall time. It is not the middle ring after removing the wall zone.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording requirements',
+                    lead: 'OFT is highly sensitive to fixed top-down views, complete arena boundaries, and stable lighting. The clearer the arena edges and mouse-body contrast, the more stable the perspective correction and trajectory statistics become.',
+                    blocks: [
+                        {
+                            title: 'Camera and boundaries',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Use a fixed top-down or near-top-down camera whenever possible.',
+                                'All four arena edges and corners must remain visible. If corners are cropped, centimeter coordinates and track maps will be distorted.',
+                                'If multiple arenas are recorded together, keep them as planar and regular as possible.'
+                            ]
+                        },
+                        {
+                            title: 'Background and lighting',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                'Maintain strong contrast between the mouse and the arena floor, and avoid center-zone glare or harsh shadows.',
+                                'Even though videos now support per-video tuning, arenas inside one video still share parameters, so it is best to improve uneven lighting upstream.',
+                                'When lens edges contain dark borders or distortion, use a detection mask instead of forcing the arena polygon outward.'
+                            ]
+                        },
+                        {
+                            title: 'Frame interference',
+                            icon: 'fas fa-eye-slash',
+                            items: [
+                                'Keep hands, labels, cables, fan shadows, and other moving objects out of the detection region.',
+                                'If fixed bright structures sit near the arena but are not part of it, use a dedicated detection mask.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Resolution is not the first priority', 'For OFT, precise arena boundaries and continuous trajectories usually matter more than blindly pushing resolution higher.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and analysis range',
+                    lead: 'The upload page defines the videos in the run, the default analysis window, and the output directory. Each arena can later refine its own time window.',
+                    points: [
+                        'The upload-page global start and end time define the default analysis window; arenas in “follow global” mode use it directly.',
+                        'If FPS metadata is unreliable or variable frame rate was used, override FPS manually.',
+                        'For batch work, it is still best to group videos with similar camera setup and arena conditions together, even though per-video configuration is now supported.'
+                    ],
+                    callouts: [
+                        ['success', 'How the output directory is written', 'During batch analysis, the system creates one subfolder per video under the chosen parent output folder and stores that video’s CSVs, reports, figures, and result video there.']
+                    ]
+                },
+                arena: {
+                    title: 'Arena, detection mask, and time window',
+                    lead: 'All OFT spatial statistics are built around the arena geometry. First define the four arena corners. Then, if the image edges contain distortion or noise, add a separate detection mask for that arena.',
+                    blocks: [
+                        {
+                            title: '4-corner arena calibration',
+                            icon: 'fas fa-vector-square',
+                            items: [
+                                'Each arena must have exactly four corners. Click consistently in a clockwise or counter-clockwise order to avoid self-crossing geometry.',
+                                'The entered <code>arena_side_cm</code> defines the real-world scale used after perspective correction.',
+                                'The current OFT GUI assumes square arenas. If your arena is not square, confirm whether this approximation is acceptable before analysis.'
+                            ]
+                        },
+                        {
+                            title: 'Detection mask',
+                            icon: 'fas fa-mask',
+                            items: [
+                                'The detection mask only limits where the mouse may be detected. It does not change arena geometry, center-zone size, or spatial coordinates.',
+                                'Use it when black borders, lens distortion, or extra bright structures near the arena would otherwise create false detections.',
+                                'If no separate mask is drawn, the arena polygon itself is used as the default detection region.'
+                            ]
+                        },
+                        {
+                            title: 'Naming and time windows',
+                            icon: 'fas fa-clock',
+                            items: [
+                                'Each arena can have its own name, which propagates into CSV files, reports, heatmaps, and trackmaps.',
+                                'The available time modes are <code>global</code> and <code>precise</code>.',
+                                'Precise windows only change what is counted, not what frames are read. Frame-level CSV files still record whether each frame is inside the statistics window.'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['Mode', 'Meaning', 'When to use it'],
+                        rows: [
+                            ['<code>global</code>', 'Follow the upload-page global start and end time.', 'When multiple arenas share the same experimental window.'],
+                            ['<code>precise</code>', 'Use absolute video start and end seconds.', 'When different arenas need different explicit time spans.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'Do not confuse arena and mask', 'The arena defines geometry, centimeter coordinates, center zone, and spatial statistics. The mask only defines where foreground detection is allowed. Arena errors corrupt spatial outputs; mask errors corrupt detection outputs.']
+                    ]
+                },
+                params: {
+                    title: 'Parameter dictionary',
+                    lead: 'Below are the parameters that are currently exposed in the OFT GUI. They fall into two groups: mouse detection parameters and statistics-definition parameters.',
+                    detectTable: {
+                        headers: ['Parameter', 'Where', 'What it does', 'Typical adjustment logic'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Tuning page', 'Detection method. <code>threshold</code> uses grayscale thresholding, while <code>static</code> uses static background subtraction.', 'Both can work with a fixed camera; thresholding is more intuitive, while static background subtraction is useful for stable background differencing.'],
+                            ['<code>bg_type</code>', 'Tuning page', 'Defines whether the background is light or dark.', 'Use <code>light</code> for dark mice on light floors; <code>dark</code> for light mice on dark floors.'],
+                            ['<code>gray_threshold</code>', 'Tuning page', 'Threshold value for grayscale segmentation.', 'Raise it when noise survives; lower it when the mouse body breaks or disappears.'],
+                            ['<code>min_area</code>', 'Tuning page', 'Smallest contour allowed to count as a mouse candidate.', 'Raise it when small artifacts are accepted; lower it when a small mouse body is being filtered out.'],
+                            ['<code>erosion_kernel</code>', 'Tuning page', 'Kernel size for erosion, mainly used to remove small noise.', 'Increase for noisy masks; decrease if the mouse contour is eroded too aggressively.'],
+                            ['<code>erosion_iter</code>', 'Tuning page', 'Number of erosion iterations.', 'Works together with the erosion kernel to define denoising strength.'],
+                            ['<code>dilation_kernel</code>', 'Tuning page', 'Kernel size for dilation, used to reconnect fragmented contours.', 'Increase when the contour is broken; decrease when background clutter gets merged into the mouse.'],
+                            ['<code>dilation_iter</code>', 'Tuning page', 'Number of dilation iterations.', 'Works together with the dilation kernel to define repair strength.']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['Parameter', 'Role', 'What result fields it affects'],
+                        rows: [
+                            ['<code>arena_side_cm</code>', 'Defines the real arena side length and establishes the pixel-to-centimeter mapping.', 'Distance, speed, heatmap, trackmap, and center-zone size.'],
+                            ['<code>center_ratio_x</code>', 'Width proportion of the center zone within the arena.', 'Affects <code>center_time_s</code>, <code>center_entries</code>, and center latency.'],
+                            ['<code>center_ratio_y</code>', 'Height proportion of the center zone within the arena.', 'Together with <code>center_ratio_x</code> defines the center rectangle.'],
+                            ['<code>wall_margin_cm</code>', 'Thickness of the wall zone measured inward from the arena edge.', 'Affects <code>wall_time_s</code> and <code>wall_percent</code>.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Speed threshold above which frames are counted as moving.', 'Affects <code>moving_time_s</code>, <code>immobility_time_s</code>, and time-bin movement values.'],
+                            ['<code>bin_seconds</code>', 'Time-bin width used for temporal summaries.', 'Defines the duration of each row in <code>*_bins.csv</code>.'],
+                            ['<code>generate_video</code>', 'Whether to export the annotated result video.', 'Turning it off speeds up analysis but removes the most direct review artifact.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'The sharing rule inside one video', 'OFT now supports per-video tuning, but multiple arenas within the same video still share that video’s detection and statistics parameters. In other words, tuning is per video, not per arena.']
+                    ]
+                },
+                outputs: {
+                    title: 'Result dictionary',
+                    lead: 'OFT exports an annotated video, frame-level trajectory CSV, summary CSV, time-bin CSV, a TXT report, and one heatmap plus one trackmap per arena. When multiple arenas exist, grid images are also generated.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated result video with arena borders, center zone, current zone label, and trajectory overlays.'],
+                        ['<code>*_track.csv</code>', 'Frame-level trajectory table for custom temporal analysis and quality control.'],
+                        ['<code>*_summary.csv</code>', 'One row per arena containing the main OFT statistics.'],
+                        ['<code>*_bins.csv</code>', 'Fixed-width time-bin summary of distance, speed, and zone occupancy.'],
+                        ['<code>*_report.txt</code>', 'Human-readable report generated from the summary.'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', 'Per-arena occupancy heatmaps and trajectory maps, with grid versions when multiple arenas exist.']
+                    ],
+                    trackTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Useful when combining outputs across files.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'Arena identifier and arena name.', 'Separates different arenas within the same video.'],
+                            ['<code>frame</code>', 'Original frame index.', 'Can be mapped back to the result video.'],
+                            ['<code>time_s</code>', 'Absolute video time in seconds.', 'Position on the full video time axis.'],
+                            ['<code>window_time_s</code>', 'Relative time inside the analysis window, blank outside the window.', 'Useful for binning and within-window plots.'],
+                            ['<code>detected</code>', 'Whether the mouse was detected on that frame.', 'Low detection rate usually means trajectory quality issues.'],
+                            ['<code>in_stats_window</code>', 'Whether the frame belongs to the configured statistics window.', 'Only <code>true</code> frames contribute to summary and bins.'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', 'Perspective-corrected coordinates in centimeters.', 'These are not pixels and can be used directly for spatial analysis.'],
+                            ['<code>speed_cm_s</code>', 'Instantaneous speed in cm/s.', 'Computed from successive centimeter coordinates.'],
+                            ['<code>step_distance_cm</code>', 'Distance moved since the previous statistics frame.', 'Feeds the cumulative distance.'],
+                            ['<code>cumulative_distance_cm</code>', 'Total accumulated distance up to that frame.', 'Only increases inside the statistics window.'],
+                            ['<code>in_center</code>', 'Whether the frame lies in the center zone.', 'Matches center-time and center-entry metrics.'],
+                            ['<code>in_outer</code>', 'Whether the frame lies outside the center zone.', 'Note that this includes the wall zone.'],
+                            ['<code>in_wall</code>', 'Whether the frame lies in the wall zone.', 'The wall zone is defined by <code>wall_margin_cm</code>.'],
+                            ['<code>zone</code>', 'Exclusive zone label for the frame.', '<code>Center</code>, <code>Wall</code>, <code>Outer</code>, or <code>Unknown</code>.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Used for provenance across files.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'Arena identifier and name.', 'One row per arena.'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'Time mode and time bounds used by that arena.', 'Use these to confirm exactly what time span was summarized.'],
+                            ['<code>analysis_window_start_s</code>', 'Actual origin of the analysis window.', 'Useful for aligning relative times to the intended window.'],
+                            ['<code>total_time_s</code>', 'Total analyzed duration.', 'Only counts the selected time window.'],
+                            ['<code>detected_frames</code>', 'Detected frames inside the time window.', 'Low values warn that trajectory quality may be poor.'],
+                            ['<code>detected_rate_percent</code>', 'Detection success rate inside the window.', 'A very useful QC field.'],
+                            ['<code>total_distance_cm</code>', 'Total path length in centimeters.', 'Based on perspective-corrected trajectories.'],
+                            ['<code>mean_speed_cm_s</code>', 'Average speed across the window.', 'Equals total distance divided by total time.'],
+                            ['<code>max_speed_cm_s</code>', 'Maximum instantaneous speed observed in the window.', 'Sensitive to short bursts of running.'],
+                            ['<code>center_time_s</code> / <code>center_percent</code>', 'Center-zone occupancy duration and proportion.', 'Often used for anxiety-like behavior interpretation.'],
+                            ['<code>outer_time_s</code> / <code>outer_percent</code>', 'All non-center occupancy duration and proportion.', 'Includes wall time rather than excluding it.'],
+                            ['<code>wall_time_s</code> / <code>wall_percent</code>', 'Wall-zone occupancy duration and proportion.', 'The wall zone is a subset of outer space.'],
+                            ['<code>moving_time_s</code>', 'Time above the movement threshold.', 'Threshold comes from <code>movement_threshold_cm_s</code>.'],
+                            ['<code>immobility_time_s</code>', 'Time below the movement threshold.', 'Complementary to moving time.'],
+                            ['<code>center_entries</code>', 'Number of entries into the center zone.', 'Repeated frames inside center do not increase this count.'],
+                            ['<code>center_latency_s</code>', 'Latency to first center entry.', 'Measured from the beginning of the arena’s statistics window.'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', 'Arena size used for the perspective transform.', 'The page is typically filled as a square arena.'],
+                            ['<code>center_ratio_x</code> / <code>center_ratio_y</code>', 'Center-zone ratios recorded into the summary.', 'Useful for provenance.'],
+                            ['<code>wall_margin_cm</code>', 'Wall-zone margin recorded into the summary.', 'Useful for provenance.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Movement threshold recorded into the summary.', 'Useful for provenance.']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code> / <code>roi_id</code> / <code>roi_name</code>', 'Which video and arena this bin belongs to.', 'Group by these columns before plotting time courses.'],
+                            ['<code>bin_index</code>', 'Time-bin index starting from 1.', 'Not zero-based.'],
+                            ['<code>start_s</code> / <code>end_s</code>', 'Start and end seconds of that bin.', 'Relative to the analysis window.'],
+                            ['<code>duration_s</code>', 'Actual duration covered by that row.', 'The last bin may be shorter than the requested bin length.'],
+                            ['<code>distance_cm</code>', 'Distance accumulated inside that bin.', 'Good for habituation or decay plots over time.'],
+                            ['<code>mean_speed_cm_s</code>', 'Average speed inside that bin.', 'Distance divided by bin duration.'],
+                            ['<code>center_time_s</code>', 'Center occupancy within that bin.', 'For center-time time series.'],
+                            ['<code>wall_time_s</code>', 'Wall occupancy within that bin.', 'For wall-time time series.'],
+                            ['<code>moving_time_s</code>', 'Movement time within that bin.', 'Based on the movement threshold.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'Outer and wall are not independent sums', '<code>outer_time_s</code> is all non-center time, and wall time sits inside it. Do not treat <code>outer_time_s + wall_time_s</code> as two disjoint spatial regions that should be added together.']
+                    ]
+                },
+                batch: {
+                    title: 'Batch workflow',
+                    lead: 'OFT now supports truly per-video configuration followed by one combined batch run. The correct workflow is to finish every video’s arena setup and tuning before you start analysis.',
+                    steps: [
+                        'Upload multiple OFT videos and set the global time range, FPS override, and output directory.',
+                        'On the arena-calibration step, switch through videos one by one and enter the arena side length for each video, then finish all arenas in that video.',
+                        'If a video contains dark borders, distortion, or extra bright structures near the arena, add detection masks for the affected arenas.',
+                        'Name each arena and set the proper time mode or precise time window for it.',
+                        'Move to the tuning step and adjust detection plus statistics parameters for the current video until all arenas in that video look stable on preview.',
+                        'Repeat for every remaining video.',
+                        'Start the batch. The system processes videos sequentially and writes each one to its own child folder.'
+                    ],
+                    rules: [
+                        'In batch mode, each video stores its own <code>arena_side_cm</code>, arena list, detection masks, time windows, and tuning parameters.',
+                        'Multiple arenas inside the same video still share one parameter set for detection and statistics.',
+                        'If a video is missing required arena geometry or contains invalid mask setup, the batch is blocked before start.',
+                        'ZIP downloads preserve the per-video subdirectory structure.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common issues and troubleshooting',
+                    lead: 'If OFT runs but you do not trust some numbers or figures, start with arena corners, masks, and detection rate rather than the final summary table.',
+                    items: [
+                        'A globally warped heatmap or trackmap usually points to incorrect arena corner placement or ordering.',
+                        'Frequent false positives near edges are usually better solved with a detection mask than with ever more aggressive threshold changes.',
+                        'A low detection rate in the summary means the tracker itself was unstable, so all spatial readouts should be interpreted cautiously.',
+                        'If only one arena performs poorly inside a shared video, inspect that arena’s own corners, mask, and lighting before changing the full-video parameter set.'
+                    ],
+                    callouts: [
+                        ['danger', 'When summary alone is not enough', 'If <code>detected_rate_percent</code> is low, trajectories are visibly discontinuous, arena corners are inaccurate, or zone labels switch strangely in the result video, do not trust the summary alone. Review the result video and <code>track.csv</code>.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
             </div>
-            <div class="sub-step">
-                <h5><i class="fas fa-lightbulb me-2"></i><span data-i18n="manual.oft.sec1.light.title">光照与对比</span></h5>
-                <ul class="mb-0">
-                    <li data-i18n="manual.oft.sec1.light.li1">背景和小鼠要有明显对比，深色鼠配浅色底，浅色鼠配深色底。</li>
-                    <li data-i18n="manual.oft.sec1.light.li2">尽量避免强反光、阴影和局部热点，尤其不要让中心区出现大片高光。</li>
-                    <li data-i18n="manual.oft.sec1.light.li3">如果不同笼位亮度差异很大，建议先改善采集条件，再做统一参数分析。</li>
-                </ul>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
             </div>
-            <div class="tip-box">
-                <i class="fas fa-info-circle me-2 text-info"></i>
-                <span data-i18n="manual.oft.sec1.tip">OFT 结果主要依赖轨迹稳定性，所以“边界清晰”和“鼠体对比明显”通常比追求超高分辨率更重要。</span>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
             </div>
-        </div>
+        `).join('');
+    }
 
-        <div class="manual-section" id="sec-upload">
-            <h3><span class="step-number">2</span><span data-i18n="manual.oft.sec2.title">上传视频</span></h3>
-            <p data-i18n="manual.oft.sec2.intro" data-i18n-html>在上传页把实验模块切换为 <code>Open Field Test</code>，然后选择网页上传或本地路径导入。上传页中的全局开始时间和结束时间，会作为这次分析的总体统计窗口。</p>
-            <ul>
-                <li data-i18n="manual.oft.sec2.li1">如果只想分析视频中的一段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。</li>
-                <li data-i18n="manual.oft.sec2.li2">后续每个 ROI 还可以单独设置“跟随全局”或“精确时间段”，用于更细的统计控制。</li>
-                <li data-i18n="manual.oft.sec2.li3">如果源视频是可变帧率，建议在上传页手动填写 FPS。</li>
-            </ul>
-        </div>
-
-        <div class="manual-section" id="sec-arena">
-            <h3><span class="step-number">3</span><span data-i18n="manual.oft.sec3.title">多 arena 标定</span></h3>
-            <p data-i18n="manual.oft.sec3.intro">当前 OFT 模块支持在同一视频内并行分析多个 arena。每个 ROI 不是任意多边形，而是一个完整旷场的四个角点。</p>
-            <div class="sub-step">
-                <h5><i class="fas fa-vector-square me-2"></i><span data-i18n="manual.oft.sec3.method.title">标定方式</span></h5>
-                <ul class="mb-0">
-                    <li data-i18n="manual.oft.sec3.method.li1">点击“新增 arena”后，在画面中依次点这个旷场的 4 个边角。</li>
-                    <li data-i18n="manual.oft.sec3.method.li2">点满 4 个点后，系统会自动把这个 arena 保存到列表中。</li>
-                    <li data-i18n="manual.oft.sec3.method.li3">继续重复上面的操作，直到所有笼位都框完。</li>
-                </ul>
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
             </div>
-            <div class="warning-box">
-                <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
-                <span data-i18n="manual.oft.sec3.warning">每个 ROI 框的是旷场本身，不是小鼠活动范围。角点如果偏差太大，透视校正后的轨迹图就会被拉伸。</span>
+        `;
+    }
+
+    function render(lang) {
+        const copy = OFT_MANUAL[lang] || OFT_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('oft-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
             </div>
-            <p data-i18n="manual.oft.sec3.outro">页面里只需要输入一个“旷场边长”。当前版本默认所有 arena 按正方形场地处理，最后生成的轨迹图会统一校正为标准正方形坐标。</p>
-        </div>
 
-        <div class="manual-section" id="sec-time">
-            <h3><span class="step-number">4</span><span data-i18n="manual.oft.sec4.title">ROI 命名与时间窗</span></h3>
-            <p data-i18n="manual.oft.sec4.intro">每个 arena 都可以在右侧列表里独立设置名字和统计时间。建议直接用样本编号、组别编号或笼位编号命名，后续导出的 CSV、热图、轨迹图和报告都会沿用这些名称。</p>
-            <table class="mini-table">
-                <tr>
-                    <th data-i18n="manual.oft.sec4.table.global">跟随全局</th>
-                    <td data-i18n="manual.oft.sec4.table.global_desc">默认模式。该 ROI 的统计时间与上传页中的全局开始/结束时间一致。</td>
-                </tr>
-                <tr>
-                    <th data-i18n="manual.oft.sec4.table.precise">精确时间段</th>
-                    <td data-i18n="manual.oft.sec4.table.precise_desc" data-i18n-html>按视频绝对时间统计。比如开始 <code>60</code>、结束 <code>360</code>，表示只统计第 60 秒到第 360 秒。</td>
-                </tr>
-            </table>
-            <p class="mt-3 mb-0" data-i18n="manual.oft.sec4.outro">时间窗只影响统计和导出结果，不影响视频本身是否被读取。也就是说，轨迹图、中心区时间、总距离等指标都会严格按这个时间窗计算。</p>
-        </div>
+            ${window.manualRenderFlow(copy.flow)}
 
-        <div class="manual-section" id="sec-debug">
-            <h3><span class="step-number">5</span><span data-i18n="manual.oft.sec5.title">调参与启动</span></h3>
-            <p data-i18n="manual.oft.sec5.intro">进入第二步后，你会看到原始画面和检测叠加预览。这里的检测参数是所有 ROI 共用的，所以调参目标不是“某一个框效果最好”，而是“所有 arena 都尽量稳定”。</p>
-            <ul>
-                <li data-i18n="manual.oft.sec5.li1" data-i18n-html><strong>灰度阈值</strong>：控制前景分割灵敏度。噪点多就往更严格方向调，漏检就往更宽松方向调。</li>
-                <li data-i18n="manual.oft.sec5.li2" data-i18n-html><strong>腐蚀 / 膨胀</strong>：用于去噪、修补轮廓，让鼠体更完整。</li>
-                <li data-i18n="manual.oft.sec5.li3" data-i18n-html><strong>最小面积</strong>：过滤太小的碎片，避免把噪点当成鼠体。</li>
-                <li data-i18n="manual.oft.sec5.li4" data-i18n-html><strong>中心区比例</strong>：定义中心区大小，用于中心停留时间和中心进入次数统计。</li>
-                <li data-i18n="manual.oft.sec5.li5" data-i18n-html><strong>墙区边界</strong>：定义贴边区的宽度，用于 wall zone / thigmotaxis 统计。</li>
-                <li data-i18n="manual.oft.sec5.li6" data-i18n-html><strong>运动阈值</strong>：区分移动帧和静止帧。</li>
-                <li data-i18n="manual.oft.sec5.li7" data-i18n-html><strong>分箱时长</strong>：控制 <code>bins_csv</code> 里每一段时间统计的长度。</li>
-            </ul>
-            <div class="tip-box">
-                <i class="fas fa-info-circle me-2 text-info"></i>
-                <span data-i18n="manual.oft.sec5.tip">预览页会同时叠加所有 arena 的检测结果。建议多拖几个不同时间点检查，确认所有 ROI 都能稳定识别后再开始分析。</span>
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="arena">
+                        <h3><span class="step-number">4</span><span>${s.arena.title}</span></h3>
+                        <p>${s.arena.lead}</p>
+                        ${renderBlocks(s.arena.blocks)}
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Arena time-window modes' : 'arena 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.arena.timeTable.headers, s.arena.timeTable.rows)}
+                        ${renderCallouts(s.arena.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-search" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-chart-line" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Statistics parameters' : '统计参数'}</span></div>
+                        ${window.manualRenderTable(s.params.statsTable.headers, s.params.statsTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.trackTable.headers, s.outputs.trackTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_bins.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.binsTable.headers, s.outputs.binsTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
             </div>
-        </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
 
-        <div class="manual-section" id="sec-result">
-            <h3><span class="step-number">6</span><span data-i18n="manual.oft.sec6.title">结果与轨迹图</span></h3>
-            <p data-i18n="manual.oft.sec6.intro">分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、分箱 CSV、TXT 报告、热图和轨迹图。</p>
-            <table class="mini-table">
-                <tr>
-                    <th data-i18n="manual.oft.sec6.table.video">标注视频</th>
-                    <td data-i18n="manual.oft.sec6.table.video_desc">原始画面上叠加 arena 边界、中心区、当前检测轮廓和实时轨迹。</td>
-                </tr>
-                <tr>
-                    <th data-i18n="manual.oft.sec6.table.track">轨迹 CSV</th>
-                    <td data-i18n="manual.oft.sec6.table.track_desc">逐帧导出每个 ROI 的坐标、区域标签、速度、步进距离和累计距离。</td>
-                </tr>
-                <tr>
-                    <th data-i18n="manual.oft.sec6.table.summary">summary CSV</th>
-                    <td data-i18n="manual.oft.sec6.table.summary_desc">每个 ROI 一行，包含总距离、中心区时间、中心进入次数、壁区时间、平均速度等主要指标。</td>
-                </tr>
-                <tr>
-                    <th data-i18n="manual.oft.sec6.table.maps">热图 / 轨迹图</th>
-                    <td data-i18n="manual.oft.sec6.table.maps_desc">都会按标准化场地坐标生成，适合直接做图和组间比较。</td>
-                </tr>
-            </table>
-            <p class="mt-3" data-i18n="manual.oft.sec6.outro">这里使用的是基于四角点的透视变换。它可以把原始画面里不规则的平面视角映射到标准正方形坐标，所以即使视频里看起来不是完美正方形，最终轨迹图也会被校正成规则正方形。</p>
-        </div>
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
 
-        <div class="manual-section" id="sec-notes">
-            <h3><span class="step-number">7</span><span data-i18n="manual.oft.sec7.title">注意事项</span></h3>
-            <ul class="mb-0">
-                <li data-i18n="manual.oft.sec7.li1">透视变换能校正平面视角问题，但不能完全替代镜头畸变标定。如果镜头桶形畸变很明显，建议尽量使用畸变较小的镜头和更居中的机位。</li>
-                <li data-i18n="manual.oft.sec7.li2">当前版本的统计参数仍是全局共享的，不支持按 ROI 分别设置不同的中心区比例或墙区边界。</li>
-                <li data-i18n="manual.oft.sec7.li3">热图和轨迹图的统计范围会严格遵循 ROI 自己的时间窗设置。</li>
-                <li data-i18n="manual.oft.sec7.li4">如果不同 arena 的亮度差异非常大，建议优先优化采集条件，否则统一参数很难同时兼顾所有 ROI。</li>
-            </ul>
-        </div>
-    </div>
-</div>
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

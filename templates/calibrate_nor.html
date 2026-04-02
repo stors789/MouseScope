@@ -327,6 +327,7 @@
 <script>
 const sessionId = '{{ session_id }}';
 const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
 const isBatch = {{ is_batch | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
@@ -435,6 +436,10 @@ const NOR_I18N = {
         'alerts.need_roi_for_analysis': '请先完成 ROI 标定。',
         'alerts.roi_missing': 'ROI {0} 缺少 arena 角点或物体中心点。',
         'alerts.mask_invalid': 'ROI {0} 的检测遮罩至少需要 4 个点。',
+        'alerts.batch_incomplete': '开始批量分析前，请先完成每个视频的配置：\n{0}',
+        'alerts.batch_missing_roi': '{0}. {1}: 缺少 ROI 配置',
+        'alerts.batch_roi_missing': '{0}. {1}: ROI {2} 缺少 arena 角点或物体中心点。',
+        'alerts.batch_mask_invalid': '{0}. {1}: ROI {2} 的检测遮罩至少需要 4 个点。',
         'alerts.start_failed': '启动分析失败'
     },
     en: {
@@ -537,12 +542,17 @@ const NOR_I18N = {
         'alerts.need_roi_for_analysis': 'Please finish ROI calibration first.',
         'alerts.roi_missing': 'ROI {0} is missing arena corners or object centers.',
         'alerts.mask_invalid': 'ROI {0} needs at least 4 detection-mask points.',
+        'alerts.batch_incomplete': 'Complete every batch video before starting analysis:\n{0}',
+        'alerts.batch_missing_roi': '{0}. {1}: missing ROI configuration',
+        'alerts.batch_roi_missing': '{0}. {1}: ROI {2} is missing arena corners or object centers.',
+        'alerts.batch_mask_invalid': '{0}. {1}: ROI {2} detection mask needs at least 4 points',
         'alerts.start_failed': 'Failed to start analysis'
     }
 };
 
 let baseFrame = null;
 let currentVideoIdx = 0;
+let currentVideoInfo = videoInfoList[0] || videoInfo;
 let rois = [];
 let currentROI = { points: [], objects: [] };
 let isDrawingROI = false;
@@ -551,6 +561,97 @@ let isDrawingMask = false;
 let maskEditROIIndex = null;
 let debounceTimers = {};
 const MAX_MASK_POINTS = 24;
+const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+function defaultNorTuningParams() {
+    return {
+        bg_method: 'threshold',
+        bg_type: 'light',
+        gray_threshold: 127,
+        erosion_kernel: 3,
+        erosion_iter: 1,
+        dilation_kernel: 5,
+        dilation_iter: 2,
+        min_area: 120,
+        center_ratio_x: 0.5,
+        center_ratio_y: 0.5,
+        interaction_radius_cm: 4.0,
+        exploration_max_speed_cm_s: 12.0,
+        use_head_direction: true,
+        head_angle_threshold_deg: 50.0,
+        head_confidence_threshold: 0.35,
+        movement_threshold_cm_s: 2.0,
+        min_valid_exploration_s: 20.0,
+        bin_seconds: 300.0,
+    };
+}
+function readNorTuningParamsFromControls() {
+    return {
+        bg_method: document.getElementById('bgMethod')?.value || 'threshold',
+        bg_type: document.getElementById('bgType')?.value || 'light',
+        gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
+        erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
+        dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
+        dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '2', 10),
+        min_area: parseInt(document.getElementById('minArea')?.value || '120', 10),
+        center_ratio_x: parseFloat(document.getElementById('centerRatioX')?.value || '0.5'),
+        center_ratio_y: parseFloat(document.getElementById('centerRatioY')?.value || '0.5'),
+        interaction_radius_cm: parseFloat(document.getElementById('interactionRadius')?.value || '4'),
+        exploration_max_speed_cm_s: parseFloat(document.getElementById('explorationMaxSpeed')?.value || '12'),
+        use_head_direction: Boolean(document.getElementById('useHeadDirection')?.checked),
+        head_angle_threshold_deg: parseFloat(document.getElementById('headAngleThreshold')?.value || '50'),
+        head_confidence_threshold: parseFloat(document.getElementById('headConfidenceThreshold')?.value || '0.35'),
+        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold')?.value || '2'),
+        min_valid_exploration_s: parseFloat(document.getElementById('minValidExploration')?.value || '20'),
+        bin_seconds: parseFloat(document.getElementById('binSeconds')?.value || '300'),
+    };
+}
+function applyNorTuningParamsToControls(params) {
+    const merged = { ...defaultNorTuningParams(), ...(params || {}) };
+    const fieldMap = {
+        bgMethod: merged.bg_method,
+        bgType: merged.bg_type,
+        grayThreshold: merged.gray_threshold,
+        erosionKernel: merged.erosion_kernel,
+        erosionIter: merged.erosion_iter,
+        dilationKernel: merged.dilation_kernel,
+        dilationIter: merged.dilation_iter,
+        minArea: merged.min_area,
+        centerRatioX: merged.center_ratio_x,
+        centerRatioY: merged.center_ratio_y,
+        interactionRadius: merged.interaction_radius_cm,
+        explorationMaxSpeed: merged.exploration_max_speed_cm_s,
+        headAngleThreshold: merged.head_angle_threshold_deg,
+        headConfidenceThreshold: merged.head_confidence_threshold,
+        movementThreshold: merged.movement_threshold_cm_s,
+        minValidExploration: merged.min_valid_exploration_s,
+        binSeconds: merged.bin_seconds,
+    };
+    Object.entries(fieldMap).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = String(value);
+    });
+    const useHeadDirection = document.getElementById('useHeadDirection');
+    if (useHeadDirection) useHeadDirection.checked = Boolean(merged.use_head_direction);
+    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    updateBgMethodUI();
+}
+let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
+    phase: 'recognition',
+    arena_width_cm: 50.0,
+    arena_height_cm: 50.0,
+    rois: [],
+    current_roi: { points: [], objects: [] },
+    is_drawing_roi: false,
+    current_mask_points: [],
+    is_drawing_mask: false,
+    mask_edit_roi_index: null,
+    tuning_params: defaultNorTuningParams(),
+}));
+
+function cloneState(value) {
+    return JSON.parse(JSON.stringify(value));
+}
 
 function norLang() {
     return (typeof getLang === 'function') ? getLang() : 'zh';
@@ -572,11 +673,105 @@ function norFormat(key, values = [], fallback = '') {
 }
 
 function totalFrames() {
-    return Math.max(0, (videoInfo.total_frames || 1) - 1);
+    return Math.max(0, ((currentVideoInfo && currentVideoInfo.total_frames) || videoInfo.total_frames || 1) - 1);
 }
 
 function frameLabelText(current, total) {
     return `${norTr('common.frame', 'Frame')} ${current} / ${total}`;
+}
+
+function currentVideoName(index) {
+    return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`;
+}
+
+function ensureVideoConfig(index) {
+    if (!videoConfigs[index]) {
+        videoConfigs[index] = {
+            phase: 'recognition',
+            arena_width_cm: 50.0,
+            arena_height_cm: 50.0,
+            rois: [],
+            current_roi: { points: [], objects: [] },
+            is_drawing_roi: false,
+            current_mask_points: [],
+            is_drawing_mask: false,
+            mask_edit_roi_index: null,
+            tuning_params: defaultNorTuningParams(),
+        };
+    }
+    return videoConfigs[index];
+}
+
+function persistCurrentVideoState() {
+    const config = ensureVideoConfig(currentVideoIdx);
+    config.phase = currentPhase();
+    const arenaWidthCm = parseFloat(document.getElementById('arenaWidthCm')?.value || '50');
+    const arenaHeightCm = parseFloat(document.getElementById('arenaHeightCm')?.value || '50');
+    config.arena_width_cm = Number.isFinite(arenaWidthCm) ? arenaWidthCm : 50.0;
+    config.arena_height_cm = Number.isFinite(arenaHeightCm) ? arenaHeightCm : 50.0;
+    config.rois = cloneState(rois);
+    config.current_roi = cloneState(currentROI);
+    config.is_drawing_roi = Boolean(isDrawingROI);
+    config.current_mask_points = cloneState(currentMaskPoints);
+    config.is_drawing_mask = Boolean(isDrawingMask);
+    config.mask_edit_roi_index = maskEditROIIndex == null ? null : Number(maskEditROIIndex);
+    config.tuning_params = readNorTuningParamsFromControls();
+}
+
+function syncVideoSelectors() {
+    const selector = document.getElementById('videoSelector');
+    if (!selector) return;
+    selector.value = String(currentVideoIdx);
+    Array.from(selector.options).forEach((option, index) => {
+        const config = ensureVideoConfig(index);
+        const ready = Array.isArray(config.rois) && config.rois.length > 0
+            && config.rois.every(roi => Array.isArray(roi.points) && roi.points.length === 4 && Array.isArray(roi.objects) && roi.objects.length === 2);
+        option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
+    });
+}
+
+function applyCurrentVideoState() {
+    const config = ensureVideoConfig(currentVideoIdx);
+    const phaseInput = document.getElementById('phase');
+    if (phaseInput) {
+        phaseInput.value = config.phase || 'recognition';
+    }
+    const arenaWidthInput = document.getElementById('arenaWidthCm');
+    if (arenaWidthInput) {
+        arenaWidthInput.value = String(config.arena_width_cm ?? 50.0);
+    }
+    const arenaHeightInput = document.getElementById('arenaHeightCm');
+    if (arenaHeightInput) {
+        arenaHeightInput.value = String(config.arena_height_cm ?? 50.0);
+    }
+    rois = cloneState(config.rois || []);
+    currentROI = cloneState(config.current_roi || { points: [], objects: [] });
+    isDrawingROI = Boolean(config.is_drawing_roi);
+    currentMaskPoints = cloneState(config.current_mask_points || []);
+    isDrawingMask = Boolean(config.is_drawing_mask);
+    maskEditROIIndex = config.mask_edit_roi_index == null ? null : Number(config.mask_edit_roi_index);
+    applyNorTuningParamsToControls(config.tuning_params);
+    document.getElementById('phaseText').textContent = phaseLabel();
+    updateROIList();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    syncFrameControls();
+    syncVideoSelectors();
+}
+
+function syncFrameControls() {
+    const total = totalFrames();
+    const arenaSlider = document.getElementById('frameSliderArena');
+    const debugSlider = document.getElementById('frameSliderDebug');
+    if (arenaSlider) {
+        arenaSlider.max = total;
+        if (parseInt(arenaSlider.value || '0', 10) > total) arenaSlider.value = String(total);
+    }
+    if (debugSlider) {
+        debugSlider.max = total;
+        if (parseInt(debugSlider.value || '0', 10) > total) debugSlider.value = String(total);
+    }
+    document.getElementById('frameLabelArena').textContent = frameLabelText(arenaSlider?.value || 0, total);
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(debugSlider?.value || 0, total);
 }
 
 function currentPhase() {
@@ -731,6 +926,8 @@ function escapeHtml(text) {
 
 function handlePhaseChange() {
     applyPhaseDefaults();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     document.getElementById('phaseText').textContent = phaseLabel();
     updateROIList();
     drawArenaCanvas();
@@ -753,10 +950,9 @@ function applyPhaseDefaults() {
 }
 
 window.onload = function () {
-    document.getElementById('frameSliderArena').max = totalFrames();
-    document.getElementById('frameSliderDebug').max = totalFrames();
-    document.getElementById('frameLabelArena').textContent = frameLabelText(0, totalFrames());
-    document.getElementById('frameLabelDebug').textContent = frameLabelText(0, totalFrames());
+    syncVideoSelectors();
+    applyCurrentVideoState();
+    syncFrameControls();
     document.getElementById('phaseText').textContent = phaseLabel();
     ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
@@ -774,6 +970,11 @@ function loadFrame(frameIdx, callback) {
             if (data.error) {
                 alert(data.error);
                 return;
+            }
+            if (data.video_info) {
+                currentVideoInfo = data.video_info;
+                videoInfoList[currentVideoIdx] = data.video_info;
+                syncFrameControls();
             }
             const img = new Image();
             img.onload = function () {
@@ -937,6 +1138,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isDrawingMask) {
             if (currentMaskPoints.length < MAX_MASK_POINTS) {
                 currentMaskPoints.push({ x, y });
+                persistCurrentVideoState();
+                syncVideoSelectors();
                 drawArenaCanvas();
             }
             return;
@@ -945,6 +1148,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (currentROI.points.length < 4) {
             currentROI.points.push({ x, y });
+            persistCurrentVideoState();
+            syncVideoSelectors();
             drawArenaCanvas();
             return;
         }
@@ -956,6 +1161,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 name: defaultObjectName(idx),
                 role: defaultObjectRole(idx)
             });
+            persistCurrentVideoState();
+            syncVideoSelectors();
             if (currentROI.objects.length === 2) {
                 finishCurrentROI();
             } else {
@@ -975,20 +1182,24 @@ function startNewROI() {
     cancelDetectionMaskEdit();
     currentROI = { points: [], objects: [] };
     isDrawingROI = true;
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
 function finishCurrentROI() {
     if (currentROI.points.length !== 4 || currentROI.objects.length !== 2) return;
     rois.push({
-        points: JSON.parse(JSON.stringify(currentROI.points)),
-        objects: JSON.parse(JSON.stringify(currentROI.objects)),
+        points: cloneState(currentROI.points),
+        objects: cloneState(currentROI.objects),
         name: roiDefaultName(rois.length),
         time_config: { mode: 'global', start: null, end: null }
     });
     currentROI = { points: [], objects: [] };
     isDrawingROI = false;
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = rois.length === 0;
 }
@@ -998,8 +1209,10 @@ function startDetectionMaskEdit(index) {
     isDrawingROI = false;
     isDrawingMask = true;
     maskEditROIIndex = index;
-    currentMaskPoints = JSON.parse(JSON.stringify(rois[index].detection_points || []));
+    currentMaskPoints = cloneState(rois[index].detection_points || []);
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1009,11 +1222,13 @@ function finishDetectionMaskEdit() {
         alert(norTr('alerts.mask_need_points', 'A detection mask needs at least 4 points. Drawing 8-16 points along the curved edge is recommended.'));
         return;
     }
-    rois[maskEditROIIndex].detection_points = JSON.parse(JSON.stringify(currentMaskPoints));
+    rois[maskEditROIIndex].detection_points = cloneState(currentMaskPoints);
     isDrawingMask = false;
     maskEditROIIndex = null;
     currentMaskPoints = [];
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     if (document.getElementById('step2').classList.contains('active')) {
         updateDebugPreview();
@@ -1025,6 +1240,8 @@ function cancelDetectionMaskEdit() {
     maskEditROIIndex = null;
     currentMaskPoints = [];
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1035,6 +1252,8 @@ function resetDetectionMask(index) {
         return;
     }
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     if (document.getElementById('step2').classList.contains('active')) {
         updateDebugPreview();
@@ -1049,6 +1268,8 @@ function undoCurrentPoint() {
     } else if (currentROI.points.length > 0) {
         currentROI.points.pop();
     }
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1058,6 +1279,8 @@ function clearCurrentROI() {
     } else {
         currentROI = { points: [], objects: [] };
     }
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1069,6 +1292,8 @@ function clearAllROIs() {
     maskEditROIIndex = null;
     currentMaskPoints = [];
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = true;
 }
@@ -1081,6 +1306,8 @@ function deleteROI(index) {
     }
     rois.splice(index, 1);
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = rois.length === 0;
 }
@@ -1189,6 +1416,8 @@ function updateROIList() {
 
 function updateROIName(index, value) {
     rois[index].name = value || roiDefaultName(index);
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1202,6 +1431,8 @@ function updateROITimeMode(index, mode) {
         rois[index].time_config.end = null;
     }
     updateROIList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
 }
 
 function updateROITimeValue(index, key, value) {
@@ -1209,10 +1440,14 @@ function updateROITimeValue(index, key, value) {
         rois[index].time_config = { mode: 'precise', start: null, end: null };
     }
     rois[index].time_config[key] = value === '' ? null : parseFloat(value);
+    persistCurrentVideoState();
+    syncVideoSelectors();
 }
 
 function updateObjectName(roiIndex, objectIndex, value) {
     rois[roiIndex].objects[objectIndex].name = value || defaultObjectName(objectIndex);
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -1223,6 +1458,8 @@ function updateObjectRole(roiIndex, objectIndex, value) {
     if (rois[roiIndex].objects[otherIndex].role === value) {
         rois[roiIndex].objects[otherIndex].role = value === 'novel' ? 'familiar' : 'novel';
     }
+    persistCurrentVideoState();
+    syncVideoSelectors();
     updateROIList();
     drawArenaCanvas();
 }
@@ -1237,7 +1474,10 @@ function onDebugFrameChange(value) {
 }
 
 function onVideoChange(value) {
+    persistCurrentVideoState();
     currentVideoIdx = parseInt(value, 10) || 0;
+    currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+    applyCurrentVideoState();
     loadFrame(0, () => {
         if (document.getElementById('step2').classList.contains('active')) {
             updateDebugPreview(0);
@@ -1274,32 +1514,59 @@ function updateStepNav(activeStep) {
     });
 }
 
+function normalizeNorRois(sourceRois) {
+    return cloneState(sourceRois || []).map(roi => {
+        if (!roi.time_config) {
+            roi.time_config = { mode: 'global', start: null, end: null };
+        }
+        if (roi.time_config.mode === 'global') {
+            roi.time_config.start = null;
+            roi.time_config.end = null;
+        }
+        return roi;
+    });
+}
+
 function buildRequestBody(frameIdx) {
+    persistCurrentVideoState();
+    const arenaWidthCm = parseFloat(document.getElementById('arenaWidthCm').value || '50');
+    const arenaHeightCm = parseFloat(document.getElementById('arenaHeightCm').value || '50');
+    const phase = currentPhase();
+    const currentTuningParams = readNorTuningParamsFromControls();
+    const perVideoConfigs = videoConfigs.map((cfg, index) => ({
+        ...defaultNorTuningParams(),
+        ...(cfg.tuning_params || (index === currentVideoIdx ? currentTuningParams : {})),
+        phase: cfg.phase || phase,
+        arena_width_cm: Number.isFinite(cfg.arena_width_cm) ? cfg.arena_width_cm : arenaWidthCm,
+        arena_height_cm: Number.isFinite(cfg.arena_height_cm) ? cfg.arena_height_cm : arenaHeightCm,
+        rois: normalizeNorRois(cfg.rois || (index === currentVideoIdx ? rois : [])),
+    }));
     return {
         frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
         video: currentVideoIdx,
-        phase: currentPhase(),
-        bg_method: document.getElementById('bgMethod').value,
-        bg_type: document.getElementById('bgType').value,
-        gray_threshold: parseInt(document.getElementById('grayThreshold').value, 10),
-        erosion_kernel: parseInt(document.getElementById('erosionKernel').value, 10),
-        erosion_iter: parseInt(document.getElementById('erosionIter').value, 10),
-        dilation_kernel: parseInt(document.getElementById('dilationKernel').value, 10),
-        dilation_iter: parseInt(document.getElementById('dilationIter').value, 10),
-        min_area: parseInt(document.getElementById('minArea').value, 10),
-        arena_width_cm: parseFloat(document.getElementById('arenaWidthCm').value || '50'),
-        arena_height_cm: parseFloat(document.getElementById('arenaHeightCm').value || '50'),
-        rois: rois,
-        center_ratio_x: parseFloat(document.getElementById('centerRatioX').value || '0.5'),
-        center_ratio_y: parseFloat(document.getElementById('centerRatioY').value || '0.5'),
-        interaction_radius_cm: parseFloat(document.getElementById('interactionRadius').value || '4'),
-        exploration_max_speed_cm_s: parseFloat(document.getElementById('explorationMaxSpeed').value || '12'),
-        use_head_direction: document.getElementById('useHeadDirection').checked,
-        head_angle_threshold_deg: parseFloat(document.getElementById('headAngleThreshold').value || '50'),
-        head_confidence_threshold: parseFloat(document.getElementById('headConfidenceThreshold').value || '0.35'),
-        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold').value || '2'),
-        min_valid_exploration_s: parseFloat(document.getElementById('minValidExploration').value || '20'),
-        bin_seconds: parseFloat(document.getElementById('binSeconds').value || '300'),
+        phase: phase,
+        bg_method: currentTuningParams.bg_method,
+        bg_type: currentTuningParams.bg_type,
+        gray_threshold: currentTuningParams.gray_threshold,
+        erosion_kernel: currentTuningParams.erosion_kernel,
+        erosion_iter: currentTuningParams.erosion_iter,
+        dilation_kernel: currentTuningParams.dilation_kernel,
+        dilation_iter: currentTuningParams.dilation_iter,
+        min_area: currentTuningParams.min_area,
+        arena_width_cm: arenaWidthCm,
+        arena_height_cm: arenaHeightCm,
+        rois: normalizeNorRois(rois),
+        per_video_configs: perVideoConfigs,
+        center_ratio_x: currentTuningParams.center_ratio_x,
+        center_ratio_y: currentTuningParams.center_ratio_y,
+        interaction_radius_cm: currentTuningParams.interaction_radius_cm,
+        exploration_max_speed_cm_s: currentTuningParams.exploration_max_speed_cm_s,
+        use_head_direction: currentTuningParams.use_head_direction,
+        head_angle_threshold_deg: currentTuningParams.head_angle_threshold_deg,
+        head_confidence_threshold: currentTuningParams.head_confidence_threshold,
+        movement_threshold_cm_s: currentTuningParams.movement_threshold_cm_s,
+        min_valid_exploration_s: currentTuningParams.min_valid_exploration_s,
+        bin_seconds: currentTuningParams.bin_seconds,
         generate_video: document.getElementById('generateVideo').checked
     };
 }
@@ -1359,11 +1626,57 @@ function startAnalysis() {
         return;
     }
 
+    const body = buildRequestBody();
+    if (isBatch) {
+        const incomplete = [];
+        body.per_video_configs.forEach((cfg, index) => {
+            if (!cfg.rois.length) {
+                incomplete.push(
+                    norFormat(
+                        'alerts.batch_missing_roi',
+                        [index + 1, currentVideoName(index)],
+                        '{0}. {1}: missing ROI configuration'
+                    )
+                );
+            }
+            const invalidRoi = cfg.rois.findIndex(roi => !roi.points || roi.points.length !== 4 || !roi.objects || roi.objects.length !== 2);
+            if (invalidRoi !== -1) {
+                incomplete.push(
+                    norFormat(
+                        'alerts.batch_roi_missing',
+                        [index + 1, currentVideoName(index), invalidRoi + 1],
+                        '{0}. {1}: ROI {2} is missing arena corners or object centers.'
+                    )
+                );
+            }
+            const invalidRoiMask = cfg.rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+            if (invalidRoiMask !== -1) {
+                incomplete.push(
+                    norFormat(
+                        'alerts.batch_mask_invalid',
+                        [index + 1, currentVideoName(index), invalidRoiMask + 1],
+                        '{0}. {1}: ROI {2} detection mask needs at least 4 points'
+                    )
+                );
+            }
+        });
+        if (incomplete.length > 0) {
+            alert(
+                norFormat(
+                    'alerts.batch_incomplete',
+                    [incomplete.join('\n')],
+                    'Complete every batch video before starting analysis:\n{0}'
+                )
+            );
+            return;
+        }
+    }
+
     document.getElementById('loading').style.display = 'flex';
     fetch(`/api/start_analysis/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildRequestBody())
+        body: JSON.stringify(body)
     })
         .then(r => r.json())
         .then(data => {

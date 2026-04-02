@@ -150,7 +150,7 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
                 <div>
                     <h5 class="mb-1" data-i18n="oft.calib.debug.title">调参与预览</h5>
-                    <div class="mini-note" data-i18n="oft.calib.debug.subtitle">参数是全局共享的，下面的预览会同时叠加所有 arena 的检测结果。</div>
+                    <div class="mini-note" data-i18n="oft.calib.debug.subtitle">批量模式下，参数按视频分别保存；下面的预览会叠加当前视频内所有 arena 的检测结果。</div>
                 </div>
                 <div class="oft-toolbar">
                     <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)">
@@ -281,6 +281,7 @@
 <script>
 const sessionId = '{{ session_id }}';
 const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
 const isBatch = {{ is_batch | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
@@ -290,6 +291,7 @@ const videoList = [];
 
 let baseFrame = null;
 let currentVideoIdx = 0;
+let currentVideoInfo = videoInfoList[0] || videoInfo;
 let rois = [];
 let currentROI = [];
 let isDrawingArena = false;
@@ -298,6 +300,79 @@ let isDrawingMask = false;
 let maskEditArenaIndex = null;
 let debounceTimers = {};
 const MAX_MASK_POINTS = 24;
+const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+function defaultTuningParams() {
+    return {
+        bg_method: 'threshold',
+        bg_type: 'light',
+        gray_threshold: 127,
+        erosion_kernel: 3,
+        erosion_iter: 1,
+        dilation_kernel: 5,
+        dilation_iter: 2,
+        min_area: 120,
+        center_ratio_x: 0.5,
+        center_ratio_y: 0.5,
+        wall_margin_cm: 8.0,
+        movement_threshold_cm_s: 2.0,
+        bin_seconds: 300.0,
+    };
+}
+function readTuningParamsFromControls() {
+    return {
+        bg_method: document.getElementById('bgMethod')?.value || 'threshold',
+        bg_type: document.getElementById('bgType')?.value || 'light',
+        gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
+        erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
+        dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
+        dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '2', 10),
+        min_area: parseInt(document.getElementById('minArea')?.value || '120', 10),
+        center_ratio_x: parseFloat(document.getElementById('centerRatioX')?.value || '0.5'),
+        center_ratio_y: parseFloat(document.getElementById('centerRatioY')?.value || '0.5'),
+        wall_margin_cm: parseFloat(document.getElementById('wallMarginCm')?.value || '8'),
+        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold')?.value || '2'),
+        bin_seconds: parseFloat(document.getElementById('binSeconds')?.value || '300'),
+    };
+}
+function applyTuningParamsToControls(params) {
+    const merged = { ...defaultTuningParams(), ...(params || {}) };
+    const fieldMap = {
+        bgMethod: merged.bg_method,
+        bgType: merged.bg_type,
+        grayThreshold: merged.gray_threshold,
+        erosionKernel: merged.erosion_kernel,
+        erosionIter: merged.erosion_iter,
+        dilationKernel: merged.dilation_kernel,
+        dilationIter: merged.dilation_iter,
+        minArea: merged.min_area,
+        centerRatioX: merged.center_ratio_x,
+        centerRatioY: merged.center_ratio_y,
+        wallMarginCm: merged.wall_margin_cm,
+        movementThreshold: merged.movement_threshold_cm_s,
+        binSeconds: merged.bin_seconds,
+    };
+    Object.entries(fieldMap).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = String(value);
+    });
+    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    updateBgMethodUI();
+}
+let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
+    arena_side_cm: 50.0,
+    rois: [],
+    current_roi: [],
+    is_drawing_arena: false,
+    current_mask_points: [],
+    is_drawing_mask: false,
+    mask_edit_arena_index: null,
+    tuning_params: defaultTuningParams(),
+}));
+
+function cloneState(value) {
+    return JSON.parse(JSON.stringify(value));
+}
 
 function tr(key, fallback) {
     const lang = (typeof getLang === 'function') ? getLang() : 'zh';
@@ -305,6 +380,14 @@ function tr(key, fallback) {
         return I18N[lang][key];
     }
     return fallback;
+}
+
+function trFormat(key, values = [], fallback = '') {
+    let text = tr(key, fallback);
+    values.forEach((value, index) => {
+        text = text.replaceAll(`{${index}}`, value);
+    });
+    return text;
 }
 
 function frameLabelText(current, total) {
@@ -315,12 +398,93 @@ function arenaDefaultName(index) {
     return `${tr('oft.calib.roi.default_name', 'Arena')} ${index + 1}`;
 }
 
-function refreshLocalizedState() {
-    const totalFrames = Math.max(0, (videoInfo.total_frames || 1) - 1);
-    const arenaFrame = parseInt(document.getElementById('frameSliderArena').value || '0', 10);
-    const debugFrame = parseInt(document.getElementById('frameSliderDebug').value || '0', 10);
+function currentVideoName(index) {
+    return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`;
+}
+
+function ensureVideoConfig(index) {
+    if (!videoConfigs[index]) {
+        videoConfigs[index] = {
+            arena_side_cm: 50.0,
+            rois: [],
+            current_roi: [],
+            is_drawing_arena: false,
+            current_mask_points: [],
+            is_drawing_mask: false,
+            mask_edit_arena_index: null,
+            tuning_params: defaultTuningParams(),
+        };
+    }
+    return videoConfigs[index];
+}
+
+function persistCurrentVideoState() {
+    const config = ensureVideoConfig(currentVideoIdx);
+    const arenaSideCm = parseFloat(document.getElementById('arenaSideCm')?.value || '50');
+    config.arena_side_cm = Number.isFinite(arenaSideCm) ? arenaSideCm : 50.0;
+    config.rois = cloneState(rois);
+    config.current_roi = cloneState(currentROI);
+    config.is_drawing_arena = Boolean(isDrawingArena);
+    config.current_mask_points = cloneState(currentMaskPoints);
+    config.is_drawing_mask = Boolean(isDrawingMask);
+    config.mask_edit_arena_index = maskEditArenaIndex == null ? null : Number(maskEditArenaIndex);
+    config.tuning_params = readTuningParamsFromControls();
+}
+
+function syncVideoSelectors() {
+    const selector = document.getElementById('videoSelector');
+    if (!selector) return;
+    selector.value = String(currentVideoIdx);
+    Array.from(selector.options).forEach((option, index) => {
+        const config = ensureVideoConfig(index);
+        const ready = Array.isArray(config.rois) && config.rois.length > 0;
+        option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
+    });
+}
+
+function applyCurrentVideoState() {
+    const config = ensureVideoConfig(currentVideoIdx);
+    rois = cloneState(config.rois || []);
+    currentROI = cloneState(config.current_roi || []);
+    isDrawingArena = Boolean(config.is_drawing_arena);
+    currentMaskPoints = cloneState(config.current_mask_points || []);
+    isDrawingMask = Boolean(config.is_drawing_mask);
+    maskEditArenaIndex = config.mask_edit_arena_index == null ? null : Number(config.mask_edit_arena_index);
+    const arenaSideCmInput = document.getElementById('arenaSideCm');
+    if (arenaSideCmInput) {
+        arenaSideCmInput.value = String(config.arena_side_cm ?? 50.0);
+    }
+    applyTuningParamsToControls(config.tuning_params);
+    updateArenaList();
+    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    syncFrameControls();
+    syncVideoSelectors();
+}
+
+function currentTotalFrames() {
+    return Math.max(0, ((currentVideoInfo && currentVideoInfo.total_frames) || videoInfo.total_frames || 1) - 1);
+}
+
+function syncFrameControls() {
+    const totalFrames = currentTotalFrames();
+    const arenaSlider = document.getElementById('frameSliderArena');
+    const debugSlider = document.getElementById('frameSliderDebug');
+    if (arenaSlider) {
+        arenaSlider.max = totalFrames;
+        if (parseInt(arenaSlider.value || '0', 10) > totalFrames) arenaSlider.value = String(totalFrames);
+    }
+    if (debugSlider) {
+        debugSlider.max = totalFrames;
+        if (parseInt(debugSlider.value || '0', 10) > totalFrames) debugSlider.value = String(totalFrames);
+    }
+    const arenaFrame = parseInt(arenaSlider?.value || '0', 10);
+    const debugFrame = parseInt(debugSlider?.value || '0', 10);
     document.getElementById('frameLabelArena').textContent = frameLabelText(arenaFrame, totalFrames);
     document.getElementById('frameLabelDebug').textContent = frameLabelText(debugFrame, totalFrames);
+}
+
+function refreshLocalizedState() {
+    syncFrameControls();
     updateBgMethodUI();
     updateArenaList();
     drawArenaCanvas();
@@ -363,11 +527,9 @@ function debounce(key, fn, delay) {
 }
 
 window.onload = function () {
-    const totalFrames = Math.max(0, (videoInfo.total_frames || 1) - 1);
-    document.getElementById('frameSliderArena').max = totalFrames;
-    document.getElementById('frameSliderDebug').max = totalFrames;
-    document.getElementById('frameLabelArena').textContent = frameLabelText(0, totalFrames);
-    document.getElementById('frameLabelDebug').textContent = frameLabelText(0, totalFrames);
+    syncVideoSelectors();
+    applyCurrentVideoState();
+    syncFrameControls();
     syncRangeLabel('grayThreshold');
     syncRangeLabel('erosionKernel');
     syncRangeLabel('erosionIter');
@@ -386,6 +548,11 @@ function loadFrame(frameIdx, callback) {
             if (data.error) {
                 alert(data.error);
                 return;
+            }
+            if (data.video_info) {
+                currentVideoInfo = data.video_info;
+                videoInfoList[currentVideoIdx] = data.video_info;
+                syncFrameControls();
             }
             const img = new Image();
             img.onload = function () {
@@ -516,6 +683,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isDrawingMask) {
             if (currentMaskPoints.length < MAX_MASK_POINTS) {
                 currentMaskPoints.push({ x, y });
+                persistCurrentVideoState();
+                syncVideoSelectors();
                 drawArenaCanvas();
             }
             return;
@@ -523,6 +692,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!isDrawingArena) return;
         if (currentROI.length < 4) {
             currentROI.push({ x, y });
+            persistCurrentVideoState();
+            syncVideoSelectors();
             if (currentROI.length === 4) {
                 finishCurrentArena();
             } else {
@@ -549,19 +720,23 @@ function startNewArena() {
     cancelDetectionMaskEdit();
     currentROI = [];
     isDrawingArena = true;
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
 function finishCurrentArena() {
     if (currentROI.length !== 4) return;
     rois.push({
-        points: JSON.parse(JSON.stringify(currentROI)),
+        points: cloneState(currentROI),
         name: arenaDefaultName(rois.length),
         time_config: { mode: 'global', start: null, end: null }
     });
     currentROI = [];
     isDrawingArena = false;
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = rois.length === 0;
 }
@@ -571,22 +746,26 @@ function startDetectionMaskEdit(index) {
     isDrawingArena = false;
     isDrawingMask = true;
     maskEditArenaIndex = index;
-    currentMaskPoints = JSON.parse(JSON.stringify(rois[index].detection_points || []));
+    currentMaskPoints = cloneState(rois[index].detection_points || []);
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
 function finishDetectionMaskEdit() {
     if (!isDrawingMask || maskEditArenaIndex == null) return;
     if (currentMaskPoints.length < 4) {
-        alert('检测遮罩至少需要 4 个点，推荐沿弯曲边缘绘制 8-16 个点。');
+        alert(tr('oft.calib.alert.mask_need_points', 'A detection mask needs at least 4 points. Drawing 8-16 points along the curved edge is recommended.'));
         return;
     }
-    rois[maskEditArenaIndex].detection_points = JSON.parse(JSON.stringify(currentMaskPoints));
+    rois[maskEditArenaIndex].detection_points = cloneState(currentMaskPoints);
     isDrawingMask = false;
     maskEditArenaIndex = null;
     currentMaskPoints = [];
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     if (document.getElementById('step2').classList.contains('active')) {
         updateDebugPreview();
@@ -598,6 +777,8 @@ function cancelDetectionMaskEdit() {
     maskEditArenaIndex = null;
     currentMaskPoints = [];
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -608,6 +789,8 @@ function resetDetectionMask(index) {
         return;
     }
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     if (document.getElementById('step2').classList.contains('active')) {
         updateDebugPreview();
@@ -617,11 +800,15 @@ function resetDetectionMask(index) {
 function undoCurrentPoint() {
     if (isDrawingMask && currentMaskPoints.length > 0) {
         currentMaskPoints.pop();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawArenaCanvas();
         return;
     }
     if (currentROI.length > 0) {
         currentROI.pop();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawArenaCanvas();
     }
 }
@@ -632,6 +819,8 @@ function clearCurrentArena() {
     } else {
         currentROI = [];
     }
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -643,6 +832,8 @@ function clearAllArenas() {
     maskEditArenaIndex = null;
     currentMaskPoints = [];
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = true;
 }
@@ -655,6 +846,8 @@ function deleteArena(index) {
     }
     rois.splice(index, 1);
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
     document.getElementById('toDebugBtn').disabled = rois.length === 0;
 }
@@ -720,6 +913,8 @@ function updateArenaList() {
 
 function updateArenaName(index, value) {
     rois[index].name = value || arenaDefaultName(index);
+    persistCurrentVideoState();
+    syncVideoSelectors();
     drawArenaCanvas();
 }
 
@@ -733,6 +928,8 @@ function updateArenaTimeMode(index, mode) {
         rois[index].time_config.end = null;
     }
     updateArenaList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
 }
 
 function updateArenaTimeValue(index, key, value) {
@@ -740,20 +937,25 @@ function updateArenaTimeValue(index, key, value) {
         rois[index].time_config = { mode: 'precise', start: null, end: null };
     }
     rois[index].time_config[key] = value === '' ? null : parseFloat(value);
+    persistCurrentVideoState();
+    syncVideoSelectors();
 }
 
 function onArenaFrameChange(value) {
-    document.getElementById('frameLabelArena').textContent = frameLabelText(value, videoInfo.total_frames - 1);
+    document.getElementById('frameLabelArena').textContent = frameLabelText(value, currentTotalFrames());
     debounce('arenaFrame', () => loadFrame(parseInt(value, 10)), 180);
 }
 
 function onDebugFrameChange(value) {
-    document.getElementById('frameLabelDebug').textContent = frameLabelText(value, videoInfo.total_frames - 1);
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(value, currentTotalFrames());
     debounce('debugFrame', () => updateDebugPreview(parseInt(value, 10)), 180);
 }
 
 function onVideoChange(value) {
+    persistCurrentVideoState();
     currentVideoIdx = parseInt(value, 10) || 0;
+    currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+    applyCurrentVideoState();
     loadFrame(0, () => {
         if (document.getElementById('step2').classList.contains('active')) {
             updateDebugPreview(0);
@@ -767,7 +969,7 @@ function goToStep(step) {
         return;
     }
     if (step === 2 && isDrawingMask && currentMaskPoints.length > 0 && currentMaskPoints.length < 4) {
-        alert('当前检测遮罩还没完成，至少需要 4 个点。');
+        alert(tr('oft.calib.alert.unfinished_mask', 'The current detection mask is not finished yet and needs at least 4 points.'));
         return;
     }
     if (step === 2 && isDrawingMask && currentMaskPoints.length >= 4) {
@@ -796,25 +998,48 @@ function syncRangeLabel(id) {
     if (input && label) label.textContent = input.value;
 }
 
+function normalizeArenaRois(sourceRois) {
+    return cloneState(sourceRois || []).map(roi => {
+        if (!roi.time_config) {
+            roi.time_config = { mode: 'global', start: null, end: null };
+        }
+        if (roi.time_config.mode === 'global') {
+            roi.time_config.start = null;
+            roi.time_config.end = null;
+        }
+        return roi;
+    });
+}
+
 function buildRequestBody(frameIdx) {
+    persistCurrentVideoState();
+    const currentArenaSideCm = parseFloat(document.getElementById('arenaSideCm').value || '50');
+    const currentTuningParams = readTuningParamsFromControls();
+    const perVideoConfigs = videoConfigs.map((cfg, index) => ({
+        ...defaultTuningParams(),
+        ...(cfg.tuning_params || (index === currentVideoIdx ? currentTuningParams : {})),
+        arena_side_cm: Number.isFinite(cfg.arena_side_cm) ? cfg.arena_side_cm : currentArenaSideCm,
+        rois: normalizeArenaRois(cfg.rois || (index === currentVideoIdx ? rois : [])),
+    }));
     return {
         frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
         video: currentVideoIdx,
-        bg_method: document.getElementById('bgMethod').value,
-        bg_type: document.getElementById('bgType').value,
-        gray_threshold: parseInt(document.getElementById('grayThreshold').value, 10),
-        erosion_kernel: parseInt(document.getElementById('erosionKernel').value, 10),
-        erosion_iter: parseInt(document.getElementById('erosionIter').value, 10),
-        dilation_kernel: parseInt(document.getElementById('dilationKernel').value, 10),
-        dilation_iter: parseInt(document.getElementById('dilationIter').value, 10),
-        min_area: parseInt(document.getElementById('minArea').value, 10),
-        arena_side_cm: parseFloat(document.getElementById('arenaSideCm').value),
-        rois: rois,
-        center_ratio_x: parseFloat(document.getElementById('centerRatioX').value),
-        center_ratio_y: parseFloat(document.getElementById('centerRatioY').value),
-        wall_margin_cm: parseFloat(document.getElementById('wallMarginCm').value),
-        movement_threshold_cm_s: parseFloat(document.getElementById('movementThreshold').value),
-        bin_seconds: parseFloat(document.getElementById('binSeconds').value || '300'),
+        bg_method: currentTuningParams.bg_method,
+        bg_type: currentTuningParams.bg_type,
+        gray_threshold: currentTuningParams.gray_threshold,
+        erosion_kernel: currentTuningParams.erosion_kernel,
+        erosion_iter: currentTuningParams.erosion_iter,
+        dilation_kernel: currentTuningParams.dilation_kernel,
+        dilation_iter: currentTuningParams.dilation_iter,
+        min_area: currentTuningParams.min_area,
+        arena_side_cm: currentArenaSideCm,
+        rois: normalizeArenaRois(rois),
+        per_video_configs: perVideoConfigs,
+        center_ratio_x: currentTuningParams.center_ratio_x,
+        center_ratio_y: currentTuningParams.center_ratio_y,
+        wall_margin_cm: currentTuningParams.wall_margin_cm,
+        movement_threshold_cm_s: currentTuningParams.movement_threshold_cm_s,
+        bin_seconds: currentTuningParams.bin_seconds,
         generate_video: document.getElementById('generateVideo').checked
     };
 }
@@ -851,14 +1076,49 @@ function startAnalysis() {
     }
     const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
     if (invalidMask !== -1) {
-        alert(`ROI ${invalidMask + 1} 的检测遮罩至少需要 4 个点。`);
+        alert(trFormat('oft.calib.alert.mask_invalid', [invalidMask + 1], 'ROI {0} needs at least 4 detection-mask points.'));
         return;
+    }
+    const body = buildRequestBody();
+    if (isBatch) {
+        const incomplete = [];
+        body.per_video_configs.forEach((cfg, index) => {
+            if (!cfg.rois.length) {
+                incomplete.push(
+                    trFormat(
+                        'oft.calib.alert.batch_missing_arena',
+                        [index + 1, currentVideoName(index)],
+                        '{0}. {1}: missing arena configuration'
+                    )
+                );
+            }
+            const invalidArenaMask = cfg.rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+            if (invalidArenaMask !== -1) {
+                incomplete.push(
+                    trFormat(
+                        'oft.calib.alert.batch_mask_invalid',
+                        [index + 1, currentVideoName(index), invalidArenaMask + 1],
+                        '{0}. {1}: ROI {2} detection mask needs at least 4 points'
+                    )
+                );
+            }
+        });
+        if (incomplete.length > 0) {
+            alert(
+                trFormat(
+                    'oft.calib.alert.batch_incomplete',
+                    [incomplete.join('\n')],
+                    'Complete every batch video before starting analysis:\n{0}'
+                )
+            );
+            return;
+        }
     }
     document.getElementById('loading').style.display = 'flex';
     fetch(`/api/start_analysis/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildRequestBody())
+        body: JSON.stringify(body)
     })
         .then(r => r.json())
         .then(data => {

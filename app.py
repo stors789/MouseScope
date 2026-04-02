@@ -38,6 +38,7 @@ os.environ.setdefault('MKL_NUM_THREADS', _cpu_count)
 
 import secrets
 import json
+import copy
 import cv2
 import numpy as np
 import base64
@@ -128,9 +129,29 @@ CHINA_TZ = timezone(timedelta(hours=8))
 CSV_ENCODING = 'utf-8-sig'
 VALID_VIDEO_EXTS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
 staged_original_names = {}
+SESSION_PENDING_TTL_SECONDS = 2 * 60 * 60
+SESSION_FINISHED_TTL_SECONDS = 12 * 60 * 60
+SESSION_ERROR_TTL_SECONDS = 24 * 60 * 60
+DEBUG_STATIC_BG_CACHE_TTL_SECONDS = 30 * 60
+DEBUG_STATIC_BG_CACHE_MAX_ITEMS = 32
+LICENSE_EXEMPT_ENDPOINTS = {
+    'static',
+    'index',
+    'upload_page',
+    'manual',
+    'manual_open_field',
+    'manual_novel_object',
+    'license_page',
+    'api_get_license',
+    'api_accept_license',
+}
 
 def china_now():
     return datetime.now(CHINA_TZ)
+
+
+def _now_ts():
+    return time.time()
 
 
 def _register_original_name(path, original_name):
@@ -154,8 +175,23 @@ def _build_ascii_result_stem(original_name, session_id, fallback='video'):
     return f"{session_prefix}_{stem}_{digest}"
 
 
-def _prepare_output_paths(session_id, original_name, suffix, result_folder=None, fallback='video'):
+def _build_batch_video_subdir(original_name, batch_index, batch_count, fallback='video'):
+    total = max(int(batch_count or 1), 1)
+    index = max(int(batch_index or 0), 0)
+    digits = max(2, len(str(total)))
+    display_stem = _safe_display_stem(original_name, fallback=fallback)
+    return f"{index + 1:0{digits}d}_{display_stem}"
+
+
+def _prepare_output_paths(session_id, original_name, suffix, result_folder=None, fallback='video', batch_index=None, batch_count=1):
     final_dir = Path(_resolve_result_dir(result_folder))
+    if int(batch_count or 1) > 1 and batch_index is not None:
+        final_dir = final_dir / _build_batch_video_subdir(
+            original_name,
+            batch_index=batch_index,
+            batch_count=batch_count,
+            fallback=fallback,
+        )
     final_dir.mkdir(parents=True, exist_ok=True)
     work_dir = WORK_DIR / str(session_id)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -169,6 +205,18 @@ def _prepare_output_paths(session_id, original_name, suffix, result_folder=None,
         'work_base': str(work_dir / f"{ascii_stem}_{suffix}"),
         'final_base': str(final_dir / f"{display_stem}_{suffix}"),
     }
+
+
+def _result_zip_arcname(path, result_dir):
+    path_abs = os.path.abspath(str(path))
+    result_dir_abs = os.path.abspath(str(result_dir))
+    try:
+        common = os.path.commonpath([path_abs, result_dir_abs])
+    except ValueError:
+        common = None
+    if common and normalized_path_key(common) == normalized_path_key(result_dir_abs):
+        return os.path.relpath(path_abs, result_dir_abs).replace('\\', '/')
+    return os.path.basename(path_abs)
 
 
 def _export_result_file(work_path, final_path):
@@ -187,6 +235,44 @@ def _write_dataframe_csv(rows, path):
         return False
     pd.DataFrame(rows).to_csv(path, index=False, encoding=CSV_ENCODING)
     return os.path.exists(path)
+
+
+def _probe_video_info(video_path, fps_override=None):
+    cap = cv2.VideoCapture(str(video_path))
+    detected_fps = 30.0
+    width = 0
+    height = 0
+    total_frames = 0
+    if cap.isOpened():
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    cap.release()
+    return {
+        'fps': float(fps_override) if fps_override else float(detected_fps),
+        'detected_fps': float(detected_fps),
+        'width': int(width),
+        'height': int(height),
+        'total_frames': int(total_frames),
+    }
+
+
+def _extract_video_info_from_entry(video_info, fps_override=None):
+    info = dict(video_info or {})
+    fallback = _probe_video_info(info.get('path', ''), fps_override=fps_override)
+    return {
+        'fps': float(info.get('fps', fallback['fps'])),
+        'detected_fps': float(info.get('detected_fps', fallback['detected_fps'])),
+        'width': int(info.get('width', fallback['width'])),
+        'height': int(info.get('height', fallback['height'])),
+        'total_frames': int(info.get('total_frames', fallback['total_frames'])),
+    }
+
+
+def _update_video_entry_info(video_info, fps_override=None):
+    video_info.update(_probe_video_info(video_info.get('path', ''), fps_override=fps_override))
+    return video_info
 
 
 def _resolve_result_dir(output_dir):
@@ -297,6 +383,104 @@ def _request_experiment_type():
     return None
 
 
+def _session_video_info(sess, video_idx=0):
+    video_infos = sess.get('video_infos') or []
+    if not video_infos:
+        return sess.get('video_info') or {
+            'fps': 30.0,
+            'detected_fps': 30.0,
+            'width': 0,
+            'height': 0,
+            'total_frames': 0,
+        }
+    index = min(max(int(video_idx or 0), 0), len(video_infos) - 1)
+    return _extract_video_info_from_entry(video_infos[index], fps_override=sess.get('fps_override'))
+
+
+def _mark_session_accessed(sess):
+    if isinstance(sess, dict):
+        sess['last_accessed_at'] = _now_ts()
+
+
+def _cleanup_session_artifacts(session_id):
+    for target in (
+        UPLOAD_DIR / '_staged' / str(session_id),
+        WORK_DIR / str(session_id),
+    ):
+        try:
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _cleanup_expired_runtime_state():
+    now = _now_ts()
+
+    expired_session_ids = []
+    for session_id, sess in list(analysis_sessions.items()):
+        last_access = float(sess.get('last_accessed_at') or sess.get('created_at') or now)
+        analysis = sess.get('analysis')
+        if analysis is None:
+            ttl = SESSION_PENDING_TTL_SECONDS
+        else:
+            status = str(getattr(analysis, 'status', '') or '').lower()
+            is_running = bool(getattr(analysis, 'is_running', False))
+            if is_running or status in {'waiting', 'analyzing'}:
+                continue
+            ttl = SESSION_FINISHED_TTL_SECONDS if status in {'completed', 'stopped'} else SESSION_ERROR_TTL_SECONDS
+
+        if now - last_access > ttl:
+            expired_session_ids.append(session_id)
+
+    for session_id in expired_session_ids:
+        analysis_sessions.pop(session_id, None)
+        _cleanup_session_artifacts(session_id)
+
+    for cache_key, entry in list(debug_static_bg_cache.items()):
+        if isinstance(entry, dict):
+            last_access = float(entry.get('last_accessed_at') or now)
+        else:
+            last_access = now
+        if now - last_access > DEBUG_STATIC_BG_CACHE_TTL_SECONDS:
+            debug_static_bg_cache.pop(cache_key, None)
+
+    if len(debug_static_bg_cache) > DEBUG_STATIC_BG_CACHE_MAX_ITEMS:
+        ordered = sorted(
+            debug_static_bg_cache.items(),
+            key=lambda item: float(item[1].get('last_accessed_at', 0.0)) if isinstance(item[1], dict) else 0.0,
+        )
+        overflow = len(debug_static_bg_cache) - DEBUG_STATIC_BG_CACHE_MAX_ITEMS
+        for cache_key, _ in ordered[:overflow]:
+            debug_static_bg_cache.pop(cache_key, None)
+
+
+def _license_not_accepted_response():
+    message = 'License agreement must be accepted before using MouseScope.'
+    if request.path.startswith('/api/') or request.method != 'GET':
+        return jsonify({'success': False, 'error': message}), 403
+    flash(message, 'warning')
+    return redirect(url_for('license_page'))
+
+
+@app.before_request
+def before_request_guard():
+    _cleanup_expired_runtime_state()
+
+    session_id = _request_session_id()
+    if session_id:
+        sess = analysis_sessions.get(session_id)
+        if sess:
+            _mark_session_accessed(sess)
+
+    endpoint = request.endpoint or ''
+    if endpoint in LICENSE_EXEMPT_ENDPOINTS or endpoint.startswith('static'):
+        return None
+    if session.get('license_accepted'):
+        return None
+    return _license_not_accepted_response()
+
+
 @app.context_processor
 def inject_navigation_context():
     endpoint = request.endpoint or ''
@@ -347,10 +531,17 @@ def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert):
         return BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
     if bg_method == 'static':
         cache_key = os.path.abspath(video_path)
-        static_bg = debug_static_bg_cache.get(cache_key)
+        cache_entry = debug_static_bg_cache.get(cache_key)
+        if isinstance(cache_entry, dict):
+            static_bg = cache_entry.get('bg')
+        else:
+            static_bg = cache_entry
         if static_bg is None:
             static_bg = create_static_background(video_path, num_frames=15)
-            debug_static_bg_cache[cache_key] = static_bg
+        debug_static_bg_cache[cache_key] = {
+            'bg': static_bg,
+            'last_accessed_at': _now_ts(),
+        }
         bg_rgb = cv2.cvtColor(static_bg, cv2.COLOR_GRAY2BGR) if len(static_bg.shape) == 2 else static_bg
         return BackgroundSubtractor(method='static', static_bg=bg_rgb)
     return BackgroundSubtractor(method=bg_method)
@@ -397,6 +588,16 @@ class VisionAnalysisSession:
         self.immobility_csv_path = None
         self.immobility_txt_path = None
 
+    def _config_for_video(self, video_index):
+        vision_config = copy.deepcopy(self.config)
+        per_video_configs = vision_config.pop('per_video_configs', None) or []
+        video_index = int(video_index or 0)
+        if 0 <= video_index < len(per_video_configs):
+            per_video_config = per_video_configs[video_index] or {}
+            for key, value in per_video_config.items():
+                vision_config[key] = copy.deepcopy(value)
+        return vision_config
+
     def start(self):
         """在后台线程中启动分析"""
         self.is_running = True
@@ -434,16 +635,19 @@ class VisionAnalysisSession:
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         """分析单个视频"""
         video_start_time = time.time()
-        vision_config = self.config
+        video_index = 0 if batch_index is None else int(batch_index)
+        vision_config = self._config_for_video(video_index)
 
         # 结果文件夹（优先使用自定义输出目录）
-        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
         output_info = _prepare_output_paths(
             self.session_id,
             video_info.get('original_name', 'video'),
             suffix='tst',
             result_folder=result_folder,
             fallback='video',
+            batch_index=video_index,
+            batch_count=len(self.video_paths),
         )
 
         video_name = output_info['display_stem']
@@ -924,14 +1128,25 @@ class OpenFieldMultiArenaAnalysisSession:
         if group and path not in self.output_groups[group]:
             self.output_groups[group].append(path)
 
-    def _parse_rois(self):
-        rois = self.config.get('rois') or []
+    def _config_for_video(self, video_index):
+        vision_config = copy.deepcopy(self.config)
+        per_video_configs = vision_config.pop('per_video_configs', None) or []
+        video_index = int(video_index or 0)
+        if 0 <= video_index < len(per_video_configs):
+            per_video_config = per_video_configs[video_index] or {}
+            for key, value in per_video_config.items():
+                vision_config[key] = copy.deepcopy(value)
+        return vision_config
+
+    def _parse_rois(self, config=None):
+        active_config = config or self.config
+        rois = active_config.get('rois') or []
         if isinstance(rois, str):
             rois = json.loads(rois)
 
-        if not rois and self.config.get('arena_points'):
+        if not rois and active_config.get('arena_points'):
             rois = [{
-                'points': self.config.get('arena_points'),
+                'points': active_config.get('arena_points'),
                 'name': 'Arena 1',
                 'time_config': {'mode': 'global', 'start': None, 'end': None},
             }]
@@ -1012,13 +1227,17 @@ class OpenFieldMultiArenaAnalysisSession:
 
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
-        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        video_index = 0 if batch_index is None else int(batch_index)
+        vision_config = self._config_for_video(video_index)
+        result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
         output_info = _prepare_output_paths(
             self.session_id,
             video_info.get('original_name', 'video'),
             suffix='oft',
             result_folder=result_folder,
             fallback='video',
+            batch_index=video_index,
+            batch_count=len(self.video_paths),
         )
 
         video_name = output_info['display_stem']
@@ -1026,7 +1245,7 @@ class OpenFieldMultiArenaAnalysisSession:
         final_base = output_info['final_base']
         output_video_path = f"{output_base}_analyzed.mp4"
         final_output_video_path = f"{final_base}_analyzed.mp4"
-        generate_video = bool(self.config.get('generate_video', True))
+        generate_video = bool(vision_config.get('generate_video', True))
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -1034,19 +1253,19 @@ class OpenFieldMultiArenaAnalysisSession:
             return
 
         detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        fps_override = self.config.get('fps_override')
+        fps_override = vision_config.get('fps_override')
         fps = fps_override if fps_override else detected_fps
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._log(f"OFT video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
 
-        bg_method = self.config.get('bg_method', 'threshold')
+        bg_method = vision_config.get('bg_method', 'threshold')
         if bg_method == 'threshold':
             bg_subtractor = BackgroundSubtractor(
                 method='threshold',
-                threshold=self.config.get('gray_threshold', 127),
-                invert=self.config.get('invert', False),
+                threshold=vision_config.get('gray_threshold', 127),
+                invert=vision_config.get('invert', False),
             )
         elif bg_method == 'static':
             bg = create_static_background(video_path, num_frames=15)
@@ -1056,21 +1275,21 @@ class OpenFieldMultiArenaAnalysisSession:
             bg_subtractor = BackgroundSubtractor(method=bg_method)
 
         morph_processor = MorphologyProcessor(
-            erosion_kernel=self.config.get('erosion_kernel', 3),
-            erosion_iterations=self.config.get('erosion_iter', 1),
-            dilation_kernel=self.config.get('dilation_kernel', 5),
-            dilation_iterations=self.config.get('dilation_iter', 2),
+            erosion_kernel=vision_config.get('erosion_kernel', 3),
+            erosion_iterations=vision_config.get('erosion_iter', 1),
+            dilation_kernel=vision_config.get('dilation_kernel', 5),
+            dilation_iterations=vision_config.get('dilation_iter', 2),
         )
         detector = MouseDetector(
-            min_area=self.config.get('min_area', 120),
-            max_area=self.config.get('max_area', 50000),
+            min_area=vision_config.get('min_area', 120),
+            max_area=vision_config.get('max_area', 50000),
         )
 
-        arena_side_cm = float(self.config.get('arena_side_cm', 50.0))
-        start_sec = self.config.get('start_sec')
-        end_sec = self.config.get('end_sec')
+        arena_side_cm = float(vision_config.get('arena_side_cm', 50.0))
+        start_sec = vision_config.get('start_sec')
+        end_sec = vision_config.get('end_sec')
         global_start_time_s = float(start_sec) if start_sec is not None else 0.0
-        roi_configs = self._parse_rois()
+        roi_configs = self._parse_rois(vision_config)
 
         trackers = []
         for roi in roi_configs:
@@ -1080,10 +1299,10 @@ class OpenFieldMultiArenaAnalysisSession:
                     detection_points=roi.get('detection_points'),
                     arena_side_cm=arena_side_cm,
                     fps=fps,
-                    center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
-                    center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
-                    wall_margin_cm=float(self.config.get('wall_margin_cm', 8.0)),
-                    movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
+                    center_ratio_x=float(vision_config.get('center_ratio_x', 0.5)),
+                    center_ratio_y=float(vision_config.get('center_ratio_y', 0.5)),
+                    wall_margin_cm=float(vision_config.get('wall_margin_cm', 8.0)),
+                    movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
                     roi_id=roi['roi_id'],
                     roi_name=roi['name'],
                     time_config=roi.get('time_config'),
@@ -1188,7 +1407,7 @@ class OpenFieldMultiArenaAnalysisSession:
                 record['video_name'] = video_info.get('original_name', video_name)
                 track_rows.append(record)
 
-            for row in tracker.build_time_bins(bin_seconds=float(self.config.get('bin_seconds', 300.0))):
+            for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 300.0))):
                 bucket = dict(row)
                 bucket['video_name'] = video_info.get('original_name', video_name)
                 bins_rows.append(bucket)
@@ -1430,8 +1649,19 @@ class NovelObjectMultiArenaAnalysisSession:
         if group and path not in self.output_groups[group]:
             self.output_groups[group].append(path)
 
-    def _parse_rois(self):
-        rois = self.config.get('rois') or []
+    def _config_for_video(self, video_index):
+        vision_config = copy.deepcopy(self.config)
+        per_video_configs = vision_config.pop('per_video_configs', None) or []
+        video_index = int(video_index or 0)
+        if 0 <= video_index < len(per_video_configs):
+            per_video_config = per_video_configs[video_index] or {}
+            for key, value in per_video_config.items():
+                vision_config[key] = copy.deepcopy(value)
+        return vision_config
+
+    def _parse_rois(self, config=None):
+        active_config = config or self.config
+        rois = active_config.get('rois') or []
         if isinstance(rois, str):
             rois = json.loads(rois)
 
@@ -1529,13 +1759,17 @@ class NovelObjectMultiArenaAnalysisSession:
 
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
-        result_folder = self.config.get('output_dir') or str(RESULT_DIR)
+        video_index = 0 if batch_index is None else int(batch_index)
+        vision_config = self._config_for_video(video_index)
+        result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
         output_info = _prepare_output_paths(
             self.session_id,
             video_info.get('original_name', 'video'),
             suffix='nor',
             result_folder=result_folder,
             fallback='video',
+            batch_index=video_index,
+            batch_count=len(self.video_paths),
         )
 
         video_name = output_info['display_stem']
@@ -1543,7 +1777,7 @@ class NovelObjectMultiArenaAnalysisSession:
         final_base = output_info['final_base']
         output_video_path = f"{output_base}_analyzed.mp4"
         final_output_video_path = f"{final_base}_analyzed.mp4"
-        generate_video = bool(self.config.get('generate_video', True))
+        generate_video = bool(vision_config.get('generate_video', True))
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -1551,19 +1785,19 @@ class NovelObjectMultiArenaAnalysisSession:
             return
 
         detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        fps_override = self.config.get('fps_override')
+        fps_override = vision_config.get('fps_override')
         fps = fps_override if fps_override else detected_fps
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._log(f"NOR video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
 
-        bg_method = self.config.get('bg_method', 'threshold')
+        bg_method = vision_config.get('bg_method', 'threshold')
         if bg_method == 'threshold':
             bg_subtractor = BackgroundSubtractor(
                 method='threshold',
-                threshold=self.config.get('gray_threshold', 127),
-                invert=self.config.get('invert', False),
+                threshold=vision_config.get('gray_threshold', 127),
+                invert=vision_config.get('invert', False),
             )
         elif bg_method == 'static':
             bg = create_static_background(video_path, num_frames=15)
@@ -1573,23 +1807,23 @@ class NovelObjectMultiArenaAnalysisSession:
             bg_subtractor = BackgroundSubtractor(method=bg_method)
 
         morph_processor = MorphologyProcessor(
-            erosion_kernel=self.config.get('erosion_kernel', 3),
-            erosion_iterations=self.config.get('erosion_iter', 1),
-            dilation_kernel=self.config.get('dilation_kernel', 5),
-            dilation_iterations=self.config.get('dilation_iter', 2),
+            erosion_kernel=vision_config.get('erosion_kernel', 3),
+            erosion_iterations=vision_config.get('erosion_iter', 1),
+            dilation_kernel=vision_config.get('dilation_kernel', 5),
+            dilation_iterations=vision_config.get('dilation_iter', 2),
         )
         detector = MouseDetector(
-            min_area=self.config.get('min_area', 120),
-            max_area=self.config.get('max_area', 50000),
+            min_area=vision_config.get('min_area', 120),
+            max_area=vision_config.get('max_area', 50000),
         )
 
-        phase = self.config.get('phase', 'recognition')
-        arena_width_cm = float(self.config.get('arena_width_cm', self.config.get('arena_side_cm', 50.0)))
-        arena_height_cm = float(self.config.get('arena_height_cm', self.config.get('arena_side_cm', 50.0)))
-        start_sec = self.config.get('start_sec')
-        end_sec = self.config.get('end_sec')
+        phase = vision_config.get('phase', 'recognition')
+        arena_width_cm = float(vision_config.get('arena_width_cm', vision_config.get('arena_side_cm', 50.0)))
+        arena_height_cm = float(vision_config.get('arena_height_cm', vision_config.get('arena_side_cm', 50.0)))
+        start_sec = vision_config.get('start_sec')
+        end_sec = vision_config.get('end_sec')
         global_start_time_s = float(start_sec) if start_sec is not None else 0.0
-        roi_configs = self._parse_rois()
+        roi_configs = self._parse_rois(vision_config)
 
         trackers = []
         for roi in roi_configs:
@@ -1606,15 +1840,15 @@ class NovelObjectMultiArenaAnalysisSession:
                     phase=phase,
                     time_config=roi.get('time_config'),
                     global_start_time_s=global_start_time_s,
-                    center_ratio_x=float(self.config.get('center_ratio_x', 0.5)),
-                    center_ratio_y=float(self.config.get('center_ratio_y', 0.5)),
-                    interaction_radius_cm=float(self.config.get('interaction_radius_cm', 4.0)),
-                    exploration_max_speed_cm_s=float(self.config.get('exploration_max_speed_cm_s', 12.0)),
-                    use_head_direction=bool(self.config.get('use_head_direction', True)),
-                    head_angle_threshold_deg=float(self.config.get('head_angle_threshold_deg', 50.0)),
-                    head_confidence_threshold=float(self.config.get('head_confidence_threshold', 0.35)),
-                    movement_threshold_cm_s=float(self.config.get('movement_threshold_cm_s', 2.0)),
-                    min_valid_exploration_s=float(self.config.get('min_valid_exploration_s', 20.0)),
+                    center_ratio_x=float(vision_config.get('center_ratio_x', 0.5)),
+                    center_ratio_y=float(vision_config.get('center_ratio_y', 0.5)),
+                    interaction_radius_cm=float(vision_config.get('interaction_radius_cm', 4.0)),
+                    exploration_max_speed_cm_s=float(vision_config.get('exploration_max_speed_cm_s', 12.0)),
+                    use_head_direction=bool(vision_config.get('use_head_direction', True)),
+                    head_angle_threshold_deg=float(vision_config.get('head_angle_threshold_deg', 50.0)),
+                    head_confidence_threshold=float(vision_config.get('head_confidence_threshold', 0.35)),
+                    movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
+                    min_valid_exploration_s=float(vision_config.get('min_valid_exploration_s', 20.0)),
                 )
             )
         self._log(f"Configured {len(trackers)} NOR arenas")
@@ -1718,7 +1952,7 @@ class NovelObjectMultiArenaAnalysisSession:
                 record['video_name'] = video_info.get('original_name', video_name)
                 track_rows.append(record)
 
-            for row in tracker.build_time_bins(bin_seconds=float(self.config.get('bin_seconds', 300.0))):
+            for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 300.0))):
                 bucket = dict(row)
                 bucket['video_name'] = video_info.get('original_name', video_name)
                 bins_rows.append(bucket)
@@ -2062,18 +2296,16 @@ def do_upload():
     output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
     resolved_output_dir = _resolve_result_dir(output_dir) if output_dir else None
     fps_override = request.form.get('fps_override', '').strip()
+    fps_override_value = float(fps_override) if fps_override else None
+
+    for info in video_infos:
+        _update_video_entry_info(info, fps_override=fps_override_value)
 
     # 读取第一个视频的基本信息
-    cap = cv2.VideoCapture(video_paths[0])
-    detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    video_info_data = {
-        'fps': float(fps_override) if fps_override else detected_fps,
-        'detected_fps': detected_fps,
-        'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-    }
-    cap.release()
+    video_info_data = _extract_video_info_from_entry(
+        video_infos[0],
+        fps_override=fps_override_value,
+    )
 
     # 保存到会话
     analysis_sessions[session_id] = {
@@ -2084,8 +2316,10 @@ def do_upload():
         'start_seconds': start_seconds if start_seconds else None,
         'end_seconds': end_seconds if end_seconds else None,
         'output_dir': resolved_output_dir,
-        'fps_override': float(fps_override) if fps_override else None,
+        'fps_override': fps_override_value,
         'is_batch': len(video_paths) > 1,
+        'created_at': _now_ts(),
+        'last_accessed_at': _now_ts(),
     }
 
     return redirect(url_for('calibrate', session_id=session_id))
@@ -2102,7 +2336,11 @@ def calibrate(session_id):
     video_list = []
     if sess['is_batch']:
         for i, info in enumerate(sess['video_infos']):
-            video_list.append({'index': i, 'name': info['original_name']})
+            video_list.append({
+                'index': i,
+                'name': info['original_name'],
+                'video_info': _extract_video_info_from_entry(info, fps_override=sess.get('fps_override')),
+            })
 
     if sess.get('experiment_type') == 'open_field':
         template_name = 'calibrate_openfield.html'
@@ -2113,7 +2351,8 @@ def calibrate(session_id):
     return render_template(
         template_name,
         session_id=session_id,
-        video_info=sess['video_info'],
+        video_info=_session_video_info(sess, 0),
+        video_info_list=[_extract_video_info_from_entry(info, fps_override=sess.get('fps_override')) for info in sess['video_infos']],
         video_path=sess['video_paths'][0],
         is_batch=sess['is_batch'],
         video_list=video_list,
@@ -2164,7 +2403,8 @@ def get_first_frame(session_id):
     return jsonify({
         'image': img_b64,
         'frame_idx': frame_idx,
-        'total_frames': sess['video_info']['total_frames'],
+        'total_frames': _session_video_info(sess, video_idx)['total_frames'],
+        'video_info': _session_video_info(sess, video_idx),
     })
 
 
@@ -2432,24 +2672,61 @@ def start_analysis(session_id):
     data = request.get_json()
 
     if sess.get('experiment_type') == 'open_field':
+        per_video_configs = []
+        raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
+        default_bg_method = data.get('bg_method', 'threshold')
+        default_bg_type = data.get('bg_type', 'light')
+        default_gray_threshold = int(data.get('gray_threshold', 127))
+        default_erosion_kernel = int(data.get('erosion_kernel', 3))
+        default_erosion_iter = int(data.get('erosion_iter', 1))
+        default_dilation_kernel = int(data.get('dilation_kernel', 5))
+        default_dilation_iter = int(data.get('dilation_iter', 2))
+        default_min_area = int(data.get('min_area', 120))
+        default_arena_side_cm = float(data.get('arena_side_cm', data.get('arena_width_cm', 50.0)))
+        default_center_ratio_x = float(data.get('center_ratio_x', 0.5))
+        default_center_ratio_y = float(data.get('center_ratio_y', 0.5))
+        default_wall_margin_cm = float(data.get('wall_margin_cm', 8.0))
+        default_movement_threshold_cm_s = float(data.get('movement_threshold_cm_s', 2.0))
+        default_bin_seconds = float(data.get('bin_seconds', 300.0))
+        for idx, _ in enumerate(sess.get('video_infos', [])):
+            raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
+            per_video_configs.append({
+                'bg_method': raw_cfg.get('bg_method', default_bg_method),
+                'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
+                'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
+                'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
+                'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
+                'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
+                'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
+                'min_area': int(raw_cfg.get('min_area', default_min_area)),
+                'arena_side_cm': float(raw_cfg.get('arena_side_cm', default_arena_side_cm)),
+                'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
+                'center_ratio_x': float(raw_cfg.get('center_ratio_x', default_center_ratio_x)),
+                'center_ratio_y': float(raw_cfg.get('center_ratio_y', default_center_ratio_y)),
+                'wall_margin_cm': float(raw_cfg.get('wall_margin_cm', default_wall_margin_cm)),
+                'movement_threshold_cm_s': float(raw_cfg.get('movement_threshold_cm_s', default_movement_threshold_cm_s)),
+                'bin_seconds': float(raw_cfg.get('bin_seconds', default_bin_seconds)),
+            })
+
         vision_config = {
-            'bg_method': data.get('bg_method', 'threshold'),
-            'gray_threshold': int(data.get('gray_threshold', 127)),
-            'invert': data.get('bg_type', 'light') == 'dark',
-            'erosion_kernel': int(data.get('erosion_kernel', 3)),
-            'erosion_iter': int(data.get('erosion_iter', 1)),
-            'dilation_kernel': int(data.get('dilation_kernel', 5)),
-            'dilation_iter': int(data.get('dilation_iter', 2)),
-            'min_area': int(data.get('min_area', 120)),
+            'bg_method': default_bg_method,
+            'gray_threshold': default_gray_threshold,
+            'invert': str(default_bg_type).lower() == 'dark',
+            'erosion_kernel': default_erosion_kernel,
+            'erosion_iter': default_erosion_iter,
+            'dilation_kernel': default_dilation_kernel,
+            'dilation_iter': default_dilation_iter,
+            'min_area': default_min_area,
             'max_area': int(data.get('max_area', 50000)),
             'rois': data.get('rois', []),
             'arena_points': data.get('arena_points', []),
-            'arena_side_cm': float(data.get('arena_side_cm', data.get('arena_width_cm', 50.0))),
-            'center_ratio_x': float(data.get('center_ratio_x', 0.5)),
-            'center_ratio_y': float(data.get('center_ratio_y', 0.5)),
-            'wall_margin_cm': float(data.get('wall_margin_cm', 8.0)),
-            'movement_threshold_cm_s': float(data.get('movement_threshold_cm_s', 2.0)),
-            'bin_seconds': float(data.get('bin_seconds', 300.0)),
+            'arena_side_cm': default_arena_side_cm,
+            'per_video_configs': per_video_configs,
+            'center_ratio_x': default_center_ratio_x,
+            'center_ratio_y': default_center_ratio_y,
+            'wall_margin_cm': default_wall_margin_cm,
+            'movement_threshold_cm_s': default_movement_threshold_cm_s,
+            'bin_seconds': default_bin_seconds,
             'generate_video': data.get('generate_video', True),
             'output_dir': sess.get('output_dir'),
             'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
@@ -2469,30 +2746,81 @@ def start_analysis(session_id):
         return jsonify({'success': True, 'session_id': session_id})
 
     if sess.get('experiment_type') == 'novel_object':
+        per_video_configs = []
+        raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
+        default_phase = data.get('phase', 'recognition')
+        default_bg_method = data.get('bg_method', 'threshold')
+        default_bg_type = data.get('bg_type', 'light')
+        default_gray_threshold = int(data.get('gray_threshold', 127))
+        default_erosion_kernel = int(data.get('erosion_kernel', 3))
+        default_erosion_iter = int(data.get('erosion_iter', 1))
+        default_dilation_kernel = int(data.get('dilation_kernel', 5))
+        default_dilation_iter = int(data.get('dilation_iter', 2))
+        default_min_area = int(data.get('min_area', 120))
+        default_arena_width_cm = float(data.get('arena_width_cm', data.get('arena_side_cm', 50.0)))
+        default_arena_height_cm = float(data.get('arena_height_cm', data.get('arena_side_cm', 50.0)))
+        default_center_ratio_x = float(data.get('center_ratio_x', 0.5))
+        default_center_ratio_y = float(data.get('center_ratio_y', 0.5))
+        default_interaction_radius_cm = float(data.get('interaction_radius_cm', 4.0))
+        default_exploration_max_speed_cm_s = float(data.get('exploration_max_speed_cm_s', 12.0))
+        default_use_head_direction = bool(data.get('use_head_direction', True))
+        default_head_angle_threshold_deg = float(data.get('head_angle_threshold_deg', 50.0))
+        default_head_confidence_threshold = float(data.get('head_confidence_threshold', 0.35))
+        default_movement_threshold_cm_s = float(data.get('movement_threshold_cm_s', 2.0))
+        default_min_valid_exploration_s = float(data.get('min_valid_exploration_s', 20.0))
+        default_bin_seconds = float(data.get('bin_seconds', 300.0))
+        for idx, _ in enumerate(sess.get('video_infos', [])):
+            raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
+            per_video_configs.append({
+                'bg_method': raw_cfg.get('bg_method', default_bg_method),
+                'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
+                'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
+                'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
+                'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
+                'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
+                'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
+                'min_area': int(raw_cfg.get('min_area', default_min_area)),
+                'phase': raw_cfg.get('phase', default_phase),
+                'arena_width_cm': float(raw_cfg.get('arena_width_cm', default_arena_width_cm)),
+                'arena_height_cm': float(raw_cfg.get('arena_height_cm', default_arena_height_cm)),
+                'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
+                'center_ratio_x': float(raw_cfg.get('center_ratio_x', default_center_ratio_x)),
+                'center_ratio_y': float(raw_cfg.get('center_ratio_y', default_center_ratio_y)),
+                'interaction_radius_cm': float(raw_cfg.get('interaction_radius_cm', default_interaction_radius_cm)),
+                'exploration_max_speed_cm_s': float(raw_cfg.get('exploration_max_speed_cm_s', default_exploration_max_speed_cm_s)),
+                'use_head_direction': bool(raw_cfg.get('use_head_direction', default_use_head_direction)),
+                'head_angle_threshold_deg': float(raw_cfg.get('head_angle_threshold_deg', default_head_angle_threshold_deg)),
+                'head_confidence_threshold': float(raw_cfg.get('head_confidence_threshold', default_head_confidence_threshold)),
+                'movement_threshold_cm_s': float(raw_cfg.get('movement_threshold_cm_s', default_movement_threshold_cm_s)),
+                'min_valid_exploration_s': float(raw_cfg.get('min_valid_exploration_s', default_min_valid_exploration_s)),
+                'bin_seconds': float(raw_cfg.get('bin_seconds', default_bin_seconds)),
+            })
+
         vision_config = {
-            'bg_method': data.get('bg_method', 'threshold'),
-            'gray_threshold': int(data.get('gray_threshold', 127)),
-            'invert': data.get('bg_type', 'light') == 'dark',
-            'erosion_kernel': int(data.get('erosion_kernel', 3)),
-            'erosion_iter': int(data.get('erosion_iter', 1)),
-            'dilation_kernel': int(data.get('dilation_kernel', 5)),
-            'dilation_iter': int(data.get('dilation_iter', 2)),
-            'min_area': int(data.get('min_area', 120)),
+            'bg_method': default_bg_method,
+            'gray_threshold': default_gray_threshold,
+            'invert': str(default_bg_type).lower() == 'dark',
+            'erosion_kernel': default_erosion_kernel,
+            'erosion_iter': default_erosion_iter,
+            'dilation_kernel': default_dilation_kernel,
+            'dilation_iter': default_dilation_iter,
+            'min_area': default_min_area,
             'max_area': int(data.get('max_area', 50000)),
-            'phase': data.get('phase', 'recognition'),
+            'phase': default_phase,
             'rois': data.get('rois', []),
-            'arena_width_cm': float(data.get('arena_width_cm', data.get('arena_side_cm', 50.0))),
-            'arena_height_cm': float(data.get('arena_height_cm', data.get('arena_side_cm', 50.0))),
-            'center_ratio_x': float(data.get('center_ratio_x', 0.5)),
-            'center_ratio_y': float(data.get('center_ratio_y', 0.5)),
-            'interaction_radius_cm': float(data.get('interaction_radius_cm', 4.0)),
-            'exploration_max_speed_cm_s': float(data.get('exploration_max_speed_cm_s', 12.0)),
-            'use_head_direction': bool(data.get('use_head_direction', True)),
-            'head_angle_threshold_deg': float(data.get('head_angle_threshold_deg', 50.0)),
-            'head_confidence_threshold': float(data.get('head_confidence_threshold', 0.35)),
-            'movement_threshold_cm_s': float(data.get('movement_threshold_cm_s', 2.0)),
-            'min_valid_exploration_s': float(data.get('min_valid_exploration_s', 20.0)),
-            'bin_seconds': float(data.get('bin_seconds', 300.0)),
+            'per_video_configs': per_video_configs,
+            'arena_width_cm': default_arena_width_cm,
+            'arena_height_cm': default_arena_height_cm,
+            'center_ratio_x': default_center_ratio_x,
+            'center_ratio_y': default_center_ratio_y,
+            'interaction_radius_cm': default_interaction_radius_cm,
+            'exploration_max_speed_cm_s': default_exploration_max_speed_cm_s,
+            'use_head_direction': default_use_head_direction,
+            'head_angle_threshold_deg': default_head_angle_threshold_deg,
+            'head_confidence_threshold': default_head_confidence_threshold,
+            'movement_threshold_cm_s': default_movement_threshold_cm_s,
+            'min_valid_exploration_s': default_min_valid_exploration_s,
+            'bin_seconds': default_bin_seconds,
             'generate_video': data.get('generate_video', True),
             'output_dir': sess.get('output_dir'),
             'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
@@ -2511,17 +2839,43 @@ def start_analysis(session_id):
         analysis.start()
         return jsonify({'success': True, 'session_id': session_id})
 
+    per_video_configs = []
+    raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
+    default_bg_method = data.get('bg_method', 'threshold')
+    default_bg_type = data.get('bg_type', 'light')
+    default_gray_threshold = int(data.get('gray_threshold', 127))
+    default_erosion_kernel = int(data.get('erosion_kernel', 3))
+    default_erosion_iter = int(data.get('erosion_iter', 2))
+    default_dilation_kernel = int(data.get('dilation_kernel', 5))
+    default_dilation_iter = int(data.get('dilation_iter', 3))
+    default_min_area = int(data.get('min_area', 100))
+    for idx, _ in enumerate(sess.get('video_infos', [])):
+        raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
+        per_video_configs.append({
+            'bg_method': raw_cfg.get('bg_method', default_bg_method),
+            'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
+            'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
+            'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
+            'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
+            'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
+            'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
+            'min_area': int(raw_cfg.get('min_area', default_min_area)),
+            'pixel_to_mm': float(raw_cfg.get('pixel_to_mm', data.get('pixel_to_mm', 1.0))),
+            'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
+        })
+
     vision_config = {
-        'bg_method': data.get('bg_method', 'threshold'),
-        'gray_threshold': int(data.get('gray_threshold', 127)),
-        'invert': data.get('bg_type', 'light') == 'dark',
-        'erosion_kernel': int(data.get('erosion_kernel', 3)),
-        'erosion_iter': int(data.get('erosion_iter', 2)),
-        'dilation_kernel': int(data.get('dilation_kernel', 5)),
-        'dilation_iter': int(data.get('dilation_iter', 3)),
-        'min_area': int(data.get('min_area', 100)),
+        'bg_method': default_bg_method,
+        'gray_threshold': default_gray_threshold,
+        'invert': str(default_bg_type).lower() == 'dark',
+        'erosion_kernel': default_erosion_kernel,
+        'erosion_iter': default_erosion_iter,
+        'dilation_kernel': default_dilation_kernel,
+        'dilation_iter': default_dilation_iter,
+        'min_area': default_min_area,
         'pixel_to_mm': float(data.get('pixel_to_mm', 1.0)),
         'rois': data.get('rois', []),
+        'per_video_configs': per_video_configs,
         'generate_video': data.get('generate_video', True),
         'output_dir': sess.get('output_dir'),
         'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
@@ -2573,11 +2927,12 @@ def download_all(session_id):
     if not analysis.result_files:
         return jsonify({'error': '没有结果文件'}), 404
 
+    result_dir = _resolve_result_dir(sess.get('output_dir'))
     zip_path = str(RESULT_DIR / f'{session_id}_results.zip')
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for f in analysis.result_files:
             if os.path.exists(f):
-                zf.write(f, os.path.basename(f))
+                zf.write(f, _result_zip_arcname(f, result_dir))
 
     return send_file(zip_path, as_attachment=True, download_name='MouseScope_results.zip')
 
@@ -2614,7 +2969,7 @@ def download_file(session_id, file_type):
     zip_path = os.path.join(result_dir, f'{session_id}_{file_type}.zip')
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for path in files:
-            zf.write(path, os.path.basename(path))
+            zf.write(path, _result_zip_arcname(path, result_dir))
     return send_file(zip_path, as_attachment=True)
 
 
@@ -2666,9 +3021,12 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='MouseScope Behavior Analysis Platform')
     parser.add_argument('--port', type=int, default=8080, help='端口号')
-    parser.add_argument('--host', type=str, default='0.0.0.0', help='监听地址')
+    parser.add_argument('--host', type=str, default='127.0.0.1', help='监听地址')
     parser.add_argument('--no-browser', action='store_true', help='不自动打开浏览器')
     args = parser.parse_args()
+    host_explicit = any(arg == '--host' or str(arg).startswith('--host=') for arg in sys.argv[1:])
+    if (not host_explicit) and (not args.host or str(args.host).strip() == '0.0.0.0'):
+        args.host = '127.0.0.1'
 
     # 获取本机局域网IP
     def get_local_ip():
@@ -2683,11 +3041,15 @@ if __name__ == '__main__':
             return '127.0.0.1'
 
     local_ip = get_local_ip()
-    browse_url = f'http://{local_ip}:{args.port}'
+    bind_host = str(args.host or '127.0.0.1').strip()
+    browser_host = '127.0.0.1' if bind_host in {'0.0.0.0', '::', ''} else bind_host
+    browse_url = f'http://{browser_host}:{args.port}'
 
     print(f"\n{'='*60}")
     print(f"  MouseScope Behavior Analysis Platform")
     print(f"  访问地址: {browse_url}")
+    if bind_host not in {'127.0.0.1', 'localhost', '::1'}:
+        print(f"  WARNING: remote access enabled on host {bind_host}.")
     print(f"{'='*60}\n")
 
     if not args.no_browser:
@@ -2699,7 +3061,8 @@ if __name__ == '__main__':
             deadline = time.time() + timeout
             while time.time() < deadline:
                 try:
-                    with _socket.create_connection((host if host != '0.0.0.0' else '127.0.0.1', port), timeout=0.5):
+                    target_host = browser_host if host in {'0.0.0.0', '::'} else host
+                    with _socket.create_connection((target_host, port), timeout=0.5):
                         pass
                     webbrowser.open(url)
                     return

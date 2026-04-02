@@ -1,0 +1,599 @@
+<div id="tst-manual-root"></div>
+
+<script>
+(function () {
+    const TST_MANUAL = {
+        zh: {
+            heroEyebrow: 'Tail Suspension Test / TST',
+            heroTitle: '悬尾实验完整操作手册',
+            heroSubtitle: '本手册覆盖采集要求、上传、体长标定、ROI 与时间窗、全部可调参数、全部结果字段，以及批量模式的正确使用方法。',
+            heroChips: ['6 cm 体长标定', '多 ROI', '每视频独立批量', 'logs / immobility / report', '摆动过滤'],
+            heroCards: [
+                ['fas fa-wave-square', '模块实际在判什么', 'TST 不是只看单一阈值。系统会综合轮廓、光流、质心轨迹周期性、方向一致性和形态变化，尽量把“真正挣扎”和“规则摆动”分开。'],
+                ['fas fa-layer-group', '批量模式的真正含义', '现在批量模式已经是“每个视频独立配置”。每个视频都要单独完成体长标定、ROI、时间窗和调参；全部配置好以后，系统再按顺序整批运行。'],
+                ['fas fa-folder-tree', '输出目录现在怎么组织', '如果你选择了一个总输出目录，批量结果会自动放进该目录下按视频拆开的子文件夹，例如 <code>01_视频名</code>、<code>02_视频名</code>，下载 ZIP 也会保留这个层级。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', '体长标定', 'ROI 与时间窗', '调参与预览', '监控与结果'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['calibration', '体长标定与 ROI'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: 'TST 模块适合分析悬尾实验中的挣扎与不动。你需要做的事情只有三类：先保证视频条件合格，再给每个视频做好体长标定和 ROI，最后用预览确认分割与状态判断稳定。',
+                    points: [
+                        '判定核心是 ROI 内前景轮廓和光流，不是整帧分类模型；采集质量、胶带粘贴位置、背景对比和画面稳定性都会直接影响结果。',
+                        '状态显示里如果出现 <code>Immobile (Swing)</code>，表示系统把这段看成“整体摆动而非挣扎”。这类帧在最终统计里按非挣扎处理。',
+                        '如果不同视频的尾巴粘贴位置、镜头远近、曝光或背景差别很大，不要指望同一套参数一定都好；即使能批量，也应该逐视频确认。'
+                    ],
+                    callouts: [
+                        ['warning', '和人工观察最容易不一致的地方', '尾巴胶带位置太靠中段、悬挂点不一致、强反光或整体钟摆式摆动时，系统更容易把画面判成摆动或不动。手册后面的排错部分会专门告诉你先看哪里。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: '采集条件决定上限。当前 TST 不是“画面再差也能救”的端到端模型，所以越早把采集质量做稳，后面越少需要来回调参。',
+                    blocks: [
+                        {
+                            title: '机位与画面',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '相机要固定，整个录制过程中不要移动、变焦或自动重对焦。',
+                                'ROI 预期范围内应完整看到鼠体悬挂运动，不要让身体频繁出框，也不要把绳子、支架、大块阴影带进 ROI。',
+                                '分辨率不用盲目追求很高，但鼠体必须有足够像素，保证轮廓和质心稳定。'
+                            ]
+                        },
+                        {
+                            title: '背景与对比',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                '浅色背景配深色鼠，深色背景配浅色鼠；背景类型要和调参页里的背景类型一致。',
+                                '尽量避免高光、反光胶带、金属挂钩闪烁、局部热点和剧烈阴影。',
+                                '不要让画面里出现人手、仪器屏幕、摆动线缆等额外运动目标。'
+                            ]
+                        },
+                        {
+                            title: '悬挂方式',
+                            icon: 'fas fa-tape',
+                            items: [
+                                '尽量统一胶带粘贴位置，尤其不要把一批数据里一部分粘在尾巴远端、一部分粘在中段。',
+                                '粘贴位置变化会改变真实运动动力学，不只是改变像素尺度；这会直接影响摆动与挣扎的判定。',
+                                '如果已经确定中段粘贴的视频行为模式明显不同，建议分开批次处理，并单独复核结果视频。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', '关于摄像头远近', '正确做了体长标定以后，镜头远近对光流物理量的影响会被明显抵消，但轮廓质量、模糊、压缩噪声和 ROI 尺度差异仍可能影响识别稳定性。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页负责定义“这次分析读哪些视频、默认统计哪一段、输出到哪里”。如果这里设置错了，后面即使 ROI 画得再准，结果窗口也会不对。',
+                    points: [
+                        '上传页的全局开始时间和结束时间，是这次分析的默认统计范围。ROI 如果设置为“跟随全局”，就直接使用这里的时间。',
+                        '如果源视频 FPS 元数据不可靠，建议在上传页手动覆盖 FPS；速度、光流换算和潜伏期都会依赖它。',
+                        '输出目录支持自定义。批量模式下，每个视频会在总输出目录下单独建立自己的结果子文件夹。',
+                        '如果你只想看视频中的一段，例如第 60 秒到第 360 秒，可以先在上传页裁出全局窗口，再按 ROI 细调。'
+                    ],
+                    callouts: [
+                        ['success', '什么时候用 ROI 的相对时间模式', '如果你更关心“检测到鼠体之后的第 N 秒到第 M 秒”，而不是视频绝对时间，可以把 ROI 的时间模式设为相对检测时间。这个模式只在 TST 前端提供。']
+                    ]
+                },
+                calibration: {
+                    title: '体长标定与 ROI',
+                    lead: 'TST 的尺度标准是 6 cm 标准体长。批量模式下，每个视频都要独立完成这一步，不能只标第一个视频然后直接套给全部。',
+                    bodyPoints: [
+                        '体长标定时应沿鼠体主轴画线，使用身体长度，不包含尾巴。线段越贴合真实体长，后续光流归一化越可靠。',
+                        '标定完成后系统会得到 <code>pixel_to_mm</code>，用于把像素运动换算到归一化物理尺度。',
+                        '如果跳过标定，系统会退回默认比例，跨视频比较会更容易受机位远近影响。'
+                    ],
+                    roiPoints: [
+                        '每个 ROI 应该只包含 1 只鼠的完整悬挂运动范围，尽量不要把邻近装置、钩子反光或额外阴影带进去。',
+                        'ROI 名称会写入结果文件名和 CSV 字段，建议直接用样本编号、组别编号或笼位编号。',
+                        '同一视频内多个 ROI 可以分别设置不同时间窗，但检测参数在同一视频内仍是共用一套。'
+                    ],
+                    timeTable: {
+                        headers: ['模式', '含义', '推荐使用场景'],
+                        rows: [
+                            ['<code>global</code>', '跟随上传页中的全局开始 / 结束时间。', '绝大多数常规分析。'],
+                            ['<code>relative</code>', '相对检测时间，统计从该 ROI 首次稳定检测到鼠体之后的某个时间段。', '想按“检测到鼠体后第 N 秒”计时时。'],
+                            ['<code>precise</code>', '视频绝对时间，直接按视频时间轴的开始 / 结束秒数统计。', '只分析视频中一个固定片段时。'],
+                        ]
+                    }
+                },
+                params: {
+                    title: '参数字典',
+                    lead: '下面只列界面中可直接调整的参数。像 <code>flow_thr_hi</code>、<code>speed_std_thr_hi</code> 这类更底层的内部判定阈值，并没有直接开放给用户修改。',
+                    detectTable: {
+                        headers: ['参数', '位置', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '调参页', '当前 TST GUI 仅提供灰度阈值法，用亮度分割前景。', '一般无需改动，因为当前只有这一种方式。'],
+                            ['<code>bg_type</code>', '调参页', '告诉系统背景是浅还是深，从而决定阈值分割的方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '调参页', '灰度阈值，控制前景分割的严格程度。', '噪点多就更严格；鼠体被吃掉或断裂就更宽松。'],
+                            ['<code>erosion_kernel</code>', '调参页', '腐蚀核大小，优先去掉小噪点和毛边。', '误检碎点多时增大；鼠体细节被过度削弱时减小。'],
+                            ['<code>erosion_iter</code>', '调参页', '腐蚀次数，决定去噪强度。', '和腐蚀核一起调；数值过大容易把鼠体侵蚀得太小。'],
+                            ['<code>dilation_kernel</code>', '调参页', '膨胀核大小，用于补回轮廓空洞和断裂。', '轮廓断裂或身体不完整时增大；背景噪声和鼠体黏连时减小。'],
+                            ['<code>dilation_iter</code>', '调参页', '膨胀次数，决定轮廓修补力度。', '轮廓仍破碎时增大；相邻噪声粘连时减小。'],
+                            ['<code>min_area</code>', '调参页', '最小轮廓面积，过滤太小的误检。', '误检细小亮点就增大；鼠体太小被漏检就减小。'],
+                            ['<code>generate_video</code>', '开始分析前', '是否导出带叠加标注的视频。', '关闭后可以明显提速，但会失去最直观的复核材料。']
+                        ]
+                    },
+                    calibTable: {
+                        headers: ['配置项', '作用', '备注'],
+                        rows: [
+                            ['<code>pixel_to_mm</code>', '把像素位移换算到归一化物理尺度。', '来自 6 cm 体长标定；跨视频比较时非常重要。'],
+                            ['ROI 多边形', '限定每只鼠的检测范围。', '同一 ROI 只放 1 只鼠。'],
+                            ['ROI 名称', '进入报告、CSV、监控页和文件命名。', '建议使用稳定样本编号。'],
+                            ['ROI 时间模式', '决定这个 ROI 到底统计全局、相对检测还是绝对时间。', '不同 ROI 可以不同。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '预览时应该重点看什么', '不要只看有没有框到鼠。你要重点确认三件事：轮廓是否稳定、状态文本是否大体符合肉眼观察、同一视频里的所有 ROI 是否都没有明显偏差。'],
+                        ['warning', '预览只代表当前帧附近', '单帧预览不能完全替代整段视频复核。对边缘情况多的视频，建议先用 1 到 2 条样本跑一遍完整结果视频，再决定整批是否沿用这套参数。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: 'TST 的主要导出包括结果视频、逐帧日志 CSV、immobility 汇总 CSV 和 TXT 报告。批量模式下，这些文件会出现在对应视频自己的子文件夹里。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '叠加了 ROI、轮廓、质心、状态文本和关键指标的结果视频，是人工复核优先级最高的文件。'],
+                        ['<code>*_logs.csv</code>', '逐帧检测日志，只保存“该帧检测到鼠体”的记录。适合做自定义时间序列分析。'],
+                        ['<code>*_immobility.csv</code>', '按 ROI 汇总的不动 / 挣扎统计结果，是 TST 主要结构化结果表。'],
+                        ['<code>*_report.txt</code>', '便于快速阅读的文本报告，内容来自 <code>immobility.csv</code> 的核心字段。']
+                    ],
+                    logsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>frame</code>', '原视频帧号。', '用于回定位到结果视频的具体位置。'],
+                            ['<code>time</code>', '该帧在视频中的时间，单位秒。', '和 <code>frame / fps</code> 对应。'],
+                            ['<code>roi_id</code>', 'ROI 编号。', '对应当前视频内的 ROI 顺序。'],
+                            ['<code>roi_name</code>', 'ROI 名称。', '就是你在界面里填写的名字。'],
+                            ['<code>is_struggling</code>', '这一帧是否被判为挣扎。', '为 <code>false</code> 不一定纯静止，也可能是摆动被归为非挣扎。'],
+                            ['<code>flow_p90_mm_s</code>', 'ROI 内强运动像素的 P90 光流值，单位是归一化后的速度量纲。', '数值越大通常内部运动越强；跨视频比较依赖标定是否准确。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>roi_id</code> / <code>roi_name</code>', '结果对应的 ROI 编号和名称。', '用于把统计值和样本一一对应。'],
+                            ['<code>time_config</code>', '该 ROI 的时间模式与起止设置。', '会以字典 / 文本形式写入 CSV，便于追溯统计窗口。'],
+                            ['<code>total_time_seconds</code>', '真正参与统计的总时长。', '只统计 ROI 自己时间窗内的时段。'],
+                            ['<code>immobility_time_seconds</code>', '被判为非挣扎的总时长。', '包含静止以及被系统识别为摆动但非挣扎的片段。'],
+                            ['<code>struggling_time_seconds</code>', '被判为挣扎的总时长。', '和不动时间共同构成主要行为结果。'],
+                            ['<code>immobility_percent</code>', '不动时间占统计总时长的百分比。', '越高表示非挣扎占比越高。'],
+                            ['<code>struggling_percent</code>', '挣扎时间占统计总时长的百分比。', '常与 immobility percent 互补。'],
+                            ['<code>immobility_episodes</code>', '进入不动状态的片段次数。', '对状态切换频率敏感。'],
+                            ['<code>struggling_episodes</code>', '进入挣扎状态的片段次数。', '可用于辅助观察行为碎片化程度。'],
+                            ['<code>immobility_frequency_per_min</code>', '每分钟不动片段频次。', '时长不同的视频更便于横向比较。'],
+                            ['<code>struggling_frequency_per_min</code>', '每分钟挣扎片段频次。', '和 episode 数不同，已经按时间归一化。'],
+                            ['<code>latency_to_immobility_seconds</code>', '首次进入不动状态的潜伏期。', '如果一直没有进入不动，会是空值。'],
+                            ['<code>total_frames</code>', '参与统计的帧数。', '配合 FPS 可以复核统计窗口是否正确。']
+                        ]
+                    },
+                    callouts: [
+                        ['success', '最推荐的复核顺序', '先看 <code>*_analyzed.mp4</code>，再看 <code>*_immobility.csv</code>，最后才是按需深入 <code>*_logs.csv</code>。这样最快发现“结果数值看着正常但判定过程并不稳”的情况。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: '当前批量流程的正确姿势是：每个视频单独配置，全部配置完，再统一启动。不要只配第一个视频就直接批量跑。',
+                    steps: [
+                        '在上传页一次导入多个 TST 视频，并设置本批次的全局时间范围、FPS 覆盖和输出目录。',
+                        '进入标定页后，使用顶部的视频切换器，逐个视频完成体长标定。',
+                        '对每个视频分别绘制 ROI、填写 ROI 名称、设置 ROI 时间模式和起止时间。',
+                        '切到调参步骤后，对当前视频单独调整检测参数并刷新预览，确认识别稳定。',
+                        '继续切到下一个视频，重复上述步骤，直到所有视频都显示为已完成配置。',
+                        '点击批量开始分析。系统会按视频顺序依次运行，并把每个视频结果写进独立子文件夹。'
+                    ],
+                    rules: [
+                        '批量模式下，<strong>每个视频</strong>拥有自己独立的体长标定、ROI、时间窗和调参参数。',
+                        '同一个视频内部如果有多个 ROI，它们共享这一视频的检测参数，但各自可以有不同 ROI 名称和时间窗。',
+                        '如果某个视频没有完成必要配置，系统会在开始前拦截，而不是带着不完整配置直接运行。',
+                        '批量 ZIP 下载会保留每个视频的子文件夹结构，不会把所有文件摊平。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: '如果你已经“能出结果”，但觉得有的视频很好、有的视频不好，通常不是系统随机失灵，而是采集条件和参数适配度不一致。',
+                    items: [
+                        '结果视频里轮廓断断续续：优先检查背景类型、灰度阈值、腐蚀和膨胀是否把鼠体切碎了。',
+                        '经常把明显挣扎判成 <code>Immobile (Swing)</code>：先看胶带位置是否靠尾巴中段、整体是否呈规律钟摆摆动，再复核 ROI 是否包含过多无关区域。',
+                        '某个视频整体都偏差很大：先确认这个视频是否真的做过独立体长标定，以及是否切到了它自己的参数配置。',
+                        '批量里只有个别视频出问题：优先怀疑视频本身的机位、远近、亮度、粘贴位置和 FPS 元数据，而不是先怀疑整批参数。'
+                    ],
+                    callouts: [
+                        ['danger', '什么时候必须人工复核', '当结果会直接进入正式统计、论文图表或关键结论时，至少要抽查结果视频，尤其是那些出现大量摆动、检测缺失、轮廓断裂或尾巴粘贴位置不一致的视频。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Tail Suspension Test / TST',
+            heroTitle: 'Complete Tail Suspension Manual',
+            heroSubtitle: 'This manual covers recording requirements, upload, body-length calibration, ROI and time windows, every exposed parameter, every exported result field, and the correct batch workflow.',
+            heroChips: ['6 cm body calibration', 'Multi-ROI', 'Per-video batch configs', 'logs / immobility / report', 'Swing filtering'],
+            heroCards: [
+                ['fas fa-wave-square', 'What the module is really judging', 'TST is not driven by a single threshold. The system combines contour tracking, optical flow, centroid periodicity, directional coherence, and shape changes to separate true struggling from regular swinging as much as possible.'],
+                ['fas fa-layer-group', 'What batch mode now really means', 'Batch mode is now truly per-video. Each video must finish its own body-length calibration, ROI setup, time windows, and tuning; only after all videos are configured does the batch run sequentially.'],
+                ['fas fa-folder-tree', 'How outputs are organized now', 'If you choose a parent output folder, batch results are automatically split into per-video subfolders such as <code>01_video-name</code> and <code>02_video-name</code>. Downloaded ZIP files keep the same directory hierarchy.'],
+            ],
+            flow: ['Recording requirements', 'Upload and analysis range', 'Body calibration', 'ROI and time window', 'Tuning and preview', 'Monitoring and outputs'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Recording requirements'],
+                ['upload', 'Upload and analysis range'],
+                ['calibration', 'Body calibration and ROI'],
+                ['params', 'Parameter dictionary'],
+                ['outputs', 'Result dictionary'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Common issues and troubleshooting'],
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The TST module is designed to quantify struggling versus non-struggling behavior in the tail suspension test. In practice, your job has three parts: record usable videos, calibrate and define ROI correctly for each video, then confirm on preview that segmentation and state judgment are stable.',
+                    points: [
+                        'The core decision depends on foreground contour behavior and optical flow inside each ROI, not on a full-frame end-to-end classifier. Recording quality, tape position on the tail, contrast, and frame stability all matter directly.',
+                        'If the overlay shows <code>Immobile (Swing)</code>, the system is treating that period as regular swinging rather than active struggling. Those frames are counted as non-struggling in the final summary.',
+                        'If videos differ a lot in tape placement, camera distance, exposure, or background, do not assume one parameter set will fit all of them just because batch mode exists; confirm each video separately.'
+                    ],
+                    callouts: [
+                        ['warning', 'Where disagreement with human scoring usually comes from', 'Mid-tail tape placement, inconsistent suspension geometry, strong reflections, or clean pendulum-like motion can make the system favor swinging or immobility labels. The troubleshooting section below tells you where to check first.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording requirements',
+                    lead: 'Recording quality sets the ceiling. The current TST pipeline is not an “everything can be rescued later” end-to-end model, so stable acquisition saves far more time than aggressive post hoc tuning.',
+                    blocks: [
+                        {
+                            title: 'Camera and framing',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Keep the camera fixed. Do not move, zoom, or refocus during recording.',
+                                'The ROI should cover the full suspension movement of the mouse without frequent clipping, and should avoid ropes, hooks, or large shadows.',
+                                'Ultra-high resolution is not required, but the mouse body must still contain enough pixels for a stable contour and centroid.'
+                            ]
+                        },
+                        {
+                            title: 'Background and contrast',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                'Use dark mice on light backgrounds, or light mice on dark backgrounds. The selected background type in the tuning page should match the real video.',
+                                'Avoid highlights, reflective tape, shiny metal hooks, hot spots, and moving shadows.',
+                                'Do not leave other moving objects in frame such as hands, cables, or monitor flicker.'
+                            ]
+                        },
+                        {
+                            title: 'Suspension setup',
+                            icon: 'fas fa-tape',
+                            items: [
+                                'Keep tail tape placement consistent across animals, especially within the same study batch.',
+                                'Changing the tape position changes the real motion dynamics, not just pixel scale. That directly affects swing-versus-struggle classification.',
+                                'If mid-tail placement clearly behaves differently, process those videos separately and review their result videos carefully.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'About camera distance', 'When body-length calibration is done correctly, differences in camera distance are largely normalized out of the physical flow measure. Even so, contour quality, blur, compression noise, and ROI scale can still change tracking stability.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and analysis range',
+                    lead: 'The upload page defines which videos belong to the run, what default time span should be analyzed, and where outputs will be written. If this step is wrong, later ROI work cannot fully fix the statistical window.',
+                    points: [
+                        'The global start time and end time on the upload page define the default analysis window. Any ROI set to “follow global” will use that window directly.',
+                        'If FPS metadata is unreliable, override FPS manually on upload. Speed, flow conversion, and latency all depend on it.',
+                        'The output directory is configurable. In batch mode, each video is written into its own child folder under that parent directory.',
+                        'If you only want a segment, such as 60 s to 360 s, define that global window first and then fine-tune individual ROI windows if needed.'
+                    ],
+                    callouts: [
+                        ['success', 'When relative ROI time is useful', 'If you care more about “seconds after the mouse is first detected” than absolute video time, use the ROI relative-time mode.']
+                    ]
+                },
+                calibration: {
+                    title: 'Body calibration and ROI',
+                    lead: 'TST uses a 6 cm standard body length for scale normalization. In batch mode, each video must complete this step independently; calibrating only the first video is no longer considered correct usage.',
+                    bodyPoints: [
+                        'Draw the body-length line along the main body axis, excluding the tail. The closer the line is to the real body length, the more reliable the normalized flow scaling becomes.',
+                        'The system converts this into <code>pixel_to_mm</code>, which is later used for flow normalization and cross-video comparability.',
+                        'If you skip calibration, the system falls back to a default scale and comparisons across different camera distances become less reliable.'
+                    ],
+                    roiPoints: [
+                        'Each ROI should contain only one mouse and its full suspension movement envelope. Avoid including neighboring hardware or reflected highlights.',
+                        'ROI names are written into result filenames, monitor panels, and CSV output. Stable sample IDs are strongly recommended.',
+                        'Multiple ROIs in the same video can have different time windows, but they still share one set of detection parameters for that video.'
+                    ],
+                    timeTable: {
+                        headers: ['Mode', 'Meaning', 'Recommended use'],
+                        rows: [
+                            ['<code>global</code>', 'Follow the upload-page global start and end time.', 'Most standard analyses.'],
+                            ['<code>relative</code>', 'Analyze a window relative to the first stable detection of that ROI.', 'When you want “N seconds after first detection.”'],
+                            ['<code>precise</code>', 'Use absolute video time directly.', 'When only a fixed segment of the video should be analyzed.'],
+                        ]
+                    }
+                },
+                params: {
+                    title: 'Parameter dictionary',
+                    lead: 'Only parameters that can be adjusted directly from the page are listed below. Lower-level internal decision thresholds such as <code>flow_thr_hi</code> or <code>speed_std_thr_hi</code> are not directly exposed for editing.',
+                    detectTable: {
+                        headers: ['Parameter', 'Where', 'What it does', 'How people usually adjust it'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Tuning page', 'The current TST GUI exposes the grayscale-threshold pathway for foreground extraction.', 'Usually unchanged because only this method is currently available in the GUI.'],
+                            ['<code>bg_type</code>', 'Tuning page', 'Tells the segmenter whether the background is light or dark.', 'Use <code>light</code> for dark mice on light backgrounds; <code>dark</code> for light mice on dark backgrounds.'],
+                            ['<code>gray_threshold</code>', 'Tuning page', 'Controls how strict the grayscale foreground split is.', 'Make it stricter when noise is abundant; relax it when the mouse contour breaks or disappears.'],
+                            ['<code>erosion_kernel</code>', 'Tuning page', 'Sets the erosion kernel size for removing small noise and edge fuzz.', 'Increase when tiny false positives appear; decrease when the mouse body is overly eaten away.'],
+                            ['<code>erosion_iter</code>', 'Tuning page', 'Controls erosion strength via repeat count.', 'Tune together with the kernel; too large can shrink the mouse too much.'],
+                            ['<code>dilation_kernel</code>', 'Tuning page', 'Sets the dilation kernel used to reconnect fragmented contours.', 'Increase when the body contour is broken; decrease when noise merges into the body.'],
+                            ['<code>dilation_iter</code>', 'Tuning page', 'Controls dilation strength via repeat count.', 'Increase when contours stay fragmented; reduce when clutter fuses into the mouse.'],
+                            ['<code>min_area</code>', 'Tuning page', 'Filters out contours smaller than the specified area.', 'Increase when tiny artifacts survive; reduce when a small mouse body is being discarded.'],
+                            ['<code>generate_video</code>', 'Before analysis starts', 'Whether an annotated result video should be exported.', 'Turning it off speeds up analysis, but removes the most important manual review artifact.']
+                        ]
+                    },
+                    calibTable: {
+                        headers: ['Setting', 'Role', 'Notes'],
+                        rows: [
+                            ['<code>pixel_to_mm</code>', 'Converts pixel motion into normalized physical scale.', 'Derived from the 6 cm body-length calibration.'],
+                            ['ROI polygon', 'Defines the allowed detection region for one mouse.', 'One ROI should contain one mouse.'],
+                            ['ROI name', 'Propagates into reports, CSV files, monitors, and filenames.', 'Use stable sample naming.'],
+                            ['ROI time mode', 'Defines whether that ROI uses global, relative, or precise timing.', 'Different ROIs can use different modes.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'What to focus on during preview', 'Do not only ask whether the mouse is detected. Check whether the contour is stable, whether the status text roughly matches human observation, and whether all ROIs in that video are acceptable with the same tuning set.'],
+                        ['warning', 'A preview is not the whole experiment', 'A single preview frame does not replace a full result-video review. For difficult videos, run one or two full examples first before trusting the same parameters on the rest of the batch.']
+                    ]
+                },
+                outputs: {
+                    title: 'Result dictionary',
+                    lead: 'TST mainly exports an annotated video, a frame-level log CSV, an immobility summary CSV, and a TXT report. In batch mode, those files are stored inside the child folder of the corresponding video.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated result video with ROI, contour, centroid, state label, and key overlay metrics. This is the highest-priority review file.'],
+                        ['<code>*_logs.csv</code>', 'Frame-level detection log. Only frames where the mouse was detected are written.'],
+                        ['<code>*_immobility.csv</code>', 'Per-ROI summary table for immobility and struggling. This is the main structured TST result file.'],
+                        ['<code>*_report.txt</code>', 'Human-readable text summary generated from the core fields in <code>immobility.csv</code>.']
+                    ],
+                    logsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>frame</code>', 'Original video frame index.', 'Useful for jumping back to the exact location in the result video.'],
+                            ['<code>time</code>', 'Video time in seconds for that frame.', 'Equivalent to frame divided by FPS.'],
+                            ['<code>roi_id</code>', 'ROI index.', 'Matches the ROI order inside the current video.'],
+                            ['<code>roi_name</code>', 'ROI name.', 'Exactly what you entered in the UI.'],
+                            ['<code>is_struggling</code>', 'Whether that detected frame was labeled as struggling.', 'A value of <code>false</code> may mean real immobility or swing-filtered non-struggling motion.'],
+                            ['<code>flow_p90_mm_s</code>', 'P90 optical-flow magnitude inside the ROI, expressed in normalized speed units.', 'Higher values usually mean stronger internal motion; cross-video comparison depends on correct calibration.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'The ROI identifier and label for this row.', 'Used to map the summary back to the sample.'],
+                            ['<code>time_config</code>', 'The ROI time mode and boundaries used for this summary.', 'Stored as a dict-like value for provenance.'],
+                            ['<code>total_time_seconds</code>', 'Total analyzed duration for that ROI.', 'Only the ROI time window is counted.'],
+                            ['<code>immobility_time_seconds</code>', 'Total time labeled as non-struggling.', 'Includes stillness and swing-filtered non-struggling periods.'],
+                            ['<code>struggling_time_seconds</code>', 'Total time labeled as struggling.', 'Together with immobility time this forms the main behavioral output.'],
+                            ['<code>immobility_percent</code>', 'Percentage of the analyzed window labeled as immobile / non-struggling.', 'Higher means more non-struggling behavior.'],
+                            ['<code>struggling_percent</code>', 'Percentage of the analyzed window labeled as struggling.', 'Often interpreted alongside immobility percent.'],
+                            ['<code>immobility_episodes</code>', 'Number of entries into immobility.', 'Sensitive to state switching frequency.'],
+                            ['<code>struggling_episodes</code>', 'Number of entries into struggling.', 'Useful for fragmented behavior patterns.'],
+                            ['<code>immobility_frequency_per_min</code>', 'Immobility episode frequency normalized per minute.', 'Makes different video lengths easier to compare.'],
+                            ['<code>struggling_frequency_per_min</code>', 'Struggling episode frequency normalized per minute.', 'Time-normalized counterpart of raw episode count.'],
+                            ['<code>latency_to_immobility_seconds</code>', 'Latency to first immobility entry.', 'Empty when immobility never occurs.'],
+                            ['<code>total_frames</code>', 'Number of frames included in the statistics.', 'Can be used to cross-check the expected analysis window.']
+                        ]
+                    },
+                    callouts: [
+                        ['success', 'Recommended review order', 'Start with <code>*_analyzed.mp4</code>, then inspect <code>*_immobility.csv</code>, and only then dive into <code>*_logs.csv</code> if needed. This is the fastest way to catch “the numbers look fine but the decision process is not actually stable.”']
+                    ]
+                },
+                batch: {
+                    title: 'Batch workflow',
+                    lead: 'The correct batch workflow is now: configure each video individually, then start the whole batch. Do not tune only the first video and assume the rest are covered.',
+                    steps: [
+                        'Import multiple TST videos on the upload page and define the batch-level global time range, FPS override, and output directory.',
+                        'Use the video selector on the calibration page to move through videos one by one and complete body-length calibration for each video.',
+                        'For each video, draw ROI, fill ROI names, and define the correct ROI time mode and start / end bounds.',
+                        'Move to the tuning step and adjust detection parameters specifically for the current video. Refresh preview until the behavior looks stable.',
+                        'Repeat for the next video until all videos show completed configuration.',
+                        'Start the batch. The system runs videos sequentially and writes each one into its own result subfolder.'
+                    ],
+                    rules: [
+                        'In batch mode, <strong>each video</strong> has its own body calibration, ROI set, time windows, and tuning parameters.',
+                        'Inside one video, multiple ROIs still share the same detection-parameter set, even though ROI names and time windows can differ.',
+                        'If any video is missing required configuration, the batch is blocked before start instead of silently running incomplete settings.',
+                        'Batch ZIP downloads keep the per-video child-folder structure instead of flattening all files together.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common issues and troubleshooting',
+                    lead: 'If the pipeline runs but some videos look good while others look poor, the problem is usually not random code behavior. It is usually a mismatch between acquisition conditions and the chosen parameters.',
+                    items: [
+                        'Broken or intermittent contours: check background type, grayscale threshold, erosion, and dilation first.',
+                        'Clear struggling mislabeled as <code>Immobile (Swing)</code>: check for mid-tail tape placement, clean pendulum-like motion, or ROIs that include too much unrelated structure.',
+                        'A whole video looks off: confirm that this video really received its own body calibration and its own saved tuning parameters.',
+                        'Only a few videos in the batch fail: suspect camera distance, lighting, tape placement, or FPS metadata of those videos before suspecting the whole batch parameter set.'
+                    ],
+                    callouts: [
+                        ['danger', 'When manual review is mandatory', 'If the output is going into formal statistics, figures, or conclusions, you should review at least a subset of annotated videos, especially those with heavy swinging, repeated missed detections, fragmented contours, or inconsistent tail tape placement.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function render(lang) {
+        const copy = TST_MANUAL[lang] || TST_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('tst-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow(copy.flow)}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-ruler" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Body-length calibration' : '体长标定'}</span></h4>
+                            ${renderList(s.calibration.bodyPoints, false)}
+                        </div>
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-draw-polygon" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI setup' : 'ROI 设置'}</span></h4>
+                            ${renderList(s.calibration.roiPoints, false)}
+                        </div>
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI time-window modes' : 'ROI 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-sliders-h" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-clipboard-list" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Calibration and ROI-related settings' : '标定与 ROI 相关设置'}</span></div>
+                        ${window.manualRenderTable(s.params.calibTable.headers, s.params.calibTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_logs.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.logsTable.headers, s.outputs.logsTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_immobility.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

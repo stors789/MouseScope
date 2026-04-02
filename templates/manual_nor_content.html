@@ -1,389 +1,745 @@
-<div class="card mb-4">
-    <div class="card-body py-3">
-        <div class="flow-steps justify-content-center">
-            <span class="flow-step">1. <span data-nor-manual-i18n="flow.1">视频采集要求</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">2. <span data-nor-manual-i18n="flow.2">上传视频</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">3. <span data-nor-manual-i18n="flow.3">多 ROI 与双物体标定</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">4. <span data-nor-manual-i18n="flow.4">阶段、角色与时间窗</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">5. <span data-nor-manual-i18n="flow.5">调参与启动</span></span>
-            <i class="fas fa-chevron-right flow-arrow"></i>
-            <span class="flow-step">6. <span data-nor-manual-i18n="flow.6">结果与指标</span></span>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-lg-3 mb-4">
-        <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
-            <a href="#sec-video" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span data-nor-manual-i18n="nav.video">视频采集要求</span>
-            </a>
-            <a href="#sec-upload" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span data-nor-manual-i18n="nav.upload">上传视频</span>
-            </a>
-            <a href="#sec-calib" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span data-nor-manual-i18n="nav.calib">多 ROI 与双物体标定</span>
-            </a>
-            <a href="#sec-phase" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span data-nor-manual-i18n="nav.phase">阶段、角色与时间窗</span>
-            </a>
-            <a href="#sec-debug" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span data-nor-manual-i18n="nav.debug">调参与启动</span>
-            </a>
-            <a href="#sec-output" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span data-nor-manual-i18n="nav.output">结果与指标</span>
-            </a>
-            <a href="#sec-notes" class="list-group-item list-group-item-action">
-                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span data-nor-manual-i18n="nav.notes">注意事项</span>
-            </a>
-        </div>
-    </div>
-    <div class="col-lg-9">
-        <div class="manual-section" id="sec-video">
-            <h3><span class="step-number">1</span><span data-nor-manual-i18n="sec1.title">视频采集要求</span></h3>
-            <p data-nor-manual-i18n="sec1.intro">NOR 建议使用俯视或接近俯视的固定机位，保证 arena 边界和两个物体在整个视频中都清晰可见。当前模块支持和 OFT 一样的多 ROI / 多 arena 并行流程，因此同一视频里可以同时分析多个场地。</p>
-            <div class="sub-step">
-                <h5><i class="fas fa-camera me-2"></i><span data-nor-manual-i18n="sec1.camera.title">机位与场地</span></h5>
-                <ul class="mb-0">
-                    <li data-nor-manual-i18n="sec1.camera.li1">尽量完整拍到每个 arena，四条边和四个角点不要被裁切。</li>
-                    <li data-nor-manual-i18n="sec1.camera.li2">两个物体要在统计阶段内保持固定位置，不要在录制中途被移动。</li>
-                    <li data-nor-manual-i18n="sec1.camera.li3">如果镜头边缘有明显广角畸变，后续建议单独绘制检测遮罩，而不是盲目把 arena 往外框大。</li>
-                </ul>
-            </div>
-            <div class="sub-step">
-                <h5><i class="fas fa-lightbulb me-2"></i><span data-nor-manual-i18n="sec1.light.title">光照与对比</span></h5>
-                <ul class="mb-0">
-                    <li data-nor-manual-i18n="sec1.light.li1">背景和小鼠要有明显对比，尽量避免高光、阴影和物体反光。</li>
-                    <li data-nor-manual-i18n="sec1.light.li2">多个 arena 同时拍摄时，尽量让各笼位亮度接近，便于使用统一参数。</li>
-                    <li data-nor-manual-i18n="sec1.light.li3">如果边缘存在黑边或镜头暗角，优先靠检测遮罩隔离，不建议直接依赖阈值硬扛。</li>
-                </ul>
-            </div>
-            <div class="tip-box">
-                <i class="fas fa-info-circle me-2 text-info"></i>
-                <span data-nor-manual-i18n="sec1.tip">NOR 更看重“场地边界清楚、物体位置固定、鼠体轮廓稳定”，并不是分辨率越高越好。</span>
-            </div>
-        </div>
-
-        <div class="manual-section" id="sec-upload">
-            <h3><span class="step-number">2</span><span data-nor-manual-i18n="sec2.title">上传视频</span></h3>
-            <p data-nor-manual-i18n="sec2.intro" data-nor-manual-i18n-html>在上传页把实验模块切换为 <code>Novel Object Recognition</code>，之后可以使用网页上传或本地路径导入。上传页中的全局开始时间和结束时间会作为分析的默认统计时间范围。</p>
-            <ul>
-                <li data-nor-manual-i18n="sec2.li1">如果只想统计识别测试期中的一小段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。</li>
-                <li data-nor-manual-i18n="sec2.li2">后续每个 ROI 还可以单独设置“跟随全局”或“精确时间窗”，便于多笼位共用一个视频时分别控制统计区间。</li>
-                <li data-nor-manual-i18n="sec2.li3">如果源视频是可变帧率，建议在上传页手动填写 FPS。</li>
-            </ul>
-        </div>
-
-        <div class="manual-section" id="sec-calib">
-            <h3><span class="step-number">3</span><span data-nor-manual-i18n="sec3.title">多 ROI 与双物体标定</span></h3>
-            <p data-nor-manual-i18n="sec3.intro">当前 NOR 模块使用“每个 ROI = 一个 arena + 两个物体中心点”的结构。每添加一个 ROI，都需要先点 4 个 arena 角点，再点 2 个物体中心点。</p>
-            <div class="sub-step">
-                <h5><i class="fas fa-draw-polygon me-2"></i><span data-nor-manual-i18n="sec3.order.title">标定顺序</span></h5>
-                <ol class="mb-0">
-                    <li data-nor-manual-i18n="sec3.order.li1">点击“新增 ROI”后，依次点这个 arena 的 4 个角点。</li>
-                    <li data-nor-manual-i18n="sec3.order.li2">再点 2 个物体的中心点。默认第 1 个是熟悉物体，第 2 个是新奇物体。</li>
-                    <li data-nor-manual-i18n="sec3.order.li3">点满后系统会自动把这个 ROI 加入右侧列表，可以继续标下一个 arena。</li>
-                </ol>
-            </div>
-            <div class="sub-step">
-                <h5><i class="fas fa-mask me-2"></i><span data-nor-manual-i18n="sec3.mask.title">检测遮罩</span></h5>
-                <p data-nor-manual-i18n="sec3.mask.intro">如果镜头边缘存在广角畸变、黑边或局部暗角，可以在 ROI 卡片里额外绘制检测遮罩。检测遮罩和统计 arena 是分开的：</p>
-                <ul class="mb-0">
-                    <li data-nor-manual-i18n="sec3.mask.li1">4 点 arena 仍然负责透视矫正、中心区、物体距离和统计坐标。</li>
-                    <li data-nor-manual-i18n="sec3.mask.li2">检测遮罩多边形只负责限制鼠体检测范围，推荐沿真实可见边界画 8 到 16 个点。</li>
-                    <li data-nor-manual-i18n="sec3.mask.li3">如果不单独画遮罩，系统默认使用 arena 四边形作为检测区域。</li>
-                </ul>
-            </div>
-            <div class="warning-box">
-                <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
-                <span data-nor-manual-i18n="sec3.warning">arena 角点误差会直接影响透视校正和距离统计；物体中心点误差会直接影响接近区、探索时长和偏好指标。</span>
-            </div>
-        </div>
-
-        <div class="manual-section" id="sec-phase">
-            <h3><span class="step-number">4</span><span data-nor-manual-i18n="sec4.title">阶段、角色与时间窗</span></h3>
-            <p data-nor-manual-i18n="sec4.intro">NOR 模块支持常见的两个分析阶段，并且每个 ROI 都可以单独设置时间窗。</p>
-            <table class="mini-table">
-                <tr>
-                    <th data-nor-manual-i18n="sec4.table.recognition">Recognition</th>
-                    <td data-nor-manual-i18n="sec4.table.recognition_desc" data-nor-manual-i18n-html>识别测试期。一个物体标记为 <code>familiar</code>，另一个标记为 <code>novel</code>，系统会输出新奇偏好相关指标。</td>
-                </tr>
-                <tr>
-                    <th data-nor-manual-i18n="sec4.table.familiarization">Familiarization</th>
-                    <td data-nor-manual-i18n="sec4.table.familiarization_desc">熟悉 / 训练期。此时两个物体都按熟悉物体处理，更适合看总探索、探索均衡性和轨迹表现。</td>
-                </tr>
-                <tr>
-                    <th data-nor-manual-i18n="sec4.table.global">跟随全局</th>
-                    <td data-nor-manual-i18n="sec4.table.global_desc">沿用上传页里设置的全局起止时间。</td>
-                </tr>
-                <tr>
-                    <th data-nor-manual-i18n="sec4.table.precise">精确时间窗</th>
-                    <td data-nor-manual-i18n="sec4.table.precise_desc" data-nor-manual-i18n-html>按视频绝对时间统计，例如开始 <code>60</code>、结束 <code>360</code> 表示只统计第 60 秒到第 360 秒。</td>
-                </tr>
-            </table>
-        </div>
-
-        <div class="manual-section" id="sec-debug">
-            <h3><span class="step-number">5</span><span data-nor-manual-i18n="sec5.title">调参与启动</span></h3>
-            <p data-nor-manual-i18n="sec5.intro">进入第二步后，页面会显示原始画面和叠加预览。预览会同时显示所有 ROI 的 arena、中心区、物体交互范围以及鼠体检测结果，所以调参目标是让所有 ROI 尽量稳定，而不是只顾某一个框。</p>
-            <div class="sub-step">
-                <h5><i class="fas fa-sliders-h me-2"></i><span data-nor-manual-i18n="sec5.detect.title">检测参数</span></h5>
-                <ul class="mb-0">
-                    <li data-nor-manual-i18n="sec5.detect.li1" data-nor-manual-i18n-html><strong>灰度阈值</strong>：传统前景分割方式，适合背景干净且光照稳定的视频。</li>
-                    <li data-nor-manual-i18n="sec5.detect.li2" data-nor-manual-i18n-html><strong>静态背景减除</strong>：更适合黑边、镜头畸变、局部阴影较明显但背景整体静止的情况。</li>
-                    <li data-nor-manual-i18n="sec5.detect.li3" data-nor-manual-i18n-html><strong>腐蚀 / 膨胀 / 最小面积</strong>：用于去噪、修补轮廓并过滤碎片。</li>
-                </ul>
-            </div>
-            <div class="sub-step">
-                <h5><i class="fas fa-ruler-combined me-2"></i><span data-nor-manual-i18n="sec5.stats.title">统计参数</span></h5>
-                <ul class="mb-0">
-                    <li data-nor-manual-i18n="sec5.stats.li1" data-nor-manual-i18n-html><strong>Interaction Radius</strong>：定义物体周围多大范围算作接近区。</li>
-                    <li data-nor-manual-i18n="sec5.stats.li2" data-nor-manual-i18n-html><strong>Exploration Max Speed</strong>：只把靠近物体且速度不太快的片段记为探索，用来排除路过。</li>
-                    <li data-nor-manual-i18n="sec5.stats.li3" data-nor-manual-i18n-html><strong>Movement Threshold</strong>：区分移动与静止。</li>
-                    <li data-nor-manual-i18n="sec5.stats.li4" data-nor-manual-i18n-html><strong>Min Valid Exploration</strong>：样本是否达到基本探索量的质控阈值，不会改变单帧探索判定。</li>
-                    <li data-nor-manual-i18n="sec5.stats.li5" data-nor-manual-i18n-html><strong>Bin Seconds</strong>：控制分箱 CSV 的时间长度。</li>
-                </ul>
-            </div>
-            <div class="tip-box">
-                <i class="fas fa-info-circle me-2 text-info"></i>
-                <span data-nor-manual-i18n="sec5.tip">建议把帧滑块拖到多个不同时间点检查，特别要看小鼠在物体旁边、场地边缘和镜头畸变区域是否会漏检。</span>
-            </div>
-        </div>
-
-        <div class="manual-section" id="sec-output">
-            <h3><span class="step-number">6</span><span data-nor-manual-i18n="sec6.title">结果与指标</span></h3>
-            <p data-nor-manual-i18n="sec6.intro">分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、bins CSV、TXT 报告、热图和轨迹图。识别测试期最常用的核心指标如下：</p>
-            <table class="mini-table">
-                <tr>
-                    <th><code>novel_exploration_s</code></th>
-                    <td data-nor-manual-i18n="sec6.table.novel">对新奇物体的累计探索时长。</td>
-                </tr>
-                <tr>
-                    <th><code>familiar_exploration_s</code></th>
-                    <td data-nor-manual-i18n="sec6.table.familiar">对熟悉物体的累计探索时长。</td>
-                </tr>
-                <tr>
-                    <th><code>discrimination_index</code></th>
-                    <td data-nor-manual-i18n="sec6.table.di" data-nor-manual-i18n-html><code>(novel - familiar) / (novel + familiar)</code>，越大通常表示越偏好新奇物体。</td>
-                </tr>
-                <tr>
-                    <th><code>preference_index_percent</code></th>
-                    <td data-nor-manual-i18n="sec6.table.pref" data-nor-manual-i18n-html><code>novel / (novel + familiar) * 100</code>，表示新奇物体探索占比。</td>
-                </tr>
-                <tr>
-                    <th><code>object_*_bouts</code></th>
-                    <td data-nor-manual-i18n="sec6.table.bouts">进入对应物体探索状态的次数。</td>
-                </tr>
-                <tr>
-                    <th><code>object_*_latency_s</code></th>
-                    <td data-nor-manual-i18n="sec6.table.latency">首次探索该物体的潜伏期。</td>
-                </tr>
-                <tr>
-                    <th><code>meets_min_exploration</code></th>
-                    <td data-nor-manual-i18n="sec6.table.valid">是否达到你设置的“最小有效探索时长”阈值，可作为质控提示。</td>
-                </tr>
-            </table>
-            <p class="mt-3 mb-0" data-nor-manual-i18n="sec6.outro">此外还会输出总路程、平均速度、中心区时间、移动 / 静止时间等一般活动指标，方便同时观察探索偏好和整体运动状态。</p>
-        </div>
-
-        <div class="manual-section" id="sec-notes">
-            <h3><span class="step-number">7</span><span data-nor-manual-i18n="sec7.title">注意事项</span></h3>
-            <ul class="mb-0">
-                <li data-nor-manual-i18n="sec7.li1">当前版本的 NOR 探索判定是基于“接近物体 + 低速条件”的传统 CV 启发式，不是鼻尖级或姿态级追踪。</li>
-                <li data-nor-manual-i18n="sec7.li2">如果两个物体距离过近、反光严重，或者鼠体与背景对比太弱，探索统计会明显变得不稳定。</li>
-                <li data-nor-manual-i18n="sec7.li3">检测遮罩可以缓解镜头畸变和黑边问题，但它不能替代相机畸变标定；如果镜头桶形畸变非常明显，仍建议优先改善采集机位。</li>
-                <li data-nor-manual-i18n="sec7.li4" data-nor-manual-i18n-html>建议把 <code>meets_min_exploration</code> 当作质控提示，而不是直接替代人工核查结论。</li>
-            </ul>
-        </div>
-    </div>
-</div>
+<div id="nor-manual-root"></div>
 
 <script>
-const NOR_MANUAL_I18N = {
-    zh: {
-        'flow.1': '视频采集要求',
-        'flow.2': '上传视频',
-        'flow.3': '多 ROI 与双物体标定',
-        'flow.4': '阶段、角色与时间窗',
-        'flow.5': '调参与启动',
-        'flow.6': '结果与指标',
-        'nav.video': '视频采集要求',
-        'nav.upload': '上传视频',
-        'nav.calib': '多 ROI 与双物体标定',
-        'nav.phase': '阶段、角色与时间窗',
-        'nav.debug': '调参与启动',
-        'nav.output': '结果与指标',
-        'nav.notes': '注意事项',
-        'sec1.title': '视频采集要求',
-        'sec1.intro': 'NOR 建议使用俯视或接近俯视的固定机位，保证 arena 边界和两个物体在整个视频中都清晰可见。当前模块支持和 OFT 一样的多 ROI / 多 arena 并行流程，因此同一视频里可以同时分析多个场地。',
-        'sec1.camera.title': '机位与场地',
-        'sec1.camera.li1': '尽量完整拍到每个 arena，四条边和四个角点不要被裁切。',
-        'sec1.camera.li2': '两个物体要在统计阶段内保持固定位置，不要在录制中途被移动。',
-        'sec1.camera.li3': '如果镜头边缘有明显广角畸变，后续建议单独绘制检测遮罩，而不是盲目把 arena 往外框大。',
-        'sec1.light.title': '光照与对比',
-        'sec1.light.li1': '背景和小鼠要有明显对比，尽量避免高光、阴影和物体反光。',
-        'sec1.light.li2': '多个 arena 同时拍摄时，尽量让各笼位亮度接近，便于使用统一参数。',
-        'sec1.light.li3': '如果边缘存在黑边或镜头暗角，优先靠检测遮罩隔离，不建议直接依赖阈值硬扛。',
-        'sec1.tip': 'NOR 更看重“场地边界清楚、物体位置固定、鼠体轮廓稳定”，并不是分辨率越高越好。',
-        'sec2.title': '上传视频',
-        'sec2.intro': '在上传页把实验模块切换为 <code>Novel Object Recognition</code>，之后可以使用网页上传或本地路径导入。上传页中的全局开始时间和结束时间会作为分析的默认统计时间范围。',
-        'sec2.li1': '如果只想统计识别测试期中的一小段，比如第 60 秒到第 360 秒，可以先在上传页设置全局时间。',
-        'sec2.li2': '后续每个 ROI 还可以单独设置“跟随全局”或“精确时间窗”，便于多笼位共用一个视频时分别控制统计区间。',
-        'sec2.li3': '如果源视频是可变帧率，建议在上传页手动填写 FPS。',
-        'sec3.title': '多 ROI 与双物体标定',
-        'sec3.intro': '当前 NOR 模块使用“每个 ROI = 一个 arena + 两个物体中心点”的结构。每添加一个 ROI，都需要先点 4 个 arena 角点，再点 2 个物体中心点。',
-        'sec3.order.title': '标定顺序',
-        'sec3.order.li1': '点击“新增 ROI”后，依次点这个 arena 的 4 个角点。',
-        'sec3.order.li2': '再点 2 个物体的中心点。默认第 1 个是熟悉物体，第 2 个是新奇物体。',
-        'sec3.order.li3': '点满后系统会自动把这个 ROI 加入右侧列表，可以继续标下一个 arena。',
-        'sec3.mask.title': '检测遮罩',
-        'sec3.mask.intro': '如果镜头边缘存在广角畸变、黑边或局部暗角，可以在 ROI 卡片里额外绘制检测遮罩。检测遮罩和统计 arena 是分开的：',
-        'sec3.mask.li1': '4 点 arena 仍然负责透视矫正、中心区、物体距离和统计坐标。',
-        'sec3.mask.li2': '检测遮罩多边形只负责限制鼠体检测范围，推荐沿真实可见边界画 8 到 16 个点。',
-        'sec3.mask.li3': '如果不单独画遮罩，系统默认使用 arena 四边形作为检测区域。',
-        'sec3.warning': 'arena 角点误差会直接影响透视校正和距离统计；物体中心点误差会直接影响接近区、探索时长和偏好指标。',
-        'sec4.title': '阶段、角色与时间窗',
-        'sec4.intro': 'NOR 模块支持常见的两个分析阶段，并且每个 ROI 都可以单独设置时间窗。',
-        'sec4.table.recognition': 'Recognition',
-        'sec4.table.recognition_desc': '识别测试期。一个物体标记为 <code>familiar</code>，另一个标记为 <code>novel</code>，系统会输出新奇偏好相关指标。',
-        'sec4.table.familiarization': 'Familiarization',
-        'sec4.table.familiarization_desc': '熟悉 / 训练期。此时两个物体都按熟悉物体处理，更适合看总探索、探索均衡性和轨迹表现。',
-        'sec4.table.global': '跟随全局',
-        'sec4.table.global_desc': '沿用上传页里设置的全局起止时间。',
-        'sec4.table.precise': '精确时间窗',
-        'sec4.table.precise_desc': '按视频绝对时间统计，例如开始 <code>60</code>、结束 <code>360</code> 表示只统计第 60 秒到第 360 秒。',
-        'sec5.title': '调参与启动',
-        'sec5.intro': '进入第二步后，页面会显示原始画面和叠加预览。预览会同时显示所有 ROI 的 arena、中心区、物体交互范围以及鼠体检测结果，所以调参目标是让所有 ROI 尽量稳定，而不是只顾某一个框。',
-        'sec5.detect.title': '检测参数',
-        'sec5.detect.li1': '<strong>灰度阈值</strong>：传统前景分割方式，适合背景干净且光照稳定的视频。',
-        'sec5.detect.li2': '<strong>静态背景减除</strong>：更适合黑边、镜头畸变、局部阴影较明显但背景整体静止的情况。',
-        'sec5.detect.li3': '<strong>腐蚀 / 膨胀 / 最小面积</strong>：用于去噪、修补轮廓并过滤碎片。',
-        'sec5.stats.title': '统计参数',
-        'sec5.stats.li1': '<strong>Interaction Radius</strong>：定义物体周围多大范围算作接近区。',
-        'sec5.stats.li2': '<strong>Exploration Max Speed</strong>：只把靠近物体且速度不太快的片段记为探索，用来排除路过。',
-        'sec5.stats.li3': '<strong>Movement Threshold</strong>：区分移动与静止。',
-        'sec5.stats.li4': '<strong>Min Valid Exploration</strong>：样本是否达到基本探索量的质控阈值，不会改变单帧探索判定。',
-        'sec5.stats.li5': '<strong>Bin Seconds</strong>：控制分箱 CSV 的时间长度。',
-        'sec5.tip': '建议把帧滑块拖到多个不同时间点检查，特别要看小鼠在物体旁边、场地边缘和镜头畸变区域是否会漏检。',
-        'sec6.title': '结果与指标',
-        'sec6.intro': '分析完成后，结果页会提供标注视频、轨迹 CSV、summary CSV、bins CSV、TXT 报告、热图和轨迹图。识别测试期最常用的核心指标如下：',
-        'sec6.table.novel': '对新奇物体的累计探索时长。',
-        'sec6.table.familiar': '对熟悉物体的累计探索时长。',
-        'sec6.table.di': '<code>(novel - familiar) / (novel + familiar)</code>，越大通常表示越偏好新奇物体。',
-        'sec6.table.pref': '<code>novel / (novel + familiar) * 100</code>，表示新奇物体探索占比。',
-        'sec6.table.bouts': '进入对应物体探索状态的次数。',
-        'sec6.table.latency': '首次探索该物体的潜伏期。',
-        'sec6.table.valid': '是否达到你设置的“最小有效探索时长”阈值，可作为质控提示。',
-        'sec6.outro': '此外还会输出总路程、平均速度、中心区时间、移动 / 静止时间等一般活动指标，方便同时观察探索偏好和整体运动状态。',
-        'sec7.title': '注意事项',
-        'sec7.li1': '当前版本的 NOR 探索判定是基于“接近物体 + 低速条件”的传统 CV 启发式，不是鼻尖级或姿态级追踪。',
-        'sec7.li2': '如果两个物体距离过近、反光严重，或者鼠体与背景对比太弱，探索统计会明显变得不稳定。',
-        'sec7.li3': '检测遮罩可以缓解镜头畸变和黑边问题，但它不能替代相机畸变标定；如果镜头桶形畸变非常明显，仍建议优先改善采集机位。',
-        'sec7.li4': '建议把 <code>meets_min_exploration</code> 当作质控提示，而不是直接替代人工核查结论。'
-    },
-    en: {
-        'flow.1': 'Video Requirements',
-        'flow.2': 'Upload Video',
-        'flow.3': 'Multi-ROI & Dual-Object Calibration',
-        'flow.4': 'Phase, Role & Time Windows',
-        'flow.5': 'Tuning & Start',
-        'flow.6': 'Results & Metrics',
-        'nav.video': 'Video Requirements',
-        'nav.upload': 'Upload Video',
-        'nav.calib': 'Multi-ROI & Dual-Object Calibration',
-        'nav.phase': 'Phase, Role & Time Windows',
-        'nav.debug': 'Tuning & Start',
-        'nav.output': 'Results & Metrics',
-        'nav.notes': 'Notes',
-        'sec1.title': 'Video Requirements',
-        'sec1.intro': 'NOR works best with a fixed top-down or near top-down camera, with arena boundaries and both objects clearly visible throughout the recording. Like OFT, this module supports parallel processing of multiple ROIs / arenas within one video.',
-        'sec1.camera.title': 'Camera Position & Arena',
-        'sec1.camera.li1': 'Capture each arena as completely as possible, without cutting off the four edges or corner points.',
-        'sec1.camera.li2': 'Both objects should remain fixed during the statistics window and should not be moved during recording.',
-        'sec1.camera.li3': 'If wide-angle distortion is obvious near the frame edges, it is better to draw a dedicated detection mask later instead of blindly enlarging the arena corners outward.',
-        'sec1.light.title': 'Lighting & Contrast',
-        'sec1.light.li1': 'The mouse should contrast clearly with the background, and glare, shadows, and object reflections should be minimized.',
-        'sec1.light.li2': 'When several arenas are recorded together, keep brightness as similar as possible so one shared parameter set remains usable.',
-        'sec1.light.li3': 'If there are black borders or vignetting near the image edges, isolate them with detection masks rather than relying on threshold tuning alone.',
-        'sec1.tip': 'NOR depends more on clear arena boundaries, fixed object positions, and stable mouse contours than on ultra-high resolution.',
-        'sec2.title': 'Upload Video',
-        'sec2.intro': 'On the upload page, switch the experiment module to <code>Novel Object Recognition</code>, then choose either web upload or local-path import. The global start and end times define the default statistics range.',
-        'sec2.li1': 'If you only want to analyze part of the recognition test, for example seconds 60 to 360, set the global time range first on the upload page.',
-        'sec2.li2': 'Each ROI can still override that later with its own "Follow Global" or "Precise Time Window" setting, which is useful when multiple arenas share one video.',
-        'sec2.li3': 'If the source video uses variable frame rate, entering FPS manually on the upload page is recommended.',
-        'sec3.title': 'Multi-ROI & Dual-Object Calibration',
-        'sec3.intro': 'The current NOR module uses the structure "one ROI = one arena + two object centers". For each ROI, first place 4 arena corners and then place 2 object centers.',
-        'sec3.order.title': 'Calibration Order',
-        'sec3.order.li1': 'Click "Add ROI", then click the 4 corners of that arena in order.',
-        'sec3.order.li2': 'Then click the 2 object centers. By default, object 1 is familiar and object 2 is novel.',
-        'sec3.order.li3': 'Once all points are set, the ROI is automatically added to the list and you can continue with the next arena.',
-        'sec3.mask.title': 'Detection Mask',
-        'sec3.mask.intro': 'If there is wide-angle distortion, black borders, or local vignetting near the image edges, you can draw an extra detection mask in each ROI card. The detection mask is separate from the statistics arena:',
-        'sec3.mask.li1': 'The 4-point arena still drives perspective correction, center-zone geometry, object distance, and statistics coordinates.',
-        'sec3.mask.li2': 'The detection-mask polygon only limits where the mouse detector runs. Drawing 8 to 16 points along the visible curved boundary is recommended.',
-        'sec3.mask.li3': 'If you do not draw a separate mask, the arena quadrilateral is used as the default detection region.',
-        'sec3.warning': 'Arena-corner errors directly affect perspective correction and distance metrics; object-center errors directly affect proximity regions, exploration duration, and preference metrics.',
-        'sec4.title': 'Phase, Role & Time Windows',
-        'sec4.intro': 'The NOR module supports two common analysis phases, and each ROI can use its own time window.',
-        'sec4.table.recognition': 'Recognition',
-        'sec4.table.recognition_desc': 'Recognition test phase. One object is labeled <code>familiar</code> and the other <code>novel</code>, allowing novelty-preference metrics to be calculated.',
-        'sec4.table.familiarization': 'Familiarization',
-        'sec4.table.familiarization_desc': 'Training / familiarization phase. Both objects are treated as familiar, which is more suitable for examining total exploration, balance across the two objects, and trajectories.',
-        'sec4.table.global': 'Follow Global',
-        'sec4.table.global_desc': 'Uses the global start/end time configured on the upload page.',
-        'sec4.table.precise': 'Precise Time Window',
-        'sec4.table.precise_desc': 'Uses absolute video time. For example, start <code>60</code> and end <code>360</code> means only seconds 60 to 360 are counted.',
-        'sec5.title': 'Tuning & Start',
-        'sec5.intro': 'In step 2, the page shows the original frame and the overlay preview. The preview combines all ROI arenas, center zones, object interaction ranges, and mouse detections at once, so tuning should aim for stable results across all ROIs rather than optimizing only one.',
-        'sec5.detect.title': 'Detection Parameters',
-        'sec5.detect.li1': '<strong>Gray Threshold</strong>: a traditional foreground-segmentation mode that works best when the background is clean and lighting is stable.',
-        'sec5.detect.li2': '<strong>Static Background Subtraction</strong>: often more robust when black borders, lens distortion, or local shadows are present but the background itself is still.',
-        'sec5.detect.li3': '<strong>Erosion / Dilation / Minimum Area</strong>: used to remove noise, repair contours, and filter tiny fragments.',
-        'sec5.stats.title': 'Statistics Parameters',
-        'sec5.stats.li1': '<strong>Interaction Radius</strong>: defines how large the object-proximity zone is.',
-        'sec5.stats.li2': '<strong>Exploration Max Speed</strong>: only counts near-object periods with sufficiently low speed as exploration, helping exclude pass-by events.',
-        'sec5.stats.li3': '<strong>Movement Threshold</strong>: separates moving from still frames.',
-        'sec5.stats.li4': '<strong>Min Valid Exploration</strong>: a QC threshold indicating whether total exploration is sufficient; it does not change the per-frame exploration rule.',
-        'sec5.stats.li5': '<strong>Bin Seconds</strong>: controls the time width used in the bins CSV.',
-        'sec5.tip': 'It is recommended to drag the frame slider to several different time points and check whether the mouse is missed near objects, near arena edges, or in distorted image regions.',
-        'sec6.title': 'Results & Metrics',
-        'sec6.intro': 'After analysis completes, the result page provides annotated video, track CSV, summary CSV, bins CSV, TXT report, heatmap, and track map. The most common recognition-phase metrics are listed below:',
-        'sec6.table.novel': 'Total exploration time directed toward the novel object.',
-        'sec6.table.familiar': 'Total exploration time directed toward the familiar object.',
-        'sec6.table.di': '<code>(novel - familiar) / (novel + familiar)</code>; larger values usually indicate stronger novelty preference.',
-        'sec6.table.pref': '<code>novel / (novel + familiar) * 100</code>; the percentage of exploration allocated to the novel object.',
-        'sec6.table.bouts': 'Number of entries into the exploration state for the corresponding object.',
-        'sec6.table.latency': 'Latency to the first exploration bout for that object.',
-        'sec6.table.valid': 'Whether the ROI reaches your configured minimum valid exploration threshold, which can be used as a QC flag.',
-        'sec6.outro': 'The module also exports general activity metrics such as total distance, average speed, center-zone time, and moving / still time, making it easier to compare novelty preference with overall locomotion.',
-        'sec7.title': 'Notes',
-        'sec7.li1': 'In the current version, NOR exploration is defined by a traditional CV heuristic of "near object + low speed", not by nose-point or posture-level tracking.',
-        'sec7.li2': 'Exploration statistics become much less stable when the two objects are too close together, strongly reflective, or poorly contrasted against the mouse/background.',
-        'sec7.li3': 'Detection masks help with lens distortion and black borders, but they do not replace true camera distortion calibration. If barrel distortion is severe, improving the recording setup is still recommended.',
-        'sec7.li4': 'Treat <code>meets_min_exploration</code> as a QC hint rather than as a full replacement for manual review.'
-    }
-};
-
-function applyNorManualLang() {
-    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
-    const dict = NOR_MANUAL_I18N[lang] || NOR_MANUAL_I18N.zh;
-    document.title = `${lang === 'zh' ? 'NOR 使用手册' : 'NOR Manual'} - MouseScope`;
-    document.querySelectorAll('[data-nor-manual-i18n]').forEach(el => {
-        const key = el.getAttribute('data-nor-manual-i18n');
-        const val = dict[key];
-        if (val === undefined) return;
-        if (el.getAttribute('data-nor-manual-i18n-html') !== null) {
-            el.innerHTML = val;
-        } else {
-            el.textContent = val;
+(function () {
+    const NOR_MANUAL = {
+        zh: {
+            heroEyebrow: 'Novel Object Recognition / NOR',
+            heroTitle: '新奇物体识别完整操作手册',
+            heroSubtitle: '本手册覆盖 arena 与物体标定、阶段与角色设置、头向辅助探索的含义、所有可调参数、全部导出字段，以及批量模式的正确配置方式。',
+            heroChips: ['4 角点 + 2 物体点', 'Recognition / Familiarization', '头向辅助探索', 'track / summary / bins', '热图 + 轨迹图'],
+            heroCards: [
+                ['fas fa-object-group', '每个 ROI 到底是什么', 'NOR 里每个 ROI 代表“一个 arena + 两个物体中心点”。arena 决定厘米坐标和中心区，物体点决定接近区、探索时间和偏好指标。'],
+                ['fas fa-crosshairs', '探索判定是怎么做的', '系统会先看是否进入物体交互半径、速度是否足够低，再在头向估计置信度足够时用头向门控；如果头向不够可靠，就回退到距离规则。'],
+                ['fas fa-layer-group', '批量模式现在怎么工作', '现在批量模式已支持每个视频独立保存 phase、arena 尺寸、ROI、物体点、遮罩和调参参数；但同一个视频内部的多个 ROI 仍共享这一视频的一套检测与统计参数。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', 'arena 与物体标定', '阶段 / 角色 / 时间窗', '调参与预览', '结果与偏好指标'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['calibration', 'arena / 物体 / 时间窗'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: 'NOR 模块用于分析小鼠对熟悉物体和新奇物体的探索偏好。系统会把 arena 透视校正到厘米坐标，计算到物体的距离、接近区停留、探索时长，以及识别测试期里的偏好指标。',
+                    points: [
+                        '每个 ROI 都必须包含一个完整 arena 和两个物体中心点。',
+                        'Recognition 阶段会区分 <code>familiar</code> 和 <code>novel</code> 角色；Familiarization 阶段则更适合看总探索和探索平衡。',
+                        '导出的结果既包含逐帧轨迹，也包含按 ROI 汇总的探索指标和按时间分箱的动态变化。'
+                    ],
+                    callouts: [
+                        ['warning', '最常见的误区', '<code>meets_min_exploration</code> 只是一个质控提示，表示总探索时长是否达到最小有效探索阈值；它不是“结果一定可信”或“结果一定无效”的最终裁决。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: 'NOR 对 arena 边界、物体位置稳定性和轮廓质量都很敏感。只要物体反光、位置偏移或画面边缘畸变严重，探索判定就会明显变差。',
+                    blocks: [
+                        {
+                            title: '机位与 arena',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '优先用俯视或接近俯视的固定机位，保证 arena 四边和两个物体都清楚可见。',
+                                '录制过程中不要移动相机，不要中途移动物体位置。',
+                                '如果同一视频里有多个 arena，尽量保持它们位于同一平面且畸变相近。'
+                            ]
+                        },
+                        {
+                            title: '物体与背景',
+                            icon: 'fas fa-cube',
+                            items: [
+                                '两个物体应保持固定位置并尽量减少强反光。',
+                                '背景和鼠体要有明显对比，否则轮廓、鼻端估计和探索判定都会不稳。',
+                                '物体离得太近会让交互区重叠，影响 <code>object_*_near</code> 和探索归属。'
+                            ]
+                        },
+                        {
+                            title: '边缘干扰',
+                            icon: 'fas fa-mask',
+                            items: [
+                                '镜头边缘的黑边、暗角或桶形畸变会影响前景分割，优先用检测遮罩隔离。',
+                                '不要把人手、标记条、器材边框等放在 arena 检测区域附近。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', '头向辅助不等于必须拍到尾巴', '头向估计主要依赖鼠体轮廓前缘、主轴方向和前后帧连续性，不是直接靠完整尾巴。但如果轮廓极不稳定，头向辅助仍然会失效并回退到距离规则。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页定义本批次视频、默认统计时间和输出目录。之后每个 ROI 还能进一步设置自己的精确时间窗。',
+                    points: [
+                        '上传页的全局开始 / 结束时间是默认统计范围；ROI 如果跟随全局，就直接使用这里的时间。',
+                        '如果源视频 FPS 不可靠，建议手动覆盖 FPS，尤其是你要比较潜伏期、探索时长和速度指标时。',
+                        '批量时仍然建议把条件相近的视频放在同一批次，尽管现在每个视频都能单独配置。'
+                    ],
+                    callouts: [
+                        ['success', '输出目录层级', '批量模式下，每个视频会在总输出目录下创建自己的子文件夹，里面包含该视频的 result video、track、summary、bins、报告、热图和轨迹图。']
+                    ]
+                },
+                calibration: {
+                    title: 'arena、物体、阶段与时间窗',
+                    lead: 'NOR 的空间与探索统计都依赖“4 个 arena 角点 + 2 个物体中心点”的组合。你还需要为每个 ROI 指定阶段、物体角色和时间窗。',
+                    blocks: [
+                        {
+                            title: 'arena 与物体点',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                '每个 ROI 先点 4 个 arena 角点，再点 2 个物体中心点。',
+                                '角点决定透视校正和厘米坐标，物体点决定到物体距离、交互区和探索归属。',
+                                '物体点应尽量落在物体几何中心附近，而不是边缘。'
+                            ]
+                        },
+                        {
+                            title: '阶段与角色',
+                            icon: 'fas fa-tags',
+                            items: [
+                                '<code>phase = recognition</code> 时，一个物体是 familiar，另一个是 novel，系统会输出 DI、偏好指数等偏好指标。',
+                                '<code>phase = familiarization</code> 时，更适合关注总探索和两个物体的探索均衡性。',
+                                '每个物体都可以独立命名，名称和角色会进入所有导出结果。'
+                            ]
+                        },
+                        {
+                            title: '检测遮罩与时间窗',
+                            icon: 'fas fa-clock',
+                            items: [
+                                '检测遮罩只限制前景检测范围，不会改变 arena 尺寸和物体坐标。',
+                                '可选时间模式包括 <code>global</code> 与 <code>precise</code>。',
+                                '精确时间窗只影响统计，逐帧轨迹 CSV 仍会记录哪些帧落在统计窗口内。'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['配置项', '作用', '备注'],
+                        rows: [
+                            ['<code>phase</code>', '决定系统输出 recognition 还是 familiarization 指标。', '会影响 summary 和 bins 里有哪些列。'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', '定义透视校正后的真实 arena 尺寸。', '影响距离、速度、中心区和热图。'],
+                            ['<code>global</code>', '跟随上传页全局时间。', '适合同一批次统一时长。'],
+                            ['<code>precise</code>', '直接按视频绝对时间设置开始 / 结束秒数。', '适合不同 ROI 统计不同片段。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'arena 点错和物体点错的后果不同', 'arena 点错会把整套厘米坐标、中心区和轨迹拉歪；物体点错会直接把接近区、探索时长、偏好指数和 first explored object 判错。']
+                    ]
+                },
+                params: {
+                    title: '参数字典',
+                    lead: '下面列的是当前 NOR GUI 里真正可改的参数。你可以把它们理解为三组：前景检测参数、空间统计参数，以及探索判定参数。',
+                    detectTable: {
+                        headers: ['参数', '位置', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '调参页', '检测方式。<code>threshold</code> 用灰度阈值分割，<code>static</code> 用静态背景减除。', '固定机位且背景稳定时两者都可试；阈值法更直观。'],
+                            ['<code>bg_type</code>', '调参页', '定义背景偏浅还是偏深。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '调参页', '灰度阈值法下的分割阈值。', '噪点多就提高；鼠体轮廓断裂就降低。'],
+                            ['<code>min_area</code>', '调参页', '最小轮廓面积。', '误检小亮点就提高；鼠体被误过滤就降低。'],
+                            ['<code>erosion_kernel</code> / <code>erosion_iter</code>', '调参页', '去掉小噪点和毛边。', '过大时会把鼠体侵蚀得太小。'],
+                            ['<code>dilation_kernel</code> / <code>dilation_iter</code>', '调参页', '修补轮廓、补回断裂区域。', '过大时容易把背景噪声粘进轮廓。']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['参数', '作用', '结果影响'],
+                        rows: [
+                            ['<code>center_ratio_x</code> / <code>center_ratio_y</code>', '定义 arena 中心区矩形大小。', '影响 <code>center_time_s</code>、<code>center_percent</code> 和中心潜伏期。'],
+                            ['<code>interaction_radius_cm</code>', '定义物体交互半径。', '影响 <code>object_*_near</code>、<code>object_*_zone_time_s</code> 和探索候选。'],
+                            ['<code>exploration_max_speed_cm_s</code>', '速度低于此值时才允许判为探索。', '过低会漏掉真实探索，过高会把路过误算进探索。'],
+                            ['<code>use_head_direction</code>', '是否启用头向辅助探索。', '开启后，置信度足够时会优先用鼻端朝向筛选探索。'],
+                            ['<code>head_angle_threshold_deg</code>', '头向对准物体的最大允许夹角。', '越小越严格，越大越宽松。'],
+                            ['<code>head_confidence_threshold</code>', '头向估计达到这个置信度才参与门控。', '过高会更常回退到距离规则；过低会增加错误头向干预。'],
+                            ['<code>movement_threshold_cm_s</code>', '高于该速度记为移动，否则记为静止。', '影响 <code>moving_time_s</code> 与 <code>immobility_time_s</code>。'],
+                            ['<code>min_valid_exploration_s</code>', '最小有效探索时长阈值。', '用于生成 <code>meets_min_exploration</code> 质控标记。'],
+                            ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每一行覆盖多长时间。'],
+                            ['<code>generate_video</code>', '是否导出结果视频。', '关闭后更快，但不利于人工复核。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '探索模式会怎么回退', '如果启用了头向辅助，但某一帧头向置信度不够，系统不会强行使用头向，而是回退到基于距离的探索判定。逐帧结果里的 <code>exploration_mode</code> 会告诉你这一帧用的是哪一种逻辑。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: 'NOR 会导出结果视频、逐帧轨迹 CSV、summary CSV、bins CSV、TXT 报告，以及每个 ROI 的热图和轨迹图。Recognition 和 familiarization 阶段的字段并不完全相同。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '带 arena、物体、当前探索状态、角色和轨迹叠加的结果视频。'],
+                        ['<code>*_track.csv</code>', '逐帧轨迹与探索状态表，最适合做质控和自定义时序分析。'],
+                        ['<code>*_summary.csv</code>', '每个 ROI 一行的核心统计结果表。'],
+                        ['<code>*_bins.csv</code>', '按固定时间箱汇总的探索与运动动态。'],
+                        ['<code>*_report.txt</code>', '基于 summary 的可直接阅读文本报告。'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', '每个 ROI 的热图和轨迹图；多 ROI 时还会生成拼图。']
+                    ],
+                    trackTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量结果回溯来源时使用。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI 编号与名称。', '区分同一视频内不同 arena。'],
+                            ['<code>frame</code> / <code>time_s</code>', '原始帧号与视频绝对时间。', '用于回定位到结果视频。'],
+                            ['<code>window_time_s</code>', '统计窗口内相对时间，窗口外为空。', 'bins 和窗口内时序分析使用它。'],
+                            ['<code>detected</code> / <code>in_stats_window</code>', '当前帧是否检测到鼠体，是否落在统计窗内。', 'summary 和 bins 只统计窗口内帧。'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', 'arena 透视校正后的厘米坐标。', '不是像素坐标。'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code> / <code>cumulative_distance_cm</code>', '速度、单步位移和累计距离。', '只要跟踪质量稳定，就可以直接做空间行为分析。'],
+                            ['<code>in_center</code>', '是否位于中心区。', '与 summary 中的中心区指标对应。'],
+                            ['<code>zone_label</code>', '当前区域标签。', '常见值有 <code>Arena</code>、<code>Near 物体名</code>、<code>Exploring 物体名</code>、<code>Unknown</code>。'],
+                            ['<code>current_object</code>', '当前被判为正在探索的物体名称。', '无探索时为空。'],
+                            ['<code>nose_x_cm</code> / <code>nose_y_cm</code>', '估计鼻端在厘米坐标中的位置。', '只有头向估计成功时才有值。'],
+                            ['<code>head_direction_confidence</code>', '头向估计置信度。', '用于判断这一帧头向是否足够可信。'],
+                            ['<code>head_direction_confident</code>', '这一帧头向置信度是否达到门控阈值。', '为 true 时，头向辅助可以真正参与探索判定。'],
+                            ['<code>exploration_mode</code>', '这一帧探索判定使用的逻辑。', '常见值有 <code>head</code>、<code>fallback</code>、<code>proximity</code> 或空值。'],
+                            ['<code>object_1_name</code> / <code>object_2_name</code>', '两个物体名称。', '由标定页填写。'],
+                            ['<code>object_1_role</code> / <code>object_2_role</code>', '两个物体角色。', 'Recognition 阶段通常分别是 familiar 与 novel。'],
+                            ['<code>object_1_distance_cm</code> / <code>object_2_distance_cm</code>', '鼠体轮廓到物体中心的最小距离。', '用于判断 near 区。'],
+                            ['<code>object_1_nose_distance_cm</code> / <code>object_2_nose_distance_cm</code>', '估计鼻端到物体中心的距离。', '头向辅助时更关键。'],
+                            ['<code>object_1_head_angle_deg</code> / <code>object_2_head_angle_deg</code>', '头向主方向与目标物体方向之间的夹角。', '越小通常越像真正面向该物体。'],
+                            ['<code>object_1_near</code> / <code>object_2_near</code>', '是否进入该物体交互半径。', '这是探索候选，但不等于一定在探索。'],
+                            ['<code>object_1_head_aligned</code> / <code>object_2_head_aligned</code>', '头向是否对准该物体。', '只有头向估计有效时才有意义。'],
+                            ['<code>object_1_exploring</code> / <code>object_2_exploring</code>', '这一帧是否正在探索该物体。', '最终探索归属字段。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '用于跨文件回溯。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI 编号和名称。', '每个 ROI 一行。'],
+                            ['<code>phase</code>', '该 ROI 的实验阶段。', '决定有没有 novel / familiar 偏好指标。'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'ROI 使用的时间模式与窗口。', '用于追溯统计时段。'],
+                            ['<code>analysis_window_start_s</code>', '统计窗口实际起点。', '用于对齐窗口内相对时间。'],
+                            ['<code>total_time_s</code>', '参与统计的总时长。', '只计算 ROI 统计窗口内时间。'],
+                            ['<code>detected_frames</code> / <code>detected_rate_percent</code>', '检测帧数和检测率。', '非常重要的质控指标。'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', '总距离、平均速度和最大速度。', '基于厘米坐标轨迹。'],
+                            ['<code>center_time_s</code> / <code>center_percent</code> / <code>center_entries</code> / <code>center_latency_s</code>', '中心区停留、进入次数和潜伏期。', '空间行为的辅助指标。'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code>', '按运动阈值划分的移动与静止时长。', '与探索判定不同，是纯速度维度。'],
+                            ['<code>interaction_radius_cm</code> / <code>exploration_max_speed_cm_s</code> / <code>movement_threshold_cm_s</code> / <code>min_valid_exploration_s</code>', 'summary 中记录下来的关键判定参数。', '便于追溯分析定义。'],
+                            ['<code>use_head_direction</code> / <code>head_angle_threshold_deg</code> / <code>head_confidence_threshold</code>', '头向辅助相关设置。', '便于追溯探索判定逻辑。'],
+                            ['<code>head_estimated_rate_percent</code> / <code>head_confident_rate_percent</code>', '头向估计成功率和高置信率。', '可用于判断头向辅助到底用了多少。'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', 'arena 真值尺寸。', '决定厘米空间尺度。'],
+                            ['<code>object_1_name</code> / <code>object_2_name</code>', '两个物体名称。', '来自标定页。'],
+                            ['<code>object_1_role</code> / <code>object_2_role</code>', '两个物体角色。', 'Recognition 阶段一般是 familiar / novel。'],
+                            ['<code>object_1_exploration_s</code> / <code>object_2_exploration_s</code>', '对每个物体的探索总时长。', '最终探索判定后的累计时间。'],
+                            ['<code>object_1_zone_time_s</code> / <code>object_2_zone_time_s</code>', '进入各物体交互半径内的总时长。', '接近区时长不等于真正探索时长。'],
+                            ['<code>object_1_zone_entries</code> / <code>object_2_zone_entries</code>', '进入各物体交互区的次数。', '描述接近行为频率。'],
+                            ['<code>object_1_bouts</code> / <code>object_2_bouts</code>', '探索 bout 次数。', '按探索开始事件计数。'],
+                            ['<code>object_1_latency_s</code> / <code>object_2_latency_s</code>', '首次探索各物体的潜伏期。', '从该 ROI 统计窗口起点开始计时。'],
+                            ['<code>total_object_exploration_s</code>', '两个物体探索时长总和。', '总探索量核心指标。'],
+                            ['<code>head_supported_exploration_s</code>', '由高置信头向辅助支持的探索时长。', '说明有多少探索是靠头向门控确认的。'],
+                            ['<code>fallback_exploration_s</code>', '因头向置信度不足而回退到距离规则的探索时长。', '数值很高时，说明头向辅助实际参与不多。'],
+                            ['<code>meets_min_exploration</code>', '总探索时长是否达到最小有效阈值。', '质控提示，不是最终结论。'],
+                            ['<code>first_explored_object</code> / <code>first_explored_role</code>', '最先探索的物体及其角色。', '适合做先手偏好分析。'],
+                            ['<code>familiar_exploration_s</code> / <code>novel_exploration_s</code>', 'Recognition 阶段按角色汇总的探索时长。', '只有 recognition 阶段才有。'],
+                            ['<code>discrimination_index</code>', 'Recognition 阶段 DI = (novel - familiar) / (novel + familiar)。', '范围通常在 -1 到 1。'],
+                            ['<code>preference_index_percent</code>', 'Recognition 阶段 novel 探索占总角色探索的百分比。', '50% 左右表示无明显偏好。'],
+                            ['<code>difference_seconds</code>', 'Recognition 阶段 novel 与 familiar 探索时长差值。', '正值表示更偏 novel。'],
+                            ['<code>novel_preference</code>', 'Recognition 阶段是否 novel > familiar。', '布尔值，便于快速筛查。'],
+                            ['<code>object_balance_index</code>', 'Familiarization 阶段两个物体探索平衡指数。', '只有 familiarization 阶段才有；接近 0 表示更平衡。']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code> / <code>roi_id</code> / <code>roi_name</code>', '这个时间箱属于哪个视频、哪个 ROI。', '先按这些列分组再画时间序列。'],
+                            ['<code>bin_index</code> / <code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', '时间箱编号与时长信息。', '最后一个箱可能短于设定值。'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', '该时间箱的距离与平均速度。', '可观察活动随时间变化。'],
+                            ['<code>center_time_s</code> / <code>moving_time_s</code>', '该时间箱里的中心区时间与移动时间。', '提供空间与运动的时间动态。'],
+                            ['<code>object_1_exploration_s</code> / <code>object_2_exploration_s</code>', '该时间箱内各物体探索时长。', '适合做探索随时间变化曲线。'],
+                            ['<code>total_object_exploration_s</code>', '该时间箱内总探索时长。', '总探索动态。'],
+                            ['<code>familiar_exploration_s</code> / <code>novel_exploration_s</code>', 'Recognition 阶段按角色汇总的时间箱探索时长。', '只有 recognition 阶段才有。'],
+                            ['<code>discrimination_index</code> / <code>preference_index_percent</code>', 'Recognition 阶段按时间箱计算的偏好指标。', '用于观察偏好随时间是否衰减或增强。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '怎么读 exploration_mode', '<code>head</code> 表示高置信头向辅助通过；<code>fallback</code> 表示头向不够可信，退回距离规则；<code>proximity</code> 表示你关闭了头向辅助，只用距离规则。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: '现在 NOR 已经支持“每个视频独立配置，再统一批量运行”。正确流程是先把所有视频的 phase、arena、物体、遮罩、时间窗和参数都配完，再开始整批分析。',
+                    steps: [
+                        '上传多个 NOR 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '逐个视频切换，分别设置 phase、arena 宽高，并完成每个 ROI 的 4 角点 + 2 物体点标定。',
+                        '分别填写物体名称、角色、ROI 名称，并按需要画检测遮罩。',
+                        '为每个 ROI 设置时间模式和精确时间窗。',
+                        '切到调参步骤，针对当前视频调好检测、空间和探索判定参数，并预览确认多个 ROI 都稳定。',
+                        '重复以上步骤，直到每个视频都配置完整。',
+                        '启动批量分析。系统会按视频顺序运行，并把每个视频结果保存到自己的子文件夹。'
+                    ],
+                    rules: [
+                        '批量模式下，每个视频独立保存 phase、arena 尺寸、ROI、物体点、遮罩、时间窗和调参参数。',
+                        '同一个视频中的多个 ROI 仍共享这一视频的一套检测与统计参数。',
+                        '如果某个视频缺少 arena 点、物体点或有效遮罩配置，系统会在开始前拦截。',
+                        'ZIP 下载会保留每个视频独立子目录。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: 'NOR 最难的不是“能不能框到鼠”，而是“靠近物体”和“真正探索物体”有没有被区分清楚。所以排错时要同时看距离、头向和物体位置。',
+                    items: [
+                        '总探索时间明显偏低：先看交互半径是不是太小、探索最大速度是不是太低、头向阈值是不是太严格。',
+                        '总是靠近物体但不算探索：优先检查头向置信度和头向角度阈值，再确认物体点是否落在物体中心。',
+                        '两个物体的探索归属经常跳来跳去：先检查两个物体距离是否太近、交互半径是否重叠过多、物体中心点是否偏。',
+                        'head_supported_exploration_s 很低而 fallback 很高：说明头向辅助实际很少被用上，通常是轮廓不稳、反光严重或头向置信阈值过高。',
+                        'meets_min_exploration 为 false：说明总探索量偏低，这时偏好指标需要更谨慎解释。'
+                    ],
+                    callouts: [
+                        ['danger', '什么时候必须回看结果视频', '当 DI、偏好指数与肉眼印象明显冲突，或 summary 里头向相关率很低、总探索量不足、物体归属频繁切换时，必须结合结果视频和 track.csv 复核，而不能只看 summary。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Novel Object Recognition / NOR',
+            heroTitle: 'Complete Novel Object Recognition Manual',
+            heroSubtitle: 'This manual explains arena plus object calibration, phase and role setup, head-direction-assisted exploration logic, every exposed parameter, every exported field, and the correct batch workflow.',
+            heroChips: ['4 corners + 2 object points', 'Recognition / Familiarization', 'Head-direction assisted exploration', 'track / summary / bins', 'Heatmap + trackmap'],
+            heroCards: [
+                ['fas fa-object-group', 'What each ROI really means', 'In NOR, each ROI is “one arena plus two object centers.” The arena defines centimeter coordinates and center zone, while the object points define interaction zones, exploration time, and preference metrics.'],
+                ['fas fa-crosshairs', 'How exploration is actually judged', 'The system first checks interaction radius and low movement speed, then uses head-direction gating when head estimation is confident. If head confidence is too low, it falls back to distance-based logic.'],
+                ['fas fa-layer-group', 'How batch mode works now', 'Batch mode now stores phase, arena size, ROI geometry, object points, masks, and tuning parameters independently per video. Inside a single video, however, multiple ROIs still share one tuning set.'],
+            ],
+            flow: ['Recording requirements', 'Upload and analysis range', 'Arena and object calibration', 'Phase / role / time window', 'Tuning and preview', 'Results and preference metrics'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Recording requirements'],
+                ['upload', 'Upload and analysis range'],
+                ['calibration', 'Arena / object / time window'],
+                ['params', 'Parameter dictionary'],
+                ['outputs', 'Result dictionary'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Common issues and troubleshooting'],
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The NOR module analyzes exploration preference between familiar and novel objects. It perspective-corrects the arena into centimeter coordinates, computes distances to objects, measures interaction-zone occupancy, and exports both frame-level state and ROI-level preference metrics.',
+                    points: [
+                        'Each ROI must include one full arena and exactly two object center points.',
+                        'In <code>recognition</code> phase, the system distinguishes <code>familiar</code> and <code>novel</code> roles and exports preference metrics. In <code>familiarization</code> phase, the focus shifts to total exploration and balance between objects.',
+                        'The outputs include frame-level trajectories, ROI-level summaries, and time-bin dynamics.'
+                    ],
+                    callouts: [
+                        ['warning', 'The most common misunderstanding', '<code>meets_min_exploration</code> is only a QC flag saying whether total exploration reached the minimum valid threshold. It is not an automatic final verdict that the result is fully valid or fully unusable.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording requirements',
+                    lead: 'NOR is highly sensitive to arena boundaries, object-position stability, and contour quality. Strong reflections, object drift, or severe edge distortion can all degrade exploration classification.',
+                    blocks: [
+                        {
+                            title: 'Camera and arena',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Prefer a fixed top-down or near-top-down camera that keeps the arena edges and both objects clearly visible.',
+                                'Do not move the camera, and do not move objects during recording.',
+                                'If multiple arenas are recorded together, keep them on the same plane and with similar distortion whenever possible.'
+                            ]
+                        },
+                        {
+                            title: 'Objects and background',
+                            icon: 'fas fa-cube',
+                            items: [
+                                'The two objects should remain fixed and should not create strong specular reflections.',
+                                'Maintain good contrast between the mouse and the arena floor, otherwise contour quality, nose estimation, and exploration logic all become unstable.',
+                                'If the objects are too close, interaction zones may overlap and confuse near/exploration assignment.'
+                            ]
+                        },
+                        {
+                            title: 'Edge interference',
+                            icon: 'fas fa-mask',
+                            items: [
+                                'Dark borders, vignetting, or barrel distortion near the image edge should be isolated with a detection mask whenever possible.',
+                                'Keep hands, labels, and hardware borders away from the detection region.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Head-direction assist does not require a visible tail', 'Head estimation is mainly based on body contour shape, principal axis, and temporal continuity rather than an explicitly visible tail. But if the contour itself is unstable, head-direction assistance will still fail and fall back to distance rules.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and analysis range',
+                    lead: 'The upload page defines the videos in the run, the default statistics window, and the output directory. Each ROI may later refine its own precise time range.',
+                    points: [
+                        'The upload-page global start and end time define the default analysis window; ROIs in follow-global mode use it directly.',
+                        'If source-video FPS is unreliable, override FPS manually, especially when comparing latency, exploration duration, and speed metrics.',
+                        'Even though videos now support independent configuration, it is still best to batch together videos collected under similar conditions.'
+                    ],
+                    callouts: [
+                        ['success', 'Output directory hierarchy', 'In batch mode, each video gets its own child folder under the selected parent directory, containing that video’s result video, track table, summary, bins, report, heatmaps, and trackmaps.']
+                    ]
+                },
+                calibration: {
+                    title: 'Arena, objects, phase, and time window',
+                    lead: 'NOR spatial and exploration statistics rely on the combination of 4 arena corners plus 2 object centers. You also need to define phase, object roles, and time windows for each ROI.',
+                    blocks: [
+                        {
+                            title: 'Arena and object points',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                'Each ROI starts with four arena corners and then two object-center points.',
+                                'Arena corners define perspective correction and centimeter coordinates; object points define interaction zones, object distance, and exploration assignment.',
+                                'Object points should be placed close to the geometric center of each object rather than on the edge.'
+                            ]
+                        },
+                        {
+                            title: 'Phase and roles',
+                            icon: 'fas fa-tags',
+                            items: [
+                                'With <code>phase = recognition</code>, one object is familiar and the other is novel, so the system exports discrimination and preference metrics.',
+                                'With <code>phase = familiarization</code>, the system is better suited for total exploration and object-balance evaluation.',
+                                'Each object can be named independently, and both name and role propagate into exports.'
+                            ]
+                        },
+                        {
+                            title: 'Detection mask and time windows',
+                            icon: 'fas fa-clock',
+                            items: [
+                                'The detection mask only limits foreground detection. It does not change arena size or object coordinates.',
+                                'The available time modes are <code>global</code> and <code>precise</code>.',
+                                'Precise windows affect only statistics. Frame-level CSV still records which frames are inside or outside the active statistics window.'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['Setting', 'Role', 'Notes'],
+                        rows: [
+                            ['<code>phase</code>', 'Chooses whether recognition or familiarization metrics are exported.', 'This changes which columns appear in summary and bins.'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', 'Define the real arena size after perspective correction.', 'Affects distance, speed, center zone, and figure scaling.'],
+                            ['<code>global</code>', 'Follow the upload-page global time range.', 'Useful when the whole batch shares the same analysis span.'],
+                            ['<code>precise</code>', 'Use absolute video start and end seconds.', 'Useful when different ROIs need different video segments.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'Arena mistakes and object mistakes cause different damage', 'Arena-point errors distort the full centimeter coordinate system, center zone, and track maps. Object-point errors directly corrupt interaction zones, exploration time, preference metrics, and first-explored assignment.']
+                    ]
+                },
+                params: {
+                    title: 'Parameter dictionary',
+                    lead: 'Below are the parameters that are actually editable in the current NOR GUI. You can think of them as three families: foreground-detection parameters, spatial-statistics parameters, and exploration-judgment parameters.',
+                    detectTable: {
+                        headers: ['Parameter', 'Where', 'What it does', 'Typical adjustment logic'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Tuning page', 'Detection method. <code>threshold</code> uses grayscale segmentation and <code>static</code> uses static background subtraction.', 'Both can work with a fixed camera and stable background; thresholding is usually easier to reason about.'],
+                            ['<code>bg_type</code>', 'Tuning page', 'Defines whether the background is light or dark.', 'Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.'],
+                            ['<code>gray_threshold</code>', 'Tuning page', 'Threshold value for grayscale segmentation.', 'Raise it for excess noise; lower it when the mouse contour fragments or vanishes.'],
+                            ['<code>min_area</code>', 'Tuning page', 'Minimum contour area allowed to survive.', 'Raise it for small bright artifacts; lower it when the mouse is being filtered out.'],
+                            ['<code>erosion_kernel</code> / <code>erosion_iter</code>', 'Tuning page', 'Remove small noise and ragged edges.', 'Too large will eat away too much of the mouse contour.'],
+                            ['<code>dilation_kernel</code> / <code>dilation_iter</code>', 'Tuning page', 'Reconnect broken contours and fill contour gaps.', 'Too large can merge background clutter into the mouse.']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['Parameter', 'Role', 'What result fields it affects'],
+                        rows: [
+                            ['<code>center_ratio_x</code> / <code>center_ratio_y</code>', 'Define the size of the center rectangle in the arena.', 'Affect <code>center_time_s</code>, <code>center_percent</code>, and center latency.'],
+                            ['<code>interaction_radius_cm</code>', 'Defines the object interaction radius.', 'Affects <code>object_*_near</code>, <code>object_*_zone_time_s</code>, and exploration candidates.'],
+                            ['<code>exploration_max_speed_cm_s</code>', 'Frames faster than this cannot be counted as exploration.', 'Too low misses real exploration; too high may treat passing-by as exploration.'],
+                            ['<code>use_head_direction</code>', 'Turns head-direction-assisted exploration on or off.', 'When enabled, confident nose direction can gate exploration assignment.'],
+                            ['<code>head_angle_threshold_deg</code>', 'Maximum angular deviation still considered aligned with an object.', 'Smaller is stricter; larger is looser.'],
+                            ['<code>head_confidence_threshold</code>', 'Confidence threshold required before head-direction gating is trusted.', 'Too high causes frequent fallback to distance rules; too low allows noisy head estimates to interfere.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Frames above this speed are counted as moving; slower frames are counted as immobile.', 'Affects <code>moving_time_s</code> and <code>immobility_time_s</code>.'],
+                            ['<code>min_valid_exploration_s</code>', 'Minimum total exploration threshold for QC.', 'Used to compute <code>meets_min_exploration</code>.'],
+                            ['<code>bin_seconds</code>', 'Time-bin duration.', 'Defines how long each row of <code>*_bins.csv</code> covers.'],
+                            ['<code>generate_video</code>', 'Whether to export the annotated result video.', 'Turning it off is faster but reduces manual review visibility.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'How exploration logic falls back', 'If head-direction assist is enabled but a frame does not reach enough confidence, the system does not force head gating. It falls back to distance-based exploration logic. The frame-level <code>exploration_mode</code> column tells you which logic was used.']
+                    ]
+                },
+                outputs: {
+                    title: 'Result dictionary',
+                    lead: 'NOR exports an annotated video, frame-level track CSV, summary CSV, bins CSV, a TXT report, and per-ROI heatmaps and trackmaps. Recognition and familiarization do not export exactly the same fields.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated result video with arena, objects, current exploration state, roles, and trajectory overlays.'],
+                        ['<code>*_track.csv</code>', 'Frame-level trajectory and exploration-state table, best suited for QC and custom time-series analysis.'],
+                        ['<code>*_summary.csv</code>', 'One row per ROI containing the main NOR metrics.'],
+                        ['<code>*_bins.csv</code>', 'Fixed-width time-bin summary of movement and exploration dynamics.'],
+                        ['<code>*_report.txt</code>', 'Human-readable report generated from the summary.'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', 'Per-ROI occupancy heatmaps and trajectory maps, with grid versions when multiple ROIs exist.']
+                    ],
+                    trackTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Used for provenance in batch outputs.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI identifier and name.', 'Separates different arenas inside the same video.'],
+                            ['<code>frame</code> / <code>time_s</code>', 'Original frame index and absolute video time.', 'Useful for jumping back to the result video.'],
+                            ['<code>window_time_s</code>', 'Relative time within the active statistics window; blank outside the window.', 'Used for bins and within-window time-series analysis.'],
+                            ['<code>detected</code> / <code>in_stats_window</code>', 'Whether the mouse was detected and whether the frame belongs to the statistics window.', 'Only in-window frames contribute to summary and bins.'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', 'Perspective-corrected centimeter coordinates in the arena.', 'These are not pixel coordinates.'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code> / <code>cumulative_distance_cm</code>', 'Speed, single-step displacement, and cumulative path length.', 'Directly usable for spatial behavior analysis if tracking is stable.'],
+                            ['<code>in_center</code>', 'Whether the frame lies in the center zone.', 'Matches the center metrics in summary.'],
+                            ['<code>zone_label</code>', 'Current spatial/exploration label.', 'Typical values are <code>Arena</code>, <code>Near object-name</code>, <code>Exploring object-name</code>, and <code>Unknown</code>.'],
+                            ['<code>current_object</code>', 'Name of the currently explored object.', 'Blank when no exploration is assigned.'],
+                            ['<code>nose_x_cm</code> / <code>nose_y_cm</code>', 'Estimated nose position in centimeter coordinates.', 'Only populated when head estimation succeeds.'],
+                            ['<code>head_direction_confidence</code>', 'Confidence of the head-direction estimate.', 'Helps determine whether head gating was trustworthy.'],
+                            ['<code>head_direction_confident</code>', 'Whether confidence reached the gating threshold on that frame.', 'When true, head-direction gating may actively shape exploration assignment.'],
+                            ['<code>exploration_mode</code>', 'Which exploration logic was used on that frame.', 'Common values are <code>head</code>, <code>fallback</code>, <code>proximity</code>, or blank.'],
+                            ['<code>object_1_name</code> / <code>object_2_name</code>', 'Names of the two objects.', 'Taken from the calibration page.'],
+                            ['<code>object_1_role</code> / <code>object_2_role</code>', 'Roles of the two objects.', 'In recognition, these are usually familiar and novel.'],
+                            ['<code>object_1_distance_cm</code> / <code>object_2_distance_cm</code>', 'Minimum contour-to-object-center distance.', 'Used for interaction-zone proximity.'],
+                            ['<code>object_1_nose_distance_cm</code> / <code>object_2_nose_distance_cm</code>', 'Estimated nose-to-object-center distance.', 'More important when head-direction assist is active.'],
+                            ['<code>object_1_head_angle_deg</code> / <code>object_2_head_angle_deg</code>', 'Angular difference between the head direction and the object direction.', 'Smaller values usually mean the mouse is facing the object more directly.'],
+                            ['<code>object_1_near</code> / <code>object_2_near</code>', 'Whether the frame lies inside each object’s interaction radius.', 'This makes the frame a candidate for exploration, but not necessarily confirmed exploration.'],
+                            ['<code>object_1_head_aligned</code> / <code>object_2_head_aligned</code>', 'Whether head direction is aligned with each object.', 'Only meaningful when head estimation is valid.'],
+                            ['<code>object_1_exploring</code> / <code>object_2_exploring</code>', 'Whether that frame is finally assigned as exploration of the respective object.', 'These are the final exploration-assignment columns.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Used for provenance across files.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI identifier and name.', 'One row per ROI.'],
+                            ['<code>phase</code>', 'Experimental phase used by that ROI.', 'Determines which preference metrics are exported.'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'Time mode and time bounds used by the ROI.', 'Important for tracking which part of the video was summarized.'],
+                            ['<code>analysis_window_start_s</code>', 'Actual start of the analysis window.', 'Useful for aligning relative within-window time.'],
+                            ['<code>total_time_s</code>', 'Total analyzed duration.', 'Only counts the active ROI window.'],
+                            ['<code>detected_frames</code> / <code>detected_rate_percent</code>', 'Detected frames and detection rate.', 'Very important QC metrics.'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', 'Total distance, mean speed, and maximum speed.', 'Based on perspective-corrected centimeter trajectories.'],
+                            ['<code>center_time_s</code> / <code>center_percent</code> / <code>center_entries</code> / <code>center_latency_s</code>', 'Center occupancy, entries, and latency.', 'Auxiliary spatial behavior outputs.'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code>', 'Movement and immobility time based on the movement threshold.', 'Pure speed-based state, separate from exploration logic.'],
+                            ['<code>interaction_radius_cm</code> / <code>exploration_max_speed_cm_s</code> / <code>movement_threshold_cm_s</code> / <code>min_valid_exploration_s</code>', 'Key decision parameters recorded into the summary.', 'Useful for provenance.'],
+                            ['<code>use_head_direction</code> / <code>head_angle_threshold_deg</code> / <code>head_confidence_threshold</code>', 'Head-direction-assistance settings.', 'Useful for provenance.'],
+                            ['<code>head_estimated_rate_percent</code> / <code>head_confident_rate_percent</code>', 'How often head direction was estimated at all, and how often it was confident enough.', 'Helps quantify how much head-direction logic really participated.'],
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', 'Real arena dimensions used for correction.', 'Define centimeter-space scaling.'],
+                            ['<code>object_1_name</code> / <code>object_2_name</code>', 'Object names.', 'Taken from calibration.'],
+                            ['<code>object_1_role</code> / <code>object_2_role</code>', 'Object roles.', 'Usually familiar and novel in recognition.'],
+                            ['<code>object_1_exploration_s</code> / <code>object_2_exploration_s</code>', 'Total exploration time assigned to each object.', 'Final exploration totals after all gating logic.'],
+                            ['<code>object_1_zone_time_s</code> / <code>object_2_zone_time_s</code>', 'Total time spent inside each object interaction radius.', 'Interaction-zone time is not the same as true exploration time.'],
+                            ['<code>object_1_zone_entries</code> / <code>object_2_zone_entries</code>', 'Number of entries into each interaction zone.', 'Describes approach frequency.'],
+                            ['<code>object_1_bouts</code> / <code>object_2_bouts</code>', 'Exploration bout counts.', 'Counted from exploration-start events.'],
+                            ['<code>object_1_latency_s</code> / <code>object_2_latency_s</code>', 'Latency to first exploration of each object.', 'Measured from the ROI analysis-window start.'],
+                            ['<code>total_object_exploration_s</code>', 'Total exploration time across both objects.', 'Core total-exploration output.'],
+                            ['<code>head_supported_exploration_s</code>', 'Exploration time confirmed with confident head-direction support.', 'Shows how much exploration was validated by head gating.'],
+                            ['<code>fallback_exploration_s</code>', 'Exploration time assigned via fallback distance rules because head confidence was insufficient.', 'If this is very high, head-direction assist was not contributing much in practice.'],
+                            ['<code>meets_min_exploration</code>', 'Whether total exploration reached the minimum valid threshold.', 'QC flag, not a final verdict.'],
+                            ['<code>first_explored_object</code> / <code>first_explored_role</code>', 'The first object and role explored.', 'Useful for first-choice analysis.'],
+                            ['<code>familiar_exploration_s</code> / <code>novel_exploration_s</code>', 'Role-wise exploration time in recognition.', 'Only present in recognition phase.'],
+                            ['<code>discrimination_index</code>', 'Recognition-phase DI = (novel - familiar) / (novel + familiar).', 'Usually ranges between -1 and 1.'],
+                            ['<code>preference_index_percent</code>', 'Recognition-phase novel exploration as a percent of total role exploration.', 'Around 50% suggests no clear novel preference.'],
+                            ['<code>difference_seconds</code>', 'Recognition-phase difference between novel and familiar exploration time.', 'Positive values mean more novel exploration.'],
+                            ['<code>novel_preference</code>', 'Whether novel exploration exceeded familiar exploration.', 'Boolean quick-screening field.'],
+                            ['<code>object_balance_index</code>', 'Familiarization-phase balance index between the two objects.', 'Only present in familiarization; values near 0 are more balanced.']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code> / <code>roi_id</code> / <code>roi_name</code>', 'Which video and ROI the bin belongs to.', 'Group by these before plotting time series.'],
+                            ['<code>bin_index</code> / <code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', 'Time-bin index and duration metadata.', 'The last bin may be shorter than the requested duration.'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', 'Distance and average speed within the bin.', 'Useful for movement dynamics over time.'],
+                            ['<code>center_time_s</code> / <code>moving_time_s</code>', 'Center occupancy and movement time within the bin.', 'Provides spatial and locomotor dynamics over time.'],
+                            ['<code>object_1_exploration_s</code> / <code>object_2_exploration_s</code>', 'Per-object exploration time inside the bin.', 'Useful for exploration-time curves.'],
+                            ['<code>total_object_exploration_s</code>', 'Total exploration time inside the bin.', 'Tracks global exploration dynamics.'],
+                            ['<code>familiar_exploration_s</code> / <code>novel_exploration_s</code>', 'Role-wise bin exploration time in recognition.', 'Only present in recognition phase.'],
+                            ['<code>discrimination_index</code> / <code>preference_index_percent</code>', 'Recognition-phase preference metrics computed per time bin.', 'Useful for checking whether preference strengthens or decays over time.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'How to read exploration_mode', '<code>head</code> means confident head-direction gating passed; <code>fallback</code> means head confidence was too low so distance rules were used; <code>proximity</code> means head-direction assist was disabled and only distance rules were used.']
+                    ]
+                },
+                batch: {
+                    title: 'Batch workflow',
+                    lead: 'NOR now supports full per-video configuration followed by one combined batch run. The correct workflow is to finish phase, arena, object, mask, time-window, and tuning setup for every video before starting analysis.',
+                    steps: [
+                        'Upload multiple NOR videos and set the global time range, FPS override, and output directory.',
+                        'Switch through videos one by one and set phase, arena width and height, then complete 4-corner plus 2-object calibration for every ROI in that video.',
+                        'Fill object names, roles, and ROI names, and draw detection masks where needed.',
+                        'Set the proper time mode and precise time window for each ROI.',
+                        'Move to the tuning step and adjust detection, spatial, and exploration parameters for the current video until all ROIs in that video preview cleanly.',
+                        'Repeat for every video until all are fully configured.',
+                        'Start the batch. The system processes videos sequentially and stores each video in its own child folder.'
+                    ],
+                    rules: [
+                        'In batch mode, each video stores its own phase, arena size, ROI geometry, object points, masks, time windows, and tuning parameters.',
+                        'Multiple ROIs inside the same video still share one tuning set.',
+                        'If a video is missing arena points, object points, or valid mask configuration, the batch is blocked before start.',
+                        'ZIP downloads preserve one child directory per video.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common issues and troubleshooting',
+                    lead: 'The hardest part of NOR is not merely detecting the mouse. It is separating “being near an object” from “truly exploring an object.” Troubleshooting should therefore look at distance, head direction, and object geometry together.',
+                    items: [
+                        'If total exploration is much lower than expected, first check whether interaction radius is too small, exploration max speed is too low, or head-direction constraints are too strict.',
+                        'If the mouse is often near an object but not counted as exploring it, inspect head-direction confidence, head-angle threshold, and whether the object point really sits at the object center.',
+                        'If exploration assignment jumps between objects, check whether the objects are too close together, interaction zones overlap too strongly, or object centers are misplaced.',
+                        'If <code>head_supported_exploration_s</code> is very low while fallback time is high, head-direction assist is contributing very little in practice, usually because contours are unstable, reflections are severe, or the confidence threshold is too high.',
+                        'If <code>meets_min_exploration</code> is false, preference metrics should be interpreted more cautiously because total exploration volume is low.'
+                    ],
+                    callouts: [
+                        ['danger', 'When result videos must be reviewed', 'If DI or preference index conflicts with visual impression, or if head-direction rates are low, total exploration is insufficient, or object assignment switches frequently, summary alone is not enough. Review the result video and <code>track.csv</code>.']
+                    ]
+                }
+            }
         }
-    });
-}
+    };
 
-document.addEventListener('DOMContentLoaded', applyNorManualLang);
-document.addEventListener('mousescope:langchange', applyNorManualLang);
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function render(lang) {
+        const copy = NOR_MANUAL[lang] || NOR_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('nor-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow(copy.flow)}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        ${renderBlocks(s.calibration.blocks)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Phase and time-window definitions' : '阶段与时间窗定义'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                        ${renderCallouts(s.calibration.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-search" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-brain" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Exploration and statistics parameters' : '探索与统计参数'}</span></div>
+                        ${window.manualRenderTable(s.params.statsTable.headers, s.params.statsTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.trackTable.headers, s.outputs.trackTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_bins.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.binsTable.headers, s.outputs.binsTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
 </script>

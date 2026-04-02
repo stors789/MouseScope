@@ -51,6 +51,19 @@
             <p class="text-info mt-2"><i class="fas fa-lightbulb me-1"></i><span data-i18n="calib.instr.p3">如果没有老鼠可以标定，可以直接跳过进入下一步(使用默认比例)</span></p>
         </div>
 
+        {% if is_batch %}
+        <div class="row align-items-center mb-4">
+            <div class="col-auto"><label class="form-label" data-i18n="calib.roi.preview.label">预览视频:</label></div>
+            <div class="col">
+                <select class="form-select batch-video-selector" id="videoSelectorCalibration" onchange="onVideoChange(this.value)">
+                    {% for video in video_list %}
+                    <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="row align-items-center mb-4">
             <div class="col-auto"><label class="form-label" data-i18n="calib.frame.label">选择帧:</label></div>
             <div class="col"><input type="range" class="form-range" id="frameSlider" min="0" max="1000" value="0"
@@ -99,7 +112,7 @@
         <div class="row align-items-center mb-4">
             <div class="col-auto"><label class="form-label" data-i18n="calib.roi.preview.label">预览视频:</label></div>
             <div class="col">
-                <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                <select class="form-select batch-video-selector" id="videoSelector" onchange="onVideoChange(this.value)">
                     {% for video in video_list %}
                     <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
                     {% endfor %}
@@ -262,6 +275,7 @@
 <script>
     const sessionId = '{{ session_id }}';
     const videoInfo = {{ video_info | tojson }};
+    const videoInfoList = {{ video_info_list | tojson }};
     const isBatch = {{ is_batch | tojson }};
     {% if video_list %}
     const videoList = {{ video_list | tojson }};
@@ -269,25 +283,198 @@
     const videoList = [];
     {% endif %}
 
+    const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
     let firstFrame = null;
     let currentFrameIdx = 0;
     let currentVideoIdx = 0;
+    let currentVideoInfo = videoInfoList[0] || videoInfo;
     let calibPoints = [];
     let pixelToMm = null;
     let rois = [];
     let currentROI = [];
     let isDrawingROI = false;
     let debugFrame = null;
+    function defaultDebugParams() {
+        return {
+            bg_method: 'threshold',
+            bg_type: 'light',
+            gray_threshold: 127,
+            erosion_kernel: 3,
+            erosion_iter: 2,
+            dilation_kernel: 5,
+            dilation_iter: 3,
+            min_area: 100,
+        };
+    }
+    function readDebugParamsFromControls() {
+        return {
+            bg_method: document.getElementById('bgMethod')?.value || 'threshold',
+            bg_type: document.getElementById('bgType')?.value || 'light',
+            gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+            erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
+            erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '2', 10),
+            dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
+            dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '3', 10),
+            min_area: parseInt(document.getElementById('minArea')?.value || '100', 10),
+        };
+    }
+    function applyDebugParamsToControls(params) {
+        const merged = { ...defaultDebugParams(), ...(params || {}) };
+        const bgMethod = document.getElementById('bgMethod');
+        const bgType = document.getElementById('bgType');
+        const grayThreshold = document.getElementById('grayThreshold');
+        const erosionKernel = document.getElementById('erosionKernel');
+        const erosionIter = document.getElementById('erosionIter');
+        const dilationKernel = document.getElementById('dilationKernel');
+        const dilationIter = document.getElementById('dilationIter');
+        const minArea = document.getElementById('minArea');
+        if (bgMethod) bgMethod.value = merged.bg_method;
+        if (bgType) bgType.value = merged.bg_type;
+        if (grayThreshold) grayThreshold.value = String(merged.gray_threshold);
+        if (erosionKernel) erosionKernel.value = String(merged.erosion_kernel);
+        if (erosionIter) erosionIter.value = String(merged.erosion_iter);
+        if (dilationKernel) dilationKernel.value = String(merged.dilation_kernel);
+        if (dilationIter) dilationIter.value = String(merged.dilation_iter);
+        if (minArea) minArea.value = String(merged.min_area);
+        toggleDetectionParams();
+        ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(id => {
+            const el = document.getElementById(id);
+            const valEl = document.getElementById(id + 'Val');
+            if (el && valEl) valEl.textContent = el.value;
+        });
+    }
+    let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
+        calib_points: [],
+        pixel_to_mm: null,
+        rois: [],
+        current_roi: [],
+        is_drawing_roi: false,
+        debug_params: defaultDebugParams(),
+    }));
 
     let _debounceTimers = {};
     function debounce(key, fn, delay) { clearTimeout(_debounceTimers[key]); _debounceTimers[key] = setTimeout(fn, delay); }
+    function cloneState(value) { return JSON.parse(JSON.stringify(value)); }
+    function currentTotalFrames() {
+        return Math.max(0, ((currentVideoInfo && currentVideoInfo.total_frames) || videoInfo.total_frames || 1) - 1);
+    }
+    function frameLabelText(current, total) {
+        const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+        const prefix = lang === 'en' ? 'Frame' : '帧';
+        return `${prefix} ${current} / ${total}`;
+    }
+    function currentVideoName(index) {
+        return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`;
+    }
+    function calibTr(key, fallback) {
+        const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+        if (typeof I18N !== 'undefined' && I18N[lang] && I18N[lang][key] !== undefined) {
+            return I18N[lang][key];
+        }
+        return fallback;
+    }
+    function calibFormat(key, values = [], fallback = '') {
+        let text = calibTr(key, fallback);
+        values.forEach((value, index) => {
+            text = text.replaceAll(`{${index}}`, value);
+        });
+        return text;
+    }
+    function ensureVideoConfig(index) {
+        if (!videoConfigs[index]) {
+            videoConfigs[index] = {
+                calib_points: [],
+                pixel_to_mm: null,
+                rois: [],
+                current_roi: [],
+                is_drawing_roi: false,
+                debug_params: defaultDebugParams(),
+            };
+        }
+        return videoConfigs[index];
+    }
+    function persistCurrentVideoState() {
+        const config = ensureVideoConfig(currentVideoIdx);
+        config.calib_points = cloneState(calibPoints);
+        config.pixel_to_mm = pixelToMm;
+        config.rois = cloneState(rois);
+        config.current_roi = cloneState(currentROI);
+        config.is_drawing_roi = Boolean(isDrawingROI);
+        config.debug_params = readDebugParamsFromControls();
+    }
+    function refreshCalibrationInfo() {
+        const info = document.getElementById('calibInfo');
+        const confirmBtn = document.getElementById('confirmCalibBtn');
+        if (confirmBtn) confirmBtn.disabled = calibPoints.length < 2;
+        if (!info) return;
+        if (pixelToMm === null) {
+            info.style.display = 'none';
+            return;
+        }
+        let dist = null;
+        if (calibPoints.length >= 2) {
+            const dx = calibPoints[1].x - calibPoints[0].x;
+            const dy = calibPoints[1].y - calibPoints[0].y;
+            dist = Math.sqrt(dx * dx + dy * dy);
+        }
+        document.getElementById('pixelDist').textContent = dist === null ? '-' : (dist.toFixed(1) + ' px');
+        document.getElementById('pixelToMm').textContent = pixelToMm.toFixed(4) + ' mm/px';
+        info.style.display = 'block';
+    }
+    function syncVideoSelectors() {
+        document.querySelectorAll('.batch-video-selector').forEach(select => {
+            select.value = String(currentVideoIdx);
+            Array.from(select.options).forEach((option, index) => {
+                const config = ensureVideoConfig(index);
+                const ready = config.pixel_to_mm !== null && Array.isArray(config.rois) && config.rois.length > 0;
+                option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
+            });
+        });
+    }
+    function syncFrameControls() {
+        const totalFrames = currentTotalFrames();
+        [
+            ['frameSlider', 'frameLabel'],
+            ['frameSliderROI', 'frameLabelROI'],
+            ['frameSliderDebug', 'frameLabelDebug'],
+        ].forEach(([sliderId, labelId]) => {
+            const slider = document.getElementById(sliderId);
+            const label = document.getElementById(labelId);
+            if (!slider) return;
+            slider.max = totalFrames;
+            if (parseInt(slider.value || '0', 10) > totalFrames) {
+                slider.value = String(totalFrames);
+            }
+            if (label) {
+                label.textContent = frameLabelText(slider.value || 0, totalFrames);
+            }
+        });
+    }
+    function applyCurrentVideoState() {
+        const config = ensureVideoConfig(currentVideoIdx);
+        calibPoints = cloneState(config.calib_points || []);
+        pixelToMm = config.pixel_to_mm === undefined ? null : config.pixel_to_mm;
+        rois = cloneState(config.rois || []);
+        currentROI = cloneState(config.current_roi || []);
+        isDrawingROI = Boolean(config.is_drawing_roi);
+        applyDebugParamsToControls(config.debug_params);
+        refreshCalibrationInfo();
+        updateROIList();
+        const finishBtn = document.getElementById('finishROIBtn');
+        const nextBtn = document.getElementById('nextToDebugBtn');
+        if (finishBtn) finishBtn.disabled = currentROI.length < 3;
+        if (nextBtn) nextBtn.disabled = rois.length === 0;
+        persistCurrentVideoState();
+        syncFrameControls();
+        syncVideoSelectors();
+    }
 
     window.onload = function () {
-        const totalFrames = videoInfo.total_frames - 1;
-        const slider = document.getElementById('frameSlider');
-        if (slider) slider.max = totalFrames;
+        syncVideoSelectors();
+        applyCurrentVideoState();
+        const totalFrames = currentTotalFrames();
         const label = document.getElementById('frameLabel');
-        if (label) label.textContent = `帧 0 / ${totalFrames}`;
+        if (label) label.textContent = frameLabelText(0, totalFrames);
         loadFrame(0);
         updateStepStatus(1);
     };
@@ -297,6 +484,12 @@
             .then(r => r.json())
             .then(data => {
                 if (data.error) { showSessionError(data.error); return; }
+                currentFrameIdx = parseInt(data.frame_idx || frameIdx || 0, 10);
+                if (data.video_info) {
+                    currentVideoInfo = data.video_info;
+                    videoInfoList[currentVideoIdx] = data.video_info;
+                    syncFrameControls();
+                }
                 const img = new Image();
                 img.onload = function () {
                     firstFrame = img;
@@ -309,7 +502,11 @@
     }
 
     function showSessionError(msg) {
-        alert('会话错误: ' + msg + '\n请返回首页重新上传');
+        alert(
+            calibFormat('calib.alert.session_error', [msg], 'Session error: {0}') +
+            '\n' +
+            calibTr('calib.alert.session_retry', 'Please return to the home page and upload again.')
+        );
         window.location.href = '/';
     }
 
@@ -345,8 +542,9 @@
                 const y = (e.clientY - rect.top) * scaleY;
                 if (calibPoints.length < 2) {
                     calibPoints.push({ x: Math.round(x), y: Math.round(y) });
+                    persistCurrentVideoState();
                     drawCalibCanvas();
-                    if (calibPoints.length === 2) document.getElementById('confirmCalibBtn').disabled = false;
+                    refreshCalibrationInfo();
                 }
             });
         }
@@ -361,6 +559,7 @@
                 const x = Math.round((e.clientX - rect.left) * scaleX);
                 const y = Math.round((e.clientY - rect.top) * scaleY);
                 currentROI.push({ x, y });
+                persistCurrentVideoState();
                 drawROICanvas();
                 if (currentROI.length >= 3) document.getElementById('finishROIBtn').disabled = false;
             });
@@ -382,8 +581,9 @@
     function clearCalibration() {
         calibPoints = [];
         pixelToMm = null;
-        document.getElementById('confirmCalibBtn').disabled = true;
-        document.getElementById('calibInfo').style.display = 'none';
+        refreshCalibrationInfo();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawCalibCanvas();
     }
 
@@ -393,21 +593,25 @@
         const dy = calibPoints[1].y - calibPoints[0].y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         pixelToMm = 60.0 / dist; // 标准体长 60mm
-        document.getElementById('pixelDist').textContent = dist.toFixed(1) + ' px';
-        document.getElementById('pixelToMm').textContent = pixelToMm.toFixed(4) + ' mm/px';
-        document.getElementById('calibInfo').style.display = 'block';
+        refreshCalibrationInfo();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         updateStepStatus(1, true);
         goToStep(2);
     }
 
     function skipCalibration() {
         pixelToMm = 1.0;
+        refreshCalibrationInfo();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         updateStepStatus(1, true);
         goToStep(2);
     }
 
     function onFrameSliderChange(val) {
-        document.getElementById('frameLabel').textContent = `帧 ${val} / ${videoInfo.total_frames - 1}`;
+        syncFrameControls();
+        document.getElementById('frameLabel').textContent = frameLabelText(val, currentTotalFrames());
         debounce('frameSlider', () => loadFrame(parseInt(val)), 200);
     }
 
@@ -486,6 +690,8 @@
         isDrawingROI = false;
         document.getElementById('finishROIBtn').disabled = true;
         updateROIList();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawROICanvas();
         if (rois.length > 0) document.getElementById('nextToDebugBtn').disabled = false;
     }
@@ -495,12 +701,14 @@
         currentROI = [];
         isDrawingROI = true;
         document.getElementById('finishROIBtn').disabled = true;
+        persistCurrentVideoState();
     }
 
     function clearLastPoint() {
         if (currentROI.length > 0) {
             currentROI.pop();
             if (currentROI.length < 3) document.getElementById('finishROIBtn').disabled = true;
+            persistCurrentVideoState();
             drawROICanvas();
         }
     }
@@ -510,12 +718,16 @@
         document.getElementById('finishROIBtn').disabled = true;
         document.getElementById('nextToDebugBtn').disabled = true;
         updateROIList();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawROICanvas();
     }
 
     function deleteROI(idx) {
         rois.splice(idx, 1);
         updateROIList();
+        persistCurrentVideoState();
+        syncVideoSelectors();
         drawROICanvas();
         if (rois.length === 0) document.getElementById('nextToDebugBtn').disabled = true;
     }
@@ -609,6 +821,8 @@
             `;
             list.appendChild(item);
         });
+        persistCurrentVideoState();
+        syncVideoSelectors();
     }
 
     // ROI设置辅助函数
@@ -624,6 +838,7 @@
             const points = rois[index];
             rois[index] = { points: points, name: value, time_config: { mode: 'global', start: 0, end: 0 } };
         }
+        persistCurrentVideoState();
         drawROICanvas();
     }
 
@@ -655,18 +870,21 @@
     }
 
     function onROIFrameSliderChange(val) {
-        document.getElementById('frameLabelROI').textContent = `帧 ${val} / ${videoInfo.total_frames - 1}`;
+        document.getElementById('frameLabelROI').textContent = frameLabelText(val, currentTotalFrames());
         debounce('roiSlider', () => loadFrame(parseInt(val), () => drawROICanvas()), 200);
     }
 
     function onVideoChange(idx) {
-        currentVideoIdx = parseInt(idx);
+        persistCurrentVideoState();
+        currentVideoIdx = parseInt(idx, 10) || 0;
+        currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+        applyCurrentVideoState();
         loadFrame(0, () => drawROICanvas());
     }
 
     function goToDebugStep() {
         if (currentROI.length >= 3) finishCurrentROI();
-        if (rois.length === 0) { alert('请至少绘制一个 ROI'); return; }
+        if (rois.length === 0) { alert(calibTr('calib.alert.need_roi', 'Please draw at least one ROI.')); return; }
         updateStepStatus(2, true);
         goToStep(3);
         updateDebugPreview();
@@ -674,7 +892,7 @@
 
     // === 步骤3: 调试 ===
     function onDebugFrameSliderChange(val) {
-        document.getElementById('frameLabelDebug').textContent = `帧 ${val} / ${videoInfo.total_frames - 1}`;
+        document.getElementById('frameLabelDebug').textContent = frameLabelText(val, currentTotalFrames());
         debounce('debugSlider', () => updateDebugPreview(parseInt(val)), 200);
     }
 
@@ -688,6 +906,7 @@
         if (frameIdx === undefined) {
             frameIdx = parseInt(document.getElementById('frameSliderDebug').value);
         }
+        persistCurrentVideoState();
         // 更新滑块标签值
         ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(id => {
             const el = document.getElementById(id);
@@ -735,10 +954,70 @@
         img.src = 'data:image/jpeg;base64,' + base64Data;
     }
 
+    function normalizeRoisForPayload(sourceRois) {
+        return (sourceRois || []).map(roi => {
+            if (!roi.points) {
+                return {
+                    points: roi,
+                    name: 'ROI',
+                    time_config: { mode: 'global', start: 0, end: 0 }
+                };
+            }
+            const newRoi = cloneState(roi);
+            if (newRoi.time_config && newRoi.time_config.mode !== 'global') {
+                newRoi.time_config.start = (newRoi.time_config.start || 0);
+                newRoi.time_config.end = (newRoi.time_config.end || 0);
+            }
+            return newRoi;
+        });
+    }
+
     let isAnalysisStarting = false;
 
     function startAnalysis() {
         if (isAnalysisStarting) return;
+        persistCurrentVideoState();
+        const processedROIs = normalizeRoisForPayload(rois);
+        const currentDebugParams = readDebugParamsFromControls();
+        const perVideoConfigs = videoConfigs.map((cfg, index) => ({
+            ...defaultDebugParams(),
+            ...(cfg.debug_params || (index === currentVideoIdx ? currentDebugParams : {})),
+            pixel_to_mm: cfg.pixel_to_mm !== null ? cfg.pixel_to_mm : ((index === currentVideoIdx ? pixelToMm : null) || 1.0),
+            rois: normalizeRoisForPayload(cfg.rois || []),
+        }));
+        if (isBatch) {
+            const incomplete = [];
+            perVideoConfigs.forEach((cfg, index) => {
+                if (ensureVideoConfig(index).pixel_to_mm === null) {
+                    incomplete.push(
+                        calibFormat(
+                            'calib.alert.batch_missing_calibration',
+                            [index + 1, currentVideoName(index)],
+                            '{0}. {1}: body-length calibration is not finished yet'
+                        )
+                    );
+                }
+                if (!cfg.rois.length) {
+                    incomplete.push(
+                        calibFormat(
+                            'calib.alert.batch_missing_roi',
+                            [index + 1, currentVideoName(index)],
+                            '{0}. {1}: ROI setup is not finished yet'
+                        )
+                    );
+                }
+            });
+            if (incomplete.length > 0) {
+                alert(
+                    calibFormat(
+                        'calib.alert.batch_incomplete',
+                        [incomplete.join('\n')],
+                        'Before starting batch analysis, please finish calibration and ROI setup for every video:\n{0}'
+                    )
+                );
+                return;
+            }
+        }
         isAnalysisStarting = true;
 
         // 禁用所有可能触发预览的控件
@@ -752,33 +1031,18 @@
         });
 
         // 处理ROI的时间配置（深拷贝保留time_config）
-        const processedROIs = rois.map(roi => {
-            if (!roi.points) {
-                return {
-                    points: roi,
-                    name: 'ROI',
-                    time_config: { mode: 'global', start: 0, end: 0 }
-                };
-            }
-            const newRoi = JSON.parse(JSON.stringify(roi));
-            if (newRoi.time_config && newRoi.time_config.mode !== 'global') {
-                newRoi.time_config.start = (newRoi.time_config.start || 0);
-                newRoi.time_config.end = (newRoi.time_config.end || 0);
-            }
-            return newRoi;
-        });
-
         const body = {
-            bg_method: document.getElementById('bgMethod').value,
-            gray_threshold: parseInt(document.getElementById('grayThreshold').value),
-            bg_type: document.getElementById('bgType').value,
-            erosion_kernel: parseInt(document.getElementById('erosionKernel').value),
-            erosion_iter: parseInt(document.getElementById('erosionIter').value),
-            dilation_kernel: parseInt(document.getElementById('dilationKernel').value),
-            dilation_iter: parseInt(document.getElementById('dilationIter').value),
-            min_area: parseInt(document.getElementById('minArea').value),
+            bg_method: currentDebugParams.bg_method,
+            gray_threshold: currentDebugParams.gray_threshold,
+            bg_type: currentDebugParams.bg_type,
+            erosion_kernel: currentDebugParams.erosion_kernel,
+            erosion_iter: currentDebugParams.erosion_iter,
+            dilation_kernel: currentDebugParams.dilation_kernel,
+            dilation_iter: currentDebugParams.dilation_iter,
+            min_area: currentDebugParams.min_area,
             pixel_to_mm: pixelToMm || 1.0,
             rois: processedROIs,
+            per_video_configs: perVideoConfigs,
             generate_video: document.getElementById('generateVideo').checked,
         };
 
@@ -796,13 +1060,19 @@
                 } else {
                     isAnalysisStarting = false;
                     document.getElementById('loading').style.display = 'none';
-                    alert('启动分析失败: ' + (data.error || '未知错误'));
+                    alert(
+                        calibFormat(
+                            'calib.alert.start_failed',
+                            [data.error || calibTr('calib.alert.unknown_error', 'Unknown error')],
+                            'Failed to start analysis: {0}'
+                        )
+                    );
                 }
             })
             .catch(e => {
                 isAnalysisStarting = false;
                 document.getElementById('loading').style.display = 'none';
-                alert('请求失败: ' + e);
+                alert(calibFormat('calib.alert.request_failed', [e], 'Request failed: {0}'));
             });
     }
 
@@ -813,13 +1083,13 @@
         if (step === 2) {
             document.getElementById('roi-step').style.display = 'block';
             const s2 = document.getElementById('frameSliderROI');
-            if (s2) s2.max = videoInfo.total_frames - 1;
+            if (s2) s2.max = currentTotalFrames();
             loadFrame(0, () => drawROICanvas());
         }
         if (step === 3) {
             document.getElementById('debug-step').style.display = 'block';
             const s3 = document.getElementById('frameSliderDebug');
-            if (s3) s3.max = videoInfo.total_frames - 1;
+            if (s3) s3.max = currentTotalFrames();
         }
         updateStepStatus(step);
     }
