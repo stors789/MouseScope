@@ -3,131 +3,242 @@
 
 {% block extra_css %}
 <style>
+.home-shell { max-width: 1440px; margin: 0 auto; }
 .hero-banner {
-    background: var(--primary-dark);
-    color: #fff;
-    text-align: center;
-    padding: 4rem 2rem;
-    border-radius: var(--radius-card);
-    margin-bottom: 2.5rem;
-    box-shadow: 0 4px 20px rgba(30, 58, 95, 0.15);
+    position: relative;
+    overflow: hidden;
+    padding: 3rem;
+    border-radius: 32px;
+    margin-bottom: 2rem;
+    border: 1px solid rgba(201, 100, 66, 0.16);
+    background:
+        radial-gradient(circle at top left, rgba(217, 119, 87, 0.18), transparent 28%),
+        radial-gradient(circle at right 16%, rgba(201, 100, 66, 0.14), transparent 26%),
+        linear-gradient(135deg, rgba(255, 249, 243, 0.98), rgba(246, 238, 228, 0.95));
+    box-shadow: 0 22px 48px rgba(52, 34, 20, 0.08);
 }
-.hero-logo {
-    height: 80px;
-    width: auto;
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
-    border-radius: 16px;
-}
-.hero-banner h1 {
-    font-size: 2.25rem;
-    font-weight: 700;
-    margin-bottom: 0.75rem;
-}
-.hero-banner .hero-subtitle {
-    font-size: 1rem;
-    opacity: 0.95;
-    max-width: 520px;
-    margin: 0 auto 1.25rem;
-    line-height: 1.7;
-}
-.hero-banner .hero-version {
-    display: inline-block;
-    background: rgba(255,255,255,0.2);
-    padding: 0.25rem 0.75rem;
-    border-radius: 999px;
-    font-size: 0.8rem;
-    font-weight: 500;
-    margin-bottom: 1.5rem;
-}
-.hero-banner .btn {
-    padding: 0.6rem 1.5rem;
-    font-weight: 600;
-    border-radius: var(--radius-btn);
-    margin: 0 0.35rem;
-}
-.hero-banner .btn-primary {
-    background: #fff !important;
-    color: var(--primary-dark) !important;
-}
-.hero-banner .btn-primary:hover {
-    background: #f0f4f8 !important;
-    color: var(--primary-dark) !important;
-}
-.hero-banner .btn-outline-light {
-    border: 1px solid rgba(255,255,255,0.8);
-    color: #fff;
-    background: transparent;
-}
-.hero-banner .btn-outline-light:hover {
-    background: rgba(255,255,255,0.15);
-    color: #fff;
-}
-.feature-cards {
+.hero-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.85fr);
+    gap: 2rem;
+    align-items: center;
+    min-height: 520px;
 }
+.hero-copy {
+    width: 100%;
+    max-width: 620px;
+    margin-left: auto;
+    padding-right: 0.75rem;
+}
+.hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(201, 100, 66, 0.1);
+    color: #8d5738;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.hero-banner h1 { font-size: clamp(3rem, 5vw, 4.8rem); line-height: 1.02; margin-bottom: 0.8rem; }
+.hero-subtitle { font-size: 1.08rem; max-width: 640px; margin: 0 0 1rem; line-height: 1.8; color: var(--text-secondary); }
+.hero-version {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(255,255,255,0.72);
+    padding: 0.38rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #6b4a35;
+}
+.hero-note { color: var(--text-muted); line-height: 1.7; max-width: 620px; margin-bottom: 1.35rem; }
+.hero-actions { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+.hero-visual {
+    position: relative;
+    min-height: 430px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.hero-visual::before {
+    content: "";
+    position: absolute;
+    inset: 4% 4% 2%;
+    border-radius: 40px;
+    background:
+        radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.96), rgba(255, 248, 242, 0.7) 42%, transparent 72%),
+        linear-gradient(160deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.14));
+    border: 1px solid rgba(201, 100, 66, 0.12);
+}
+.hero-stage {
+    position: relative;
+    width: min(100%, 470px);
+    aspect-ratio: 1 / 1;
+    border-radius: 40px;
+    border: 1px solid rgba(201, 100, 66, 0.14);
+    background:
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.94), rgba(255, 246, 238, 0.7) 45%, transparent 74%),
+        radial-gradient(circle at top right, rgba(217, 119, 87, 0.14), transparent 28%),
+        radial-gradient(circle at left 80%, rgba(201, 100, 66, 0.1), transparent 30%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+}
+.hero-orbit {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px dashed rgba(201, 100, 66, 0.22);
+}
+.hero-orbit.orbit-one { inset: 12%; }
+.hero-orbit.orbit-two { inset: 24%; border-style: solid; border-color: rgba(201, 100, 66, 0.12); }
+.hero-core {
+    position: absolute;
+    inset: 50%;
+    transform: translate(-50%, -50%);
+    width: 210px;
+    height: 210px;
+    border-radius: 50%;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.95), rgba(252, 244, 236, 0.86));
+    border: 1px solid rgba(201, 100, 66, 0.16);
+    box-shadow:
+        0 18px 38px rgba(92, 60, 36, 0.12),
+        inset 0 1px 0 rgba(255,255,255,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.hero-core-logo {
+    width: 108px;
+    height: 108px;
+    border-radius: 28px;
+    background: rgba(255,255,255,0.92);
+    padding: 0.75rem;
+    box-shadow: 0 12px 24px rgba(92, 60, 36, 0.12);
+}
+.module-pill {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.48rem 0.8rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(201, 100, 66, 0.14);
+    box-shadow: 0 10px 24px rgba(92, 60, 36, 0.08);
+    color: #7a5136;
+    font-size: 0.84rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.module-pill i { color: var(--primary-color); font-size: 0.8rem; }
+.pill-tst { top: 12%; left: 8%; }
+.pill-oft { top: 18%; right: 5%; }
+.pill-nor { left: 3%; bottom: 28%; }
+.pill-epm { right: 10%; bottom: 16%; }
+.pill-ymaze { left: 50%; bottom: 7%; transform: translateX(-50%); }
+.feature-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .feature-card {
-    background: var(--bg-card);
+    background: rgba(250, 249, 245, 0.94);
     border: 1px solid var(--border-card);
-    border-radius: var(--radius-card);
-    padding: 1.5rem;
-    text-align: center;
-    transition: box-shadow 0.2s, border-color 0.2s;
+    border-radius: 24px;
+    padding: 1.4rem;
+    transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
 }
-.feature-card:hover {
-    box-shadow: 0 4px 12px rgba(30, 58, 95, 0.1);
-    border-color: rgba(37, 99, 235, 0.25);
+.feature-card:hover { box-shadow: var(--shadow-card-hover); border-color: rgba(201, 100, 66, 0.2); transform: translateY(-2px); }
+.feature-card .icon-wrap {
+    width: 3rem; height: 3rem; border-radius: 18px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(201, 100, 66, 0.1); color: var(--primary-color); margin-bottom: 1rem; font-size: 1.1rem;
 }
-.feature-card h5 {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
-}
-.feature-card p {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-    margin: 0;
-    line-height: 1.5;
+.feature-card h5 { font-size: 1.18rem; margin-bottom: 0.55rem; }
+.feature-card p { font-size: 0.94rem; color: var(--text-secondary); margin: 0; line-height: 1.75; }
+@media (max-width: 1100px) {
+    .hero-grid,
+    .feature-cards { grid-template-columns: 1fr; }
+    .hero-copy {
+        max-width: 720px;
+        margin: 0 auto;
+        padding-right: 0;
+        text-align: center;
+    }
+    .hero-subtitle,
+    .hero-note { margin-left: auto; margin-right: auto; }
+    .hero-actions { justify-content: center; }
 }
 @media (max-width: 576px) {
-    .hero-banner h1 { font-size: 1.75rem; }
-    .hero-banner { padding: 3rem 1rem; }
-    .hero-banner .btn { display: block; margin: 0.5rem auto; }
+    .hero-banner { padding: 2rem 1.2rem; border-radius: 26px; }
+    .hero-visual { min-height: 320px; }
+    .hero-core {
+        width: 170px;
+        height: 170px;
+    }
+    .hero-core-logo {
+        width: 88px;
+        height: 88px;
+    }
+    .module-pill {
+        font-size: 0.75rem;
+        padding: 0.38rem 0.65rem;
+    }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<section class="hero-banner">
-    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="MouseScope" class="hero-logo mb-3">
-    <h1>MouseScope</h1>
-    <p class="hero-subtitle">
-        面向小鼠行为学视频分析的桌面软件平台<br>
-        当前支持悬尾实验、旷场实验与新奇物体识别，并将持续扩展更多实验模块
-    </p>
-    <div class="hero-version"><span data-i18n="home.version">Desktop Edition v1.2.3 · 学术研究专用</span></div>
-    <div>
-        <a href="{{ url_for('upload_page') }}" class="btn btn-primary"><span data-i18n="home.btn.start">开始分析</span></a>
-        <a href="{{ url_for('manual') }}" class="btn btn-outline-light"><span data-i18n="home.btn.manual">查看手册</span></a>
-    </div>
-</section>
+<div class="home-shell">
+    <section class="hero-banner">
+        <div class="hero-grid">
+            <div class="hero-copy">
+                <div class="hero-kicker">MouseScope Desktop</div>
+                <h1>MouseScope</h1>
+                <p class="hero-subtitle" data-i18n="home.subtitle" data-i18n-html>
+                    面向小鼠行为学视频分析的桌面软件平台<br>
+                    当前支持悬尾实验、旷场实验、新奇物体识别、高架十字迷宫与 Y 迷宫
+                </p>
+                <div class="hero-version"><span data-i18n="home.version">Desktop Edition v2.0.0 · 学术研究专用</span></div>
+                <div class="hero-note" data-i18n="home.note">选择实验模块并上传视频后，按页面提示完成标定、ROI 和参数设置，即可导出结果视频、统计表、轨迹图与热图。</div>
+                <div class="hero-actions">
+                    <a href="{{ url_for('upload_page') }}" class="btn btn-primary btn-lg"><span data-i18n="home.btn.start">开始分析</span></a>
+                    <a href="{{ url_for('manual') }}" class="btn btn-outline-primary btn-lg"><span data-i18n="home.btn.manual">查看手册</span></a>
+                </div>
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+                <div class="hero-stage">
+                    <div class="hero-orbit orbit-one"></div>
+                    <div class="hero-orbit orbit-two"></div>
+                    <span class="module-pill pill-tst"><i class="fas fa-wave-square"></i>TST</span>
+                    <span class="module-pill pill-oft"><i class="fas fa-border-all"></i>Open Field</span>
+                    <span class="module-pill pill-nor"><i class="fas fa-object-group"></i>NOR</span>
+                    <span class="module-pill pill-epm"><i class="fas fa-plus"></i>EPM</span>
+                    <span class="module-pill pill-ymaze"><i class="fas fa-shuffle"></i>Y-Maze</span>
+                    <div class="hero-core">
+                        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" class="hero-core-logo">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
-<div class="feature-cards">
-    <div class="feature-card">
-        <h5 data-i18n="home.feature1.title">多实验入口</h5>
-        <p>统一实验入口，当前支持 TST、OFT 与 NOR，更多行为学实验模块将持续加入</p>
-    </div>
-    <div class="feature-card">
-        <h5 data-i18n="home.feature2.title">标定与配置</h5>
-        <p data-i18n="home.feature2.desc">支持体长标定、四角点场地标定、多 ROI 命名、时间窗与参数调试</p>
-    </div>
-    <div class="feature-card">
-        <h5 data-i18n="home.feature3.title">结果导出</h5>
-        <p data-i18n="home.feature3.desc">输出标注视频、轨迹图、热图、CSV 与报告，支持 ZIP 打包和结果目录直达</p>
+    <div class="feature-cards">
+        <div class="feature-card">
+            <div class="icon-wrap"><i class="fas fa-layer-group"></i></div>
+            <h5 data-i18n="home.feature1.title">多实验入口</h5>
+            <p data-i18n="home.feature1.desc">统一实验入口，当前支持 TST、OFT、NOR、EPM 与 Y-Maze，并保留一致的配置与结果流</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon-wrap"><i class="fas fa-pen-ruler"></i></div>
+            <h5 data-i18n="home.feature2.title">标定与配置</h5>
+            <p data-i18n="home.feature2.desc">支持体长标定、四角点场地标定、多 ROI 命名、时间窗与参数调试</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon-wrap"><i class="fas fa-chart-column"></i></div>
+            <h5 data-i18n="home.feature3.title">结果导出</h5>
+            <p data-i18n="home.feature3.desc">输出标注视频、轨迹图、热图、CSV 与报告，支持 ZIP 打包和结果目录直达</p>
+        </div>
     </div>
 </div>
 {% endblock %}

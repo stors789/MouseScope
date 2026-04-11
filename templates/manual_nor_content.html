@@ -11,7 +11,7 @@
             heroCards: [
                 ['fas fa-object-group', '每个 ROI 到底是什么', 'NOR 里每个 ROI 代表“一个 arena + 两个物体中心点”。arena 决定厘米坐标和中心区，物体点决定接近区、探索时间和偏好指标。'],
                 ['fas fa-crosshairs', '探索判定是怎么做的', '系统会先看是否进入物体交互半径、速度是否足够低，再在头向估计置信度足够时用头向门控；如果头向不够可靠，就回退到距离规则。'],
-                ['fas fa-layer-group', '批量模式现在怎么工作', '现在批量模式已支持每个视频独立保存 phase、arena 尺寸、ROI、物体点、遮罩和调参参数；但同一个视频内部的多个 ROI 仍共享这一视频的一套检测与统计参数。'],
+                ['fas fa-layer-group', '批量模式的使用规则', '每个视频都会独立保存 phase、arena 尺寸、ROI、物体点、遮罩和调参参数；但同一个视频内部的多个 ROI 仍共享这一视频的一套检测与统计参数。'],
             ],
             flow: ['视频采集要求', '上传与时间范围', 'arena 与物体标定', '阶段 / 角色 / 时间窗', '调参与预览', '结果与偏好指标'],
             nav: [
@@ -297,7 +297,7 @@
             heroCards: [
                 ['fas fa-object-group', 'What each ROI really means', 'In NOR, each ROI is “one arena plus two object centers.” The arena defines centimeter coordinates and center zone, while the object points define interaction zones, exploration time, and preference metrics.'],
                 ['fas fa-crosshairs', 'How exploration is actually judged', 'The system first checks interaction radius and low movement speed, then uses head-direction gating when head estimation is confident. If head confidence is too low, it falls back to distance-based logic.'],
-                ['fas fa-layer-group', 'How batch mode works now', 'Batch mode now stores phase, arena size, ROI geometry, object points, masks, and tuning parameters independently per video. Inside a single video, however, multiple ROIs still share one tuning set.'],
+                ['fas fa-layer-group', 'Batch workflow rule', 'Phase, arena size, ROI geometry, object points, masks, and tuning are stored per video. Inside a single video, however, multiple ROIs still share one tuning set.'],
             ],
             flow: ['Recording requirements', 'Upload and analysis range', 'Arena and object calibration', 'Phase / role / time window', 'Tuning and preview', 'Results and preference metrics'],
             nav: [

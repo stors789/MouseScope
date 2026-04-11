@@ -10,7 +10,7 @@
             heroChips: ['4 角点标定', '透视校正到厘米坐标', '每视频独立批量', 'track / summary / bins', '热图 + 轨迹图'],
             heroCards: [
                 ['fas fa-border-all', '模块真正输出的是什么', 'OFT 不只是“有无进中心区”。系统会在透视校正后的厘米坐标里统计距离、速度、中心区、壁区、移动 / 静止时间，并导出逐帧轨迹、分箱结果和图像。'],
-                ['fas fa-clone', '批量模式现在怎么工作', '现在批量模式已经支持每个视频独立保存 arena、遮罩、时间窗和调参参数；但在同一个视频内部，多 arena 仍共享这一视频的检测与统计参数。'],
+                ['fas fa-clone', '批量模式的使用规则', '每个视频都会独立保存 arena、遮罩、时间窗和调参参数；但在同一个视频内部，多 arena 仍共享这一视频的检测与统计参数。'],
                 ['fas fa-compass-drafting', '为什么 arena 角点这么重要', 'arena 四角不只是画个框。它决定透视矫正、厘米坐标、中心区位置、距离统计和热图坐标系，角点一旦偏，后面所有空间指标都会跟着偏。'],
             ],
             flow: ['视频采集要求', '上传与时间范围', 'arena 标定', 'ROI 命名与时间窗', '调参与预览', '结果与图像'],
@@ -275,7 +275,7 @@
             heroChips: ['4-corner calibration', 'Perspective-corrected cm space', 'Per-video batch configs', 'track / summary / bins', 'Heatmap + trackmap'],
             heroCards: [
                 ['fas fa-border-all', 'What the module really outputs', 'OFT is not only “time in center.” The system measures distance, speed, center occupancy, wall occupancy, movement and immobility time inside perspective-corrected centimeter coordinates, then exports frame-level tracks, time bins, and figures.'],
-                ['fas fa-clone', 'How batch mode works now', 'Batch mode now stores arena layout, masks, time windows, and tuning parameters per video. However, within a single video, all arenas still share one parameter set for detection and statistics.'],
+                ['fas fa-clone', 'Batch workflow rule', 'Arena layout, masks, time windows, and tuning are stored per video. However, arenas inside the same video still share one detection-and-statistics parameter set.'],
                 ['fas fa-compass-drafting', 'Why arena corners matter so much', 'The four arena corners do not just draw a box. They define the perspective transform, centimeter coordinates, center-zone location, distance metrics, and the heatmap coordinate system. If the corners drift, all spatial outputs drift with them.'],
             ],
             flow: ['Recording requirements', 'Upload and analysis range', 'Arena calibration', 'Arena naming and time window', 'Tuning and preview', 'Results and figures'],

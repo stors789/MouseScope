@@ -1,0 +1,372 @@
+<div class="manual-lang-block" data-manual-lang="zh">
+    <section class="manual-hero">
+        <div class="manual-hero-top">
+            <div>
+                <div class="manual-eyebrow">Y-Maze</div>
+                <h2>Y 迷宫完整操作手册</h2>
+                <p>本手册覆盖 Y 迷宫自发交替实验的实验逻辑、采集要求、三角中心区 + 3 条臂的手动画区、检测遮罩、时间窗、主要参数，以及结果字段的解释方式。</p>
+            </div>
+            <div class="manual-chip-row">
+                <span class="manual-chip">中心区 + 3 臂手动画区</span>
+                <span class="manual-chip">自发交替统计</span>
+                <span class="manual-chip">入臂深度判定</span>
+                <span class="manual-chip">检测遮罩可选</span>
+                <span class="manual-chip">track / summary / bins</span>
+            </div>
+        </div>
+        <div class="manual-hero-grid">
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-shuffle" style="color: var(--primary-color);"></i><span>主要统计什么</span></h4>
+                <p>统计各臂停留时间、总入臂数、交替次数、交替机会数和交替率，同时保留距离与速度指标。</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-route" style="color: var(--primary-color);"></i><span>什么叫交替</span></h4>
+                <p>连续三次入臂访问了三个不同臂，才会被记为一次自发交替，因此总入臂数过低时需要谨慎解释交替率。</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-ruler-combined" style="color: var(--primary-color);"></i><span>为什么也有入臂深度</span></h4>
+                <p>只有质心进入手画臂区更深的位置才记为一次入臂，可减少中心区边缘来回抖动带来的重复计数。</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="card manual-flow-card">
+        <div class="card-body py-3">
+            <div class="flow-steps justify-content-center">
+                <span class="flow-step">1. 采集要求</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. 上传与时间范围</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">3. 三角中心区 + 三臂画区</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">4. 调参与预览</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">5. 结果复核</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                <a href="#ymaze-overview-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>总览</span></a>
+                <a href="#ymaze-recording-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>采集要求</span></a>
+                <a href="#ymaze-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>上传与时间范围</span></a>
+                <a href="#ymaze-calibration-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>三角中心区与时间窗</span></a>
+                <a href="#ymaze-params-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>参数字典</span></a>
+                <a href="#ymaze-outputs-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>结果字典</span></a>
+                <a href="#ymaze-batch-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span>批量流程</span></a>
+                <a href="#ymaze-trouble-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">8</span><span>常见问题与排错</span></a>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <section class="manual-section" id="ymaze-overview-zh">
+                <h3><span class="step-number">1</span><span>总览</span></h3>
+                <p>Y 迷宫模块用于分析小鼠在中心区与 Arm A / B / C 之间的空间切换，并计算自发交替率。最关键的是把中心区和三条臂的边界画准，再确认入臂计数稳定。</p>
+                <ul class="manual-list">
+                    <li>交替率常定义为：交替次数 / (总入臂数 - 2) × 100%。</li>
+                    <li>如果总入臂数过低，交替机会数会不足，交替率就不稳定，解释时必须结合 <code>total_arm_entries</code> 一起看。</li>
+                    <li>系统会分别统计中心区停留和三条臂的停留时间，便于识别“主要停在中心区”的视频。</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-recording-zh">
+                <h3><span class="step-number">2</span><span>采集要求</span></h3>
+                <ul class="manual-list">
+                    <li>优先使用稳定俯视或接近俯视的固定机位，不要在录制中移动相机。</li>
+                    <li>中心区和三条臂都应完整可见，尽量避免某条臂被裁切或被反光遮挡。</li>
+                    <li>保持鼠体和地面有明显亮度对比，减少阴影和局部高亮。</li>
+                    <li>如果臂外背景或实验台边缘容易误检，建议优先使用检测遮罩。</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-upload-zh">
+                <h3><span class="step-number">3</span><span>上传与时间范围</span></h3>
+                <ul class="manual-list">
+                    <li>上传页中的开始秒数和结束秒数是默认统计时间窗；ROI 设为“跟随全局”时会直接沿用。</li>
+                    <li>FPS 元数据不可靠时建议手动覆盖，否则距离、速度和潜伏时间可能不准确。</li>
+                    <li>多视频模式下会先进入批次页面，再逐条完成每个视频的 Y 迷宫设置。</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-calibration-zh">
+                <h3><span class="step-number">4</span><span>三角中心区与时间窗</span></h3>
+                <p>每个 ROI 对应一个完整 Y 迷宫，只有中心区、Arm A、Arm B、Arm C 全部完成后，才会进入预览和正式分析。</p>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-vector-square" style="color: var(--primary-color);"></i><span>中心区 3 点，三条臂各 4 点</span></h4>
+                    <ul class="manual-list">
+                        <li>中心区使用 3 个点绘制三角形交汇区；Arm A / B / C 三条臂各使用 4 个点。系统会自动归一化点序，所以关键是边界位置是否准确。</li>
+                        <li>中心区建议贴合三臂真实交汇形成的三角形范围；Arm A / B / C 建议按实际可活动区域绘制。</li>
+                    </ul>
+                </div>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-ruler" style="color: var(--primary-color);"></i><span>真实尺寸与厘米换算</span></h4>
+                    <ul class="manual-list">
+                        <li>请填写臂长和臂宽，系统会据此估算 <code>cm_per_px_est</code>。</li>
+                        <li>这个尺度会影响距离、速度和运动阈值。</li>
+                    </ul>
+                </div>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-mask" style="color: var(--primary-color);"></i><span>检测遮罩 detection mask</span></h4>
+                    <ul class="manual-list">
+                        <li>遮罩只限制允许检测前景的区域，不会改变中心区和三条臂的统计边界。</li>
+                        <li>如果不单独绘制，系统默认使用三角中心区与三条臂区域的并集作为检测区域。</li>
+                    </ul>
+                </div>
+                <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>ROI 时间窗模式</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>模式</th><th>含义</th><th>推荐场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>global</code></td><td>跟随上传页的全局开始 / 结束时间。</td><td>大多数标准 Y 迷宫分析。</td></tr>
+                        <tr><td><code>precise</code></td><td>按视频绝对时间指定开始 / 结束秒数。</td><td>只分析固定片段时。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-callout warning">
+                    <h4>完整 ROI 才会被统计</h4>
+                    <p>如果某个 ROI 只有部分区域完成，系统不会把它纳入预览或正式分析。</p>
+                </div>
+            </section>
+
+            <section class="manual-section" id="ymaze-params-zh">
+                <h3><span class="step-number">5</span><span>参数字典</span></h3>
+                <div class="manual-caption"><i class="fas fa-sliders-h" style="color: var(--primary-color);"></i><span>检测参数</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>参数</th><th>作用</th><th>常见调法</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>bg_type</code></td><td>指定背景偏浅还是偏深，决定前景分割方向。</td><td>深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。</td></tr>
+                        <tr><td><code>gray_threshold</code></td><td>控制前景分割的严格程度。</td><td>噪点多就提高；轮廓断裂或漏检就降低。</td></tr>
+                        <tr><td><code>erosion_kernel</code> / <code>erosion_iter</code></td><td>去掉碎点和毛边。</td><td>边缘噪点多时增大；鼠体被过度侵蚀时减小。</td></tr>
+                        <tr><td><code>dilation_kernel</code> / <code>dilation_iter</code></td><td>修补断裂轮廓。</td><td>轮廓碎裂时增大；背景粘进鼠体时减小。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-caption"><i class="fas fa-clipboard-list" style="color: var(--primary-color);"></i><span>行为统计参数</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>参数</th><th>作用</th><th>结果影响</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才记为一次入臂。</td><td>直接影响 <code>total_arm_entries</code>、各臂入臂数和 <code>alternation_percent</code>。</td></tr>
+                        <tr><td><code>movement_threshold_cm_s</code></td><td>区分移动与低活动 / 静止。</td><td>影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。</td></tr>
+                        <tr><td><code>bin_seconds</code></td><td>时间分箱长度。</td><td>决定 <code>*_bins.csv</code> 每一行覆盖的时长。</td></tr>
+                        <tr><td><code>generate_video</code></td><td>是否导出带标注结果视频。</td><td>关闭可提速，但会失去最直观的复核材料。</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="ymaze-outputs-zh">
+                <h3><span class="step-number">6</span><span>结果字典</span></h3>
+                <p>Y 迷宫会导出结果视频、逐帧轨迹 CSV、summary CSV、分箱 CSV，以及每个 ROI 的热图和轨迹图。</p>
+                <div class="manual-file-grid">
+                    <div class="manual-file-card"><h4><i class="fas fa-file-video" style="color: var(--primary-color);"></i><span><code>*_analyzed.mp4</code></span></h4><p>叠加手画区域、当前区域标签、入臂事件、交替事件和轨迹的结果视频。</p></div>
+                    <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></h4><p>逐帧记录区域、速度、累计距离、入臂事件和最近入臂序列。</p></div>
+                    <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code> / <code>*_bins.csv</code></span></h4><p>输出核心统计结果和固定时间箱汇总。</p></div>
+                </div>
+                <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>字段</th><th>含义</th><th>解读建议</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>frame</code></td><td>原视频帧号。</td><td>可用于回定位到结果视频。</td></tr>
+                        <tr><td><code>time_s</code> / <code>window_time_s</code></td><td>视频绝对时间与统计窗内相对时间。</td><td>适合做时序分析。</td></tr>
+                        <tr><td><code>current_arm</code></td><td>当前所在的臂区。</td><td>只在当前位于 Arm A / B / C 时有值。</td></tr>
+                        <tr><td><code>arm_entry_event</code> / <code>arm_entry_name</code></td><td>是否触发入臂以及对应臂名。</td><td>建议结合结果视频一起复核。</td></tr>
+                        <tr><td><code>alternation_event</code> / <code>recent_entry_sequence</code></td><td>该帧是否触发交替，以及最近的入臂序列。</td><td>适合复核交替判定是否符合人工观察。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>字段</th><th>含义</th><th>解读建议</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>total_arm_entries</code></td><td>总入臂次数。</td><td>解释交替率前要先看这个值是否足够高。</td></tr>
+                        <tr><td><code>alternation_count</code></td><td>交替次数。</td><td>是交替率分子的核心指标。</td></tr>
+                        <tr><td><code>alternation_opportunities</code></td><td>交替机会数。</td><td>通常等于总入臂数减 2。</td></tr>
+                        <tr><td><code>alternation_percent</code></td><td>交替率。</td><td>总入臂数过低时容易不稳定。</td></tr>
+                        <tr><td><code>arm_a_time_s</code> / <code>arm_b_time_s</code> / <code>arm_c_time_s</code></td><td>各臂停留时间。</td><td>可用于识别明显的臂偏好。</td></tr>
+                        <tr><td><code>center_time_s</code></td><td>中心区停留时间。</td><td>过高时常提示有效探索不足。</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="ymaze-batch-zh">
+                <h3><span class="step-number">7</span><span>批量流程</span></h3>
+                <p>Y 迷宫的批量模式是“每个视频各自配置，再统一运行”。不要只画第一个视频就直接开始整批分析。</p>
+                <ol class="manual-step-list">
+                    <li>上传多个 Y 迷宫视频，并设置全局时间窗、FPS 覆盖和输出目录。</li>
+                    <li>逐条打开视频卡片，完成当前视频的三角中心区、三条臂、检测遮罩、时间窗和参数设置。</li>
+                    <li>保存当前设置并返回批次页面，再继续处理下一条视频。</li>
+                    <li>确认所有卡片都显示为已完成后，再统一开始批量分析。</li>
+                </ol>
+            </section>
+
+            <section class="manual-section" id="ymaze-trouble-zh">
+                <h3><span class="step-number">8</span><span>常见问题与排错</span></h3>
+                <ul class="manual-list">
+                    <li>交替率异常高或异常低：先检查中心区和三条臂是否画得过窄、重叠或空隙过大。</li>
+                    <li>入臂数明显偏高：优先提高 <code>entry_depth_ratio</code>，并确认中心区边界没有和臂区重叠。</li>
+                    <li>某一条臂几乎没有访问：先排除该臂边界识别差、阴影或高亮背景干扰。</li>
+                    <li>总入臂数很低：解释交替率前，先确认视频本身是否存在探索不足或检测漏检。</li>
+                </ul>
+                <div class="manual-callout danger">
+                    <h4>什么时候一定要人工复核</h4>
+                    <p>如果结果将用于正式统计或论文结论，建议至少抽查结果视频，尤其是中心区边界识别不稳、入臂数过低或交替事件明显与肉眼不一致的视频。</p>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<div class="manual-lang-block" data-manual-lang="en" style="display:none;">
+    <section class="manual-hero">
+        <div class="manual-hero-top">
+            <div>
+                <div class="manual-eyebrow">Y-Maze</div>
+                <h2>Complete Y-Maze Manual</h2>
+                <p>This manual covers assay logic, recording requirements, triangular-center plus three-arm drawing, detection masks, time windows, key parameters, and result interpretation for spontaneous alternation.</p>
+            </div>
+            <div class="manual-chip-row">
+                <span class="manual-chip">Center + 3 manual arms</span>
+                <span class="manual-chip">Spontaneous alternation</span>
+                <span class="manual-chip">Entry-depth gating</span>
+                <span class="manual-chip">Optional mask</span>
+                <span class="manual-chip">track / summary / bins</span>
+            </div>
+        </div>
+        <div class="manual-hero-grid">
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-shuffle" style="color: var(--primary-color);"></i><span>What is quantified</span></h4>
+                <p>The module measures per-arm occupancy, total arm entries, alternation count, alternation opportunities, alternation rate, distance, and speed.</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-route" style="color: var(--primary-color);"></i><span>What counts as an alternation</span></h4>
+                <p>An alternation is counted only when three consecutive entries visit three different arms, so low entry counts make alternation rate unstable.</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-ruler-combined" style="color: var(--primary-color);"></i><span>Why entry depth still matters</span></h4>
+                <p>An arm entry is counted only after the centroid moves deeper into the arm, reducing repeated counting near the center junction.</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="card manual-flow-card">
+        <div class="card-body py-3">
+            <div class="flow-steps justify-content-center">
+                <span class="flow-step">1. Recording</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. Upload</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">3. Zone drawing</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">4. Tuning</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">5. Review outputs</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                <a href="#ymaze-overview-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>Overview</span></a>
+                <a href="#ymaze-recording-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>Recording requirements</span></a>
+                <a href="#ymaze-upload-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>Upload and timing</span></a>
+                <a href="#ymaze-calibration-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>Triangle center and arms</span></a>
+                <a href="#ymaze-params-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>Parameters</span></a>
+                <a href="#ymaze-outputs-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>Outputs</span></a>
+                <a href="#ymaze-batch-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span>Batch workflow</span></a>
+                <a href="#ymaze-trouble-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">8</span><span>Troubleshooting</span></a>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <section class="manual-section" id="ymaze-overview-en">
+                <h3><span class="step-number">1</span><span>Overview</span></h3>
+                <ul class="manual-list">
+                    <li>The module quantifies switching among the center and Arm A / B / C, then computes spontaneous alternation.</li>
+                    <li>Alternation rate is commonly defined as alternation count divided by total arm entries minus two.</li>
+                    <li>Very low entry counts make alternation rate unstable and should be interpreted cautiously.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-recording-en">
+                <h3><span class="step-number">2</span><span>Recording requirements</span></h3>
+                <ul class="manual-list">
+                    <li>Use a stable top view or near-top view.</li>
+                    <li>Keep the center and all three arms visible without heavy clipping.</li>
+                    <li>Maintain strong contrast between the mouse and maze floor while minimizing glare and shadow.</li>
+                    <li>If background outside the arms is frequently detected, prefer a detection mask.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-upload-en">
+                <h3><span class="step-number">3</span><span>Upload and timing</span></h3>
+                <ul class="manual-list">
+                    <li>Global start and end time define the default analysis window.</li>
+                    <li>Override FPS when metadata is unreliable because distance, speed, and latency depend on it.</li>
+                    <li>Multi-video sessions open the batch page first so each video can be configured independently.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-calibration-en">
+                <h3><span class="step-number">4</span><span>Triangle center and timing</span></h3>
+                <ul class="manual-list">
+                    <li>Each ROI represents one full Y-maze with center, Arm A, Arm B, and Arm C.</li>
+                    <li>The center is defined by 3 clicks as a triangle junction, while Arm A / B / C each use 4 corner clicks. Point order is normalized automatically.</li>
+                    <li>Enter arm length and arm width so MouseScope can estimate <code>cm_per_px_est</code>.</li>
+                    <li>The detection mask limits where foreground detection is allowed but does not redefine the statistical zones.</li>
+                </ul>
+                <table class="manual-data-table">
+                    <thead><tr><th>Mode</th><th>Meaning</th><th>Recommended use</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>global</code></td><td>Follow the upload-page global start and end time.</td><td>Most standard Y-maze analyses.</td></tr>
+                        <tr><td><code>precise</code></td><td>Use absolute video-time start and end.</td><td>When only a fixed segment should be analyzed.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="ymaze-params-en">
+                <h3><span class="step-number">5</span><span>Parameters</span></h3>
+                <table class="manual-data-table">
+                    <thead><tr><th>Parameter</th><th>Role</th><th>Typical adjustment</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>bg_type</code></td><td>Defines whether the background is light or dark.</td><td>Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.</td></tr>
+                        <tr><td><code>gray_threshold</code></td><td>Controls how strict the foreground split is.</td><td>Increase when noise is abundant; decrease when contours break or disappear.</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before counting as an entry.</td><td>Increase when repeated entries are counted near the center junction.</td></tr>
+                        <tr><td><code>movement_threshold_cm_s</code></td><td>Separates moving frames from low-motion frames.</td><td>Adjust when moving / immobile labeling looks unstable.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="ymaze-outputs-en">
+                <h3><span class="step-number">6</span><span>Outputs</span></h3>
+                <ul class="manual-list">
+                    <li><code>*_analyzed.mp4</code>: annotated video with hand-drawn zones, zone labels, entry events, alternation events, and trajectory overlay.</li>
+                    <li><code>*_track.csv</code>: frame-level records of zone, speed, cumulative distance, arm-entry events, and recent entry sequence.</li>
+                    <li><code>*_summary.csv</code>: one-row-per-ROI summary table with the main Y-maze metrics.</li>
+                    <li><code>*_bins.csv</code>: fixed-width temporal bins for occupancy, entries, alternations, and distance.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="ymaze-batch-en">
+                <h3><span class="step-number">7</span><span>Batch workflow</span></h3>
+                <ol class="manual-step-list">
+                    <li>Upload multiple Y-maze videos and define global timing, FPS override, and output folder.</li>
+                    <li>Open each video card and finish the triangular center, three arms, mask, timing, and tuning for that video.</li>
+                    <li>Save the current setup and return to the batch page before moving to the next video.</li>
+                    <li>Only start analysis after all cards are marked complete.</li>
+                </ol>
+            </section>
+
+            <section class="manual-section" id="ymaze-trouble-en">
+                <h3><span class="step-number">8</span><span>Troubleshooting</span></h3>
+                <ul class="manual-list">
+                    <li>Implausibly high or low alternation rate: check whether the center and arm zones are too narrow, overlapping, or separated by large gaps.</li>
+                    <li>Entry counts too high: increase <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
+                    <li>One arm is rarely visited: check that the arm boundary is visible and not dominated by glare or shadow.</li>
+                    <li>Very low total entries: confirm that exploration is genuinely low rather than missed by detection.</li>
+                </ul>
+            </section>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function updateManualLang() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        document.querySelectorAll('.manual-lang-block[data-manual-lang]').forEach(block => {
+            block.style.display = block.getAttribute('data-manual-lang') === lang ? '' : 'none';
+        });
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+    document.addEventListener('DOMContentLoaded', updateManualLang);
+    document.addEventListener('mousescope:langchange', updateManualLang);
+})();
+</script>

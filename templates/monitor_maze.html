@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% set is_epm = maze_module == 'epm' %}
+{% block title %}{{ 'EPM' if is_epm else 'Y-Maze' }} Monitor - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.maze-monitor { max-width: 1480px; margin: 0 auto; }
+.monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.monitor-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: 1rem; align-items: start; }
+.monitor-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.2rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.9rem; }
+.metric-box { background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 16px; padding: 1rem; }
+.metric-label { color: var(--text-muted); font-size: 0.85rem; }
+.metric-value { color: var(--text-primary); font-size: 1.35rem; font-weight: 700; margin-top: 0.2rem; }
+.download-grid { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.roi-table-wrap { overflow-x: auto; }
+.roi-table { width: 100%; border-collapse: collapse; }
+.roi-table th, .roi-table td { padding: 0.82rem 0.72rem; border-bottom: 1px solid var(--border-card); white-space: nowrap; }
+.roi-table th { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.roi-table td { color: var(--text-primary); }
+.zone-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 82px; padding: 0.28rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
+.zone-pill.open { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+.zone-pill.closed { background: rgba(249, 115, 22, 0.14); color: #c2410c; }
+.zone-pill.center { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+.zone-pill.arma, .zone-pill.armb, .zone-pill.armc { background: rgba(14, 165, 233, 0.12); color: #0369a1; }
+.zone-pill.unknown { background: rgba(148, 163, 184, 0.15); color: #475569; }
+.log-box { background: #0f172a; color: #e2e8f0; border-radius: 16px; padding: 1rem; font-family: Consolas, Monaco, monospace; font-size: 0.85rem; min-height: 220px; max-height: 420px; overflow-y: auto; }
+@media (max-width: 1180px) { .monitor-grid { grid-template-columns: 1fr; } .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .metric-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="maze-monitor">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">{{ '高架十字迷宫实时监控' if is_epm else 'Y 迷宫实时监控' }}</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">{{ '实时显示开放臂/封闭臂占比与入臂统计。' if is_epm else '实时显示当前臂、入臂次数与自发交替结果。' }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i class="fas fa-stop me-2"></i><span data-page-i18n="btn.stop">停止分析</span></button>
+            <button class="btn btn-outline-primary" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新</span></button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-page-i18n="processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-page-i18n="processing.waiting">等待引擎响应...</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-label" data-page-i18n="processing.status">状态</div>
+                        <div class="metric-value" id="statusText" data-page-i18n="status.waiting">等待中</div>
+                    </div>
+                </div>
+                <div class="progress mb-2" style="height: 14px;"><div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div></div>
+                <div class="text-secondary small"><span data-page-i18n="processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
+
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.frames">已处理帧</div><div class="metric-value" id="processedFrames">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.elapsed">运行时间</div><div class="metric-value" id="elapsedTime">0s</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.speed">处理速度</div><div class="metric-value" id="processingSpeed">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.rois">ROI 数</div><div class="metric-value" id="roiCount">0</div></div>
+                    <div class="metric-box"><div class="metric-label" id="overviewMetricLabel">{{ '开放臂均值' if is_epm else '交替均值' }}</div><div class="metric-value" id="overviewMetricValue">-</div></div>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-page-i18n="table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-page-i18n="table.subtitle">{{ '显示当前区域、速度、距离和入臂统计。' if is_epm else '显示当前区域、速度、距离和交替统计。' }}</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-page-i18n="table.zone">当前区域</th>
+                                <th data-page-i18n="table.speed">速度</th>
+                                <th data-page-i18n="table.distance">距离</th>
+                                <th id="colMetric1">{{ '开放臂时间%' if is_epm else '总入臂数' }}</th>
+                                <th id="colMetric2">{{ '开放臂进入' if is_epm else '交替次数' }}</th>
+                                <th id="colMetric3">{{ '开放入臂%' if is_epm else '交替率' }}</th>
+                                <th data-page-i18n="table.window">统计状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody"><tr><td colspan="8" class="text-secondary" data-page-i18n="table.waiting">等待结果...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-page-i18n="download.title">结果下载</h5>
+                <div class="download-grid">
+                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-page-i18n="download.video">标注视频</a>
+                    <a href="#" id="dlTrack" class="btn btn-outline-primary" data-page-i18n="download.track">轨迹 CSV</a>
+                    <a href="#" id="dlSummary" class="btn btn-outline-primary" data-page-i18n="download.summary">汇总 CSV</a>
+                    <a href="#" id="dlBins" class="btn btn-outline-primary" data-page-i18n="download.bins">分箱 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-page-i18n="download.report">TXT 报告</a>
+                    <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-page-i18n="download.heatmap">热图</a>
+                    <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-page-i18n="download.trackmap">轨迹图</a>
+                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-page-i18n="download.folder">打开结果目录</button>
+                </div>
+                <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;"><span data-page-i18n="download.path">保存位置:</span> <code id="resultPathText"></code></div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="log.title">日志</h5>
+                <div id="logBox" class="log-box">$ <span data-page-i18n="log.waiting">等待日志输出...</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MODULE = '{{ maze_module }}';
+const sessionId = '{{ session_id }}';
+let updateInterval = null;
+const PAGE_I18N = {
+    zh: {
+        'header.title': MODULE === 'epm' ? '高架十字迷宫实时监控' : 'Y 迷宫实时监控',
+        'header.subtitle': MODULE === 'epm' ? '实时显示开放臂/封闭臂占比与入臂统计。' : '实时显示当前臂、入臂次数与自发交替结果。',
+        'btn.stop': '停止分析',
+        'btn.refresh': '刷新',
+        'processing.title': '处理状态',
+        'processing.waiting': '等待引擎响应...',
+        'processing.status': '状态',
+        'processing.progress': '完成进度',
+        'overview.title': '会话概览',
+        'overview.frames': '已处理帧',
+        'overview.elapsed': '运行时间',
+        'overview.speed': '处理速度',
+        'overview.rois': 'ROI 数',
+        'overview.metric': MODULE === 'epm' ? '开放臂均值' : '交替均值',
+        'table.title': 'ROI 实时结果',
+        'table.subtitle': MODULE === 'epm' ? '显示当前区域、速度、距离和入臂统计。' : '显示当前区域、速度、距离和交替统计。',
+        'table.zone': '当前区域',
+        'table.speed': '速度',
+        'table.distance': '距离',
+        'table.window': '统计状态',
+        'table.waiting': '等待结果...',
+        'table.paused': '窗口外',
+        'table.active': '统计中',
+        'download.title': '结果下载',
+        'download.all': '全部下载',
+        'download.video': '标注视频',
+        'download.track': '轨迹 CSV',
+        'download.summary': '汇总 CSV',
+        'download.bins': '分箱 CSV',
+        'download.report': 'TXT 报告',
+        'download.heatmap': '热图',
+        'download.trackmap': '轨迹图',
+        'download.folder': '打开结果目录',
+        'download.path': '保存位置:',
+        'log.title': '日志',
+        'log.waiting': '等待日志输出...',
+        'status.waiting': '等待中',
+        'status.analyzing': '分析中',
+        'status.completed': '已完成',
+        'status.error': '错误',
+        'status.stopped': '已停止',
+        'status.invalid': '会话失效',
+        'status.expired': '分析会话不存在或已过期',
+        'alert.stop_sent': '已发送停止命令',
+        'alert.folder_failed': '打开结果目录失败'
+    },
+    en: {
+        'header.title': MODULE === 'epm' ? 'Elevated Plus Maze Monitor' : 'Y-Maze Monitor',
+        'header.subtitle': MODULE === 'epm' ? 'Live open-arm, closed-arm, and entry statistics.' : 'Live arm location, arm-entry counts, and spontaneous alternation metrics.',
+        'btn.stop': 'Stop Analysis',
+        'btn.refresh': 'Refresh',
+        'processing.title': 'Processing Status',
+        'processing.waiting': 'Waiting for engine response...',
+        'processing.status': 'Status',
+        'processing.progress': 'Progress',
+        'overview.title': 'Session Overview',
+        'overview.frames': 'Processed Frames',
+        'overview.elapsed': 'Elapsed Time',
+        'overview.speed': 'Processing Speed',
+        'overview.rois': 'ROI Count',
+        'overview.metric': MODULE === 'epm' ? 'Mean Open-arm %' : 'Mean Alternation %',
+        'table.title': 'Live ROI Results',
+        'table.subtitle': MODULE === 'epm' ? 'Current zone, speed, distance, and arm-entry statistics.' : 'Current zone, speed, distance, and alternation statistics.',
+        'table.zone': 'Zone',
+        'table.speed': 'Speed',
+        'table.distance': 'Distance',
+        'table.window': 'Window',
+        'table.waiting': 'Waiting for results...',
+        'table.paused': 'Out of Window',
+        'table.active': 'In Window',
+        'download.title': 'Downloads',
+        'download.all': 'Download All',
+        'download.video': 'Annotated Video',
+        'download.track': 'Track CSV',
+        'download.summary': 'Summary CSV',
+        'download.bins': 'Bins CSV',
+        'download.report': 'TXT Report',
+        'download.heatmap': 'Heatmap',
+        'download.trackmap': 'Trackmap',
+        'download.folder': 'Open Result Folder',
+        'download.path': 'Saved to:',
+        'log.title': 'Log',
+        'log.waiting': 'Waiting for log output...',
+        'status.waiting': 'Waiting',
+        'status.analyzing': 'Analyzing',
+        'status.completed': 'Completed',
+        'status.error': 'Error',
+        'status.stopped': 'Stopped',
+        'status.invalid': 'Session Invalid',
+        'status.expired': 'Analysis session not found or expired',
+        'alert.stop_sent': 'Stop command sent',
+        'alert.folder_failed': 'Failed to open result folder'
+    }
+};
+
+function pageTr(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    return (PAGE_I18N[lang] && PAGE_I18N[lang][key] !== undefined) ? PAGE_I18N[lang][key] : fallback;
+}
+function applyPageLang() {
+    document.querySelectorAll('[data-page-i18n]').forEach(el => {
+        const val = pageTr(el.getAttribute('data-page-i18n'), null);
+        if (val !== null) el.textContent = val;
+    });
+    document.getElementById('overviewMetricLabel').textContent = pageTr('overview.metric', MODULE === 'epm' ? 'Mean Open-arm %' : 'Mean Alternation %');
+    document.getElementById('colMetric1').textContent = MODULE === 'epm'
+        ? ((typeof getLang === 'function' && getLang() === 'en') ? 'Open-arm Time %' : '开放臂时间%')
+        : ((typeof getLang === 'function' && getLang() === 'en') ? 'Total Arm Entries' : '总入臂数');
+    document.getElementById('colMetric2').textContent = MODULE === 'epm'
+        ? ((typeof getLang === 'function' && getLang() === 'en') ? 'Open Entries' : '开放臂进入')
+        : ((typeof getLang === 'function' && getLang() === 'en') ? 'Alternation Count' : '交替次数');
+    document.getElementById('colMetric3').textContent = MODULE === 'epm'
+        ? ((typeof getLang === 'function' && getLang() === 'en') ? 'Open Entry %' : '开放入臂%')
+        : ((typeof getLang === 'function' && getLang() === 'en') ? 'Alternation %' : '交替率');
+}
+function getStatusText(status) {
+    return {
+        waiting: pageTr('status.waiting', 'Waiting'),
+        analyzing: pageTr('status.analyzing', 'Analyzing'),
+        completed: pageTr('status.completed', 'Completed'),
+        error: pageTr('status.error', 'Error'),
+        stopped: pageTr('status.stopped', 'Stopped')
+    }[status] || status;
+}
+function fmtNumber(value, digits = 2) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toFixed(digits);
+}
+function zoneClass(zone) {
+    const value = String(zone || '').toLowerCase().replace(/_/g, ' ');
+    if (value.includes('open')) return 'open';
+    if (value.includes('closed')) return 'closed';
+    if (value.includes('center')) return 'center';
+    if (value.includes('arm a')) return 'arma';
+    if (value.includes('arm b')) return 'armb';
+    if (value.includes('arm c')) return 'armc';
+    return 'unknown';
+}
+function localizeZone(zone) {
+    const value = String(zone || 'Unknown').trim();
+    const normalized = value.toLowerCase().replace(/_/g, ' ');
+    const zhMap = {
+        'center': '中心区',
+        'open 1': '开放臂 1',
+        'open 2': '开放臂 2',
+        'closed 1': '封闭臂 1',
+        'closed 2': '封闭臂 2',
+        'arm a': 'Arm A',
+        'arm b': 'Arm B',
+        'arm c': 'Arm C',
+        'unknown': '未知'
+    };
+    const enMap = {
+        'center': 'Center',
+        'open 1': 'Open 1',
+        'open 2': 'Open 2',
+        'closed 1': 'Closed 1',
+        'closed 2': 'Closed 2',
+        'arm a': 'Arm A',
+        'arm b': 'Arm B',
+        'arm c': 'Arm C',
+        'unknown': 'Unknown'
+    };
+    const map = (typeof getLang === 'function' && getLang() === 'en') ? enMap : zhMap;
+    return map[normalized] || value;
+}
+function localizeMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return '-';
+    if (text === 'Waiting to start...') return pageTr('processing.waiting', 'Waiting for engine response...');
+    if (text.startsWith('Frame ')) return text;
+    if (text.startsWith('Analysis error: ')) return text;
+    return text;
+}
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="8" class="text-secondary">${pageTr('table.waiting', 'Waiting for results...')}</td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(row => {
+        const zone = row.zone || 'Unknown';
+        const stateText = row.in_stats_window === false ? pageTr('table.paused', 'Out of Window') : pageTr('table.active', 'In Window');
+        const metric1 = MODULE === 'epm' ? `${fmtNumber(row.open_time_percent_total, 1)}%` : `${row.total_arm_entries || 0}`;
+        const metric2 = MODULE === 'epm' ? `${row.open_entries || 0}` : `${row.alternation_count || 0}`;
+        const metric3 = MODULE === 'epm' ? `${fmtNumber(row.open_entry_percent, 1)}%` : `${fmtNumber(row.alternation_percent, 1)}%`;
+        return `
+            <tr>
+                <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+                <td><span class="zone-pill ${zoneClass(zone)}">${escapeHtml(localizeZone(zone))}</span></td>
+                <td>${fmtNumber(row.speed_cm_s, 2)} cm/s</td>
+                <td>${fmtNumber(row.distance_cm, 1)} cm</td>
+                <td>${metric1}</td>
+                <td>${metric2}</td>
+                <td>${metric3}</td>
+                <td>${stateText}</td>
+            </tr>
+        `;
+    }).join('');
+}
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    if (!logs.length) {
+        box.textContent = `$ ${pageTr('log.waiting', 'Waiting for log output...')}`;
+        return;
+    }
+    box.innerHTML = logs.map(log => {
+        let cls = '#e2e8f0';
+        if (/error|failed|失败/i.test(log)) cls = '#f87171';
+        else if (/saved|completed|finished|完成/i.test(log)) cls = '#60a5fa';
+        return `<div style="color:${cls}; margin-bottom:0.35rem;">$ ${escapeHtml(log)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+}
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
+    document.getElementById('dlTrack').href = `/api/download/${sessionId}/track_csv`;
+    document.getElementById('dlSummary').href = `/api/download/${sessionId}/summary_csv`;
+    document.getElementById('dlBins').href = `/api/download/${sessionId}/bins_csv`;
+    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
+    document.getElementById('dlHeatmap').href = `/api/download/${sessionId}/heatmap`;
+    document.getElementById('dlTrackmap').href = `/api/download/${sessionId}/trackmap`;
+}
+function fetchResultDir() {
+    fetch(`/api/result_dir/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('resultPathInfo').style.display = 'block';
+                document.getElementById('resultPathText').textContent = data.path;
+            }
+        });
+}
+function openResultFolder() {
+    fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) alert(data.error || pageTr('alert.folder_failed', 'Failed to open result folder'));
+        });
+}
+function stopAnalysis() {
+    fetch(`/api/stop/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert(data.message || pageTr('alert.stop_sent', 'Stop command sent')));
+}
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`)
+        .then(r => {
+            if (!r.ok) throw new Error('session');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('statusText').textContent = getStatusText(data.status);
+            document.getElementById('messageText').textContent = localizeMessage(data.message || '-');
+            document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+            document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+            document.getElementById('progressText').textContent = `${data.progress || 0}%`;
+
+            const stats = data.stats || {};
+            const exp = data.experiment_stats || {};
+            document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+            document.getElementById('elapsedTime').textContent = `${fmtNumber(stats.elapsed_time, 1)}s`;
+            document.getElementById('processingSpeed').textContent = fmtNumber(stats.fps, 1);
+            document.getElementById('roiCount').textContent = exp.roi_count || (data.realtime_data || []).length || 0;
+            document.getElementById('overviewMetricValue').textContent = MODULE === 'epm'
+                ? `${fmtNumber(exp.mean_open_time_percent_total, 1)}%`
+                : `${fmtNumber(exp.mean_alternation_percent, 1)}%`;
+
+            renderTable(data.realtime_data || []);
+            renderLogs(data.logs || []);
+
+            if (data.status === 'completed') {
+                showDownloads();
+                fetchResultDir();
+                document.getElementById('stopBtn').style.display = 'none';
+                if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+            }
+            if (data.status === 'error' || data.status === 'stopped') {
+                document.getElementById('stopBtn').style.display = 'none';
+                if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+            }
+        })
+        .catch(() => {
+            if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+            document.getElementById('statusText').textContent = pageTr('status.invalid', 'Session Invalid');
+            document.getElementById('messageText').textContent = pageTr('status.expired', 'Analysis session not found or expired');
+            document.getElementById('stopBtn').style.display = 'none';
+        });
+}
+function escapeHtml(text) {
+    return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+document.addEventListener('DOMContentLoaded', function () {
+    applyPageLang();
+    updateStatus();
+    updateInterval = setInterval(updateStatus, 2000);
+});
+document.addEventListener('mousescope:langchange', function () {
+    applyPageLang();
+    updateStatus();
+});
+</script>
+{% endblock %}

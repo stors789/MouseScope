@@ -1,23 +1,23 @@
 :root {
-    --primary-color: #2563eb;
-    --primary-dark: #1e3a5f;
-    --accent-color: #0ea5e9;
-    --accent-cyan: #06b6d4;
-    --success-color: #0d9488;
-    --warning-color: #ca8a04;
-    --warning-bg: #fef9c3;
-    --danger-color: #dc2626;
-    --bg-page: #f0f4f8;
-    --bg-card: #ffffff;
-    --bg-card-hover: #f8fafc;
-    --border-card: #e2e8f0;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
-    --shadow-card: 0 1px 3px rgba(0,0,0,0.08);
-    --shadow-card-hover: 0 4px 12px rgba(30,58,95,0.12);
-    --radius-card: 12px;
-    --radius-btn: 8px;
+    --primary-color: #c96442;
+    --primary-dark: #141413;
+    --accent-color: #d97757;
+    --accent-cyan: #ba6a48;
+    --success-color: #2f7f54;
+    --warning-color: #ad6a26;
+    --warning-bg: #fbf0de;
+    --danger-color: #b53333;
+    --bg-page: #f5f4ed;
+    --bg-card: #faf9f5;
+    --bg-card-hover: #ffffff;
+    --border-card: #e8e6dc;
+    --text-primary: #141413;
+    --text-secondary: #4d4c48;
+    --text-muted: #87867f;
+    --shadow-card: 0 0 0 1px rgba(232, 230, 220, 0.9), 0 16px 32px rgba(20, 20, 19, 0.05);
+    --shadow-card-hover: 0 0 0 1px rgba(209, 207, 197, 1), 0 18px 38px rgba(20, 20, 19, 0.08);
+    --radius-card: 24px;
+    --radius-btn: 12px;
 }
 
 * {
@@ -25,17 +25,22 @@
 }
 
 body {
-    background: var(--bg-page) !important;
+    background:
+        radial-gradient(circle at top left, rgba(217, 119, 87, 0.08), transparent 26%),
+        radial-gradient(circle at right 10%, rgba(201, 100, 66, 0.07), transparent 24%),
+        linear-gradient(180deg, #f7f5ee 0%, var(--bg-page) 100%) !important;
     color: var(--text-primary) !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
     overflow-x: hidden;
+    letter-spacing: 0.01em;
 }
 
 .navbar {
-    background: var(--bg-card) !important;
+    background: rgba(250, 249, 245, 0.94) !important;
     border-bottom: 1px solid var(--border-card);
     box-shadow: var(--shadow-card);
-    padding: 0.75rem 0;
+    padding: 0.85rem 0;
+    backdrop-filter: blur(12px);
 }
 
 .navbar-brand .navbar-logo {
@@ -46,6 +51,8 @@ body {
     font-weight: 700 !important;
     font-size: 1.2rem !important;
     color: var(--primary-dark) !important;
+    font-family: "Georgia", "Times New Roman", serif !important;
+    letter-spacing: 0.02em;
 }
 
 .navbar-brand:hover {
@@ -68,7 +75,7 @@ body {
 .navbar-nav .nav-link:hover,
 .navbar-nav .nav-link:focus {
     color: var(--primary-color) !important;
-    background: rgba(37, 99, 235, 0.08) !important;
+    background: rgba(201, 100, 66, 0.08) !important;
     outline: none !important;
 }
 
@@ -88,7 +95,7 @@ body {
 
 .card:hover {
     box-shadow: var(--shadow-card-hover);
-    border-color: rgba(37, 99, 235, 0.2) !important;
+    border-color: rgba(201, 100, 66, 0.22) !important;
 }
 
 .card-header {
@@ -97,6 +104,7 @@ body {
     color: var(--text-primary) !important;
     font-weight: 600;
     padding: 1rem 1.25rem;
+    font-family: "Georgia", "Times New Roman", serif;
 }
 
 .card-body {
@@ -139,7 +147,7 @@ small.text-muted,
 .form-control:focus,
 .form-select:focus {
     border-color: var(--primary-color) !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+    box-shadow: 0 0 0 3px rgba(56, 152, 236, 0.18) !important;
     outline: none !important;
 }
 
@@ -156,21 +164,24 @@ small.text-muted,
 }
 
 .btn {
-    border: none !important;
+    border: 1px solid transparent !important;
     border-radius: var(--radius-btn) !important;
     font-weight: 600 !important;
-    padding: 0.5rem 1rem !important;
-    transition: filter 0.2s, transform 0.2s;
+    padding: 0.58rem 1.05rem !important;
+    transition: filter 0.2s, transform 0.2s, box-shadow 0.2s, background 0.2s;
+    box-shadow: 0 0 0 1px transparent;
 }
 
 .btn-primary {
     background: var(--primary-color) !important;
-    color: #fff !important;
+    border-color: var(--primary-color) !important;
+    color: #faf9f5 !important;
 }
 
 .btn-primary:hover {
     filter: brightness(1.05);
-    color: #fff !important;
+    color: #faf9f5 !important;
+    box-shadow: 0 0 0 1px rgba(201, 100, 66, 0.9), 0 10px 24px rgba(201, 100, 66, 0.18);
 }
 
 .btn-success {
@@ -196,32 +207,33 @@ small.text-muted,
 .btn-outline-primary {
     border: 1px solid var(--primary-color) !important;
     color: var(--primary-color) !important;
-    background: transparent !important;
+    background: rgba(255, 255, 255, 0.45) !important;
 }
 
 .btn-outline-primary:hover {
-    background: rgba(37, 99, 235, 0.08) !important;
+    background: rgba(201, 100, 66, 0.08) !important;
     color: var(--primary-color) !important;
+    box-shadow: 0 0 0 1px rgba(201, 100, 66, 0.2);
 }
 
 .btn-outline-info {
     border: 1px solid var(--accent-cyan) !important;
     color: var(--accent-cyan) !important;
-    background: transparent !important;
+    background: rgba(255, 255, 255, 0.45) !important;
 }
 
 .btn-outline-info:hover {
-    background: rgba(6, 182, 212, 0.08) !important;
+    background: rgba(186, 106, 72, 0.08) !important;
     color: var(--accent-cyan) !important;
 }
 
 .btn:focus {
     outline: none !important;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2) !important;
+    box-shadow: 0 0 0 3px rgba(56, 152, 236, 0.2) !important;
 }
 
 .progress {
-    background: #e2e8f0 !important;
+    background: #ece7db !important;
     border-radius: 999px !important;
     overflow: hidden;
     height: 8px;
@@ -248,8 +260,8 @@ small.text-muted,
 }
 
 .alert-info {
-    background: #e0f2fe !important;
-    color: #0369a1 !important;
+    background: #f6ede3 !important;
+    color: #7b5437 !important;
     border-left-color: var(--accent-color) !important;
 }
 
@@ -287,11 +299,13 @@ small.text-muted,
 .gradient-text {
     color: var(--primary-dark) !important;
     font-weight: 700;
+    font-family: "Georgia", "Times New Roman", serif !important;
 }
 
 .cyber-text {
     color: var(--primary-dark) !important;
     font-weight: 600;
+    font-family: "Georgia", "Times New Roman", serif !important;
 }
 
 .page-content {
@@ -316,6 +330,15 @@ small.text-muted,
 
 .stat-card:hover {
     box-shadow: var(--shadow-card-hover);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: "Georgia", "Times New Roman", serif;
+    letter-spacing: 0.01em;
+}
+
+code, pre, .font-monospace {
+    font-family: "Consolas", "SFMono-Regular", monospace !important;
 }
 
 .stat-icon {

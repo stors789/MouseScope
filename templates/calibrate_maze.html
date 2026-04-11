@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% set is_epm = maze_module == 'epm' %}
+{% block title %}{{ 'EPM' if is_epm else 'Y-Maze' }} Calibration - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.maze-shell { max-width: 1480px; margin: 0 auto; }
+.maze-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+.maze-steps { display:inline-flex; gap:.5rem; padding:.4rem; border:1px solid var(--border-card); background:var(--bg-card); border-radius:999px; }
+.maze-step { border:0; background:transparent; color:var(--text-muted); padding:.55rem 1rem; border-radius:999px; font-weight:600; }
+.maze-step.active { background:rgba(37,99,235,.12); color:var(--primary-color); }
+.maze-step.done { color:var(--success-color); }
+.maze-panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.2rem; margin-bottom:1rem; }
+.maze-row { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(340px,.95fr); gap:1rem; align-items:start; }
+.maze-grid,.param-grid,.preview-grid { display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.maze-canvas-wrap { background:#09101d; border:1px solid rgba(148,163,184,.18); border-radius:18px; padding:.75rem; }
+.maze-canvas-wrap canvas { display:block; width:100%; height:auto; max-width:100%; background:#000; border-radius:14px; cursor:crosshair; }
+.preview-grid canvas { height:320px; }
+.maze-toolbar,.maze-inline,.status-strip,.zone-inline { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+.maze-hint,.mini-note { color:var(--text-muted); font-size:.9rem; }
+.step-pane { display:none; }
+.step-pane.active { display:block; }
+.status-pill,.zone-badge { display:inline-flex; align-items:center; gap:.35rem; padding:.4rem .75rem; border-radius:999px; background:var(--bg-page); border:1px solid var(--border-card); }
+.roi-list { display:grid; gap:.85rem; }
+.roi-card { border:1px solid var(--border-card); border-radius:16px; padding:.9rem; background:var(--bg-page); }
+.roi-card.active { border-color:rgba(37,99,235,.45); box-shadow:0 0 0 1px rgba(37,99,235,.14); }
+.roi-card-head { display:flex; justify-content:space-between; align-items:center; gap:.75rem; margin-bottom:.75rem; }
+.roi-card-title { font-weight:700; color:var(--text-primary); }
+.range-line { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text-muted); }
+.zone-grid { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.45rem; margin-bottom:.45rem; }
+.loading-overlay { position:fixed; inset:0; background:rgba(241,245,249,.78); display:flex; justify-content:center; align-items:center; z-index:9999; }
+.spinner { width:48px; height:48px; border:3px solid var(--border-card); border-top-color:var(--primary-color); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (max-width:1100px) { .maze-row,.maze-grid,.param-grid,.preview-grid { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
+
+<div class="maze-shell">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <strong>批量单视频编辑模式</strong>
+            <div class="small mt-1">当前正在编辑第 {{ current_video_index + 1 }} 个视频。保存当前设置后返回批次页面，再统一启动整批分析。</div>
+        </div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
+            <i class="fas fa-layer-group me-2"></i>返回批次页面
+        </a>
+    </div>
+    {% endif %}
+    <div class="maze-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">{{ '高架十字迷宫配置' if is_epm else 'Y 迷宫配置' }}</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">{{ '每个 ROI 的中心区和所有臂都手动画区，四点顺序不会影响最终区域。' if is_epm else 'Y 迷宫中心区使用 3 个点绘制三角区，三条臂各用 4 个点，交替统计只依赖命名后的臂区。' }}</div>
+        </div>
+        <div class="maze-inline">
+            {% if is_batch and launch_mode != 'workspace' %}
+            <div>
+                <label class="form-label mb-1" data-page-i18n="common.preview_video">预览视频</label>
+                <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                    {% for video in video_list %}
+                    <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='epm' if is_epm else 'ymaze') }}" target="_blank">
+                <i class="fas fa-book-open me-2"></i><span data-page-i18n="header.manual">{{ 'EPM 使用手册' if is_epm else 'Y 迷宫使用手册' }}</span>
+            </a>
+            <div class="maze-steps">
+                <button class="maze-step active" id="stepNav1" onclick="goToStep(1)" data-page-i18n="common.step1">1. 标定与 ROI</button>
+                <button class="maze-step" id="stepNav2" onclick="goToStep(2)" data-page-i18n="common.step2">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="maze-row">
+            <div class="maze-panel">
+                <div class="maze-grid mb-3">
+                    {% if is_epm %}
+                    <div><label class="form-label" data-page-i18n="geom.center_size">中心区边长 (cm)</label><input type="number" class="form-control" id="centerSizeCm" min="0.1" step="0.1" value="5.0"></div>
+                    <div><label class="form-label" data-page-i18n="geom.open_len">开放臂长度 (cm)</label><input type="number" class="form-control" id="openArmLengthCm" min="0.1" step="0.1" value="30.0"></div>
+                    <div><label class="form-label" data-page-i18n="geom.closed_len">封闭臂长度 (cm)</label><input type="number" class="form-control" id="closedArmLengthCm" min="0.1" step="0.1" value="30.0"></div>
+                    <div><label class="form-label" data-page-i18n="geom.scale_note">换算方式</label><input type="text" class="form-control" id="scaleNoteText" value="按手画区边长估计平均 cm/px" disabled></div>
+                    {% else %}
+                    <div><label class="form-label" data-page-i18n="geom.arm_len">臂长 (cm)</label><input type="number" class="form-control" id="armLengthCm" min="0.1" step="0.1" value="30.0"></div>
+                    <div><label class="form-label" data-page-i18n="geom.arm_width">臂宽 (cm)</label><input type="number" class="form-control" id="armWidthCm" min="0.1" step="0.1" value="10.0"></div>
+                    {% endif %}
+                </div>
+
+                <div class="zone-inline mb-3">
+                    <div class="zone-badge"><strong data-page-i18n="status.active_roi">当前 ROI</strong> <span id="activeRoiText">-</span></div>
+                    <div class="zone-badge"><strong data-page-i18n="status.active_zone">当前区域</strong> <span id="activeZoneText">-</span></div>
+                </div>
+
+                <div class="maze-hint"><ol class="mb-0 ps-3" id="instructionList"></ol></div>
+                <div class="mb-3 mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-page-i18n="common.select_frame">选择帧</label>
+                        <span id="frameLabelDraw" class="mini-note">Frame 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderDraw" min="0" max="0" value="0" oninput="onDrawFrameChange(this.value)">
+                </div>
+                <div class="maze-canvas-wrap"><canvas id="mazeCanvas"></canvas></div>
+                <div class="maze-toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="startNewROI()"><i class="fas fa-plus me-2"></i><span data-page-i18n="btn.new_roi">新建 ROI</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoCurrentPoint()"><i class="fas fa-undo me-2"></i><span data-page-i18n="btn.undo">撤销一点</span></button>
+                    <button class="btn btn-outline-warning" type="button" id="maskFinishBtn" onclick="finishMaskEditing()" disabled><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.finish_mask">完成检测遮罩</span></button>
+                    <button class="btn btn-outline-secondary" type="button" id="maskCancelBtn" onclick="cancelMaskEditing()" disabled><i class="fas fa-times me-2"></i><span data-page-i18n="btn.cancel_mask">取消遮罩编辑</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearActiveZone()"><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.clear_zone">清空当前区域</span></button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAllROIs()"><i class="fas fa-trash me-2"></i><span data-page-i18n="btn.clear_all">清空全部</span></button>
+                    <button class="btn btn-success ms-auto" type="button" id="toTuningBtn" onclick="goToStep(2)" disabled><i class="fas fa-arrow-right me-2"></i><span data-page-i18n="btn.to_tuning">进入调参</span></button>
+                </div>
+                <div class="status-strip mt-3">
+                    <div class="status-pill"><strong data-page-i18n="status.roi_count">已配置 ROI</strong> <span id="roiCountText">0</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.complete_count">完整 ROI</strong> <span id="completeCountText">0</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.point_count">当前点数</strong> <span id="pointCountText">0 / {{ 4 if is_epm else 3 }}</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.mask_points">遮罩点数</strong> <span id="maskPointText">0</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.hint">当前提示</strong> <span id="pointHintText">-</span></div>
+                </div>
+            </div>
+            <div class="maze-panel">
+                <h5 class="mb-3" data-page-i18n="roi.title">ROI 列表</h5>
+                <div class="maze-hint" data-page-i18n="roi.hint">{{ '每个 ROI 需要中心区 + 两条开放臂 + 两条封闭臂，共 5 个手画区域；如镜头边缘畸变明显，还可以额外绘制检测遮罩。' if is_epm else '每个 ROI 需要 3 点三角形中心区 + Arm A/B/C 三条臂（各 4 点），如镜头边缘畸变明显，还可以额外绘制检测遮罩。' }}</div>
+                <div id="roiList" class="roi-list mt-3"><div class="mini-note" data-page-i18n="roi.empty">还没有添加 ROI</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="maze-panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h5 class="mb-1" data-page-i18n="preview.title">调参与预览</h5>
+                    <div class="mini-note" data-page-i18n="preview.subtitle">左侧显示原始帧，右侧显示检测结果与手画区域叠加。</div>
+                </div>
+                <div class="maze-toolbar">
+                    <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)"><i class="fas fa-arrow-left me-2"></i><span data-page-i18n="btn.back">返回标定</span></button>
+                    <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新预览</span></button>
+                    <button class="btn btn-success" type="button" id="primaryActionBtn" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span id="primaryActionText" data-page-i18n="btn.start">{{ '开始 EPM 分析' if is_epm else '开始 Y 迷宫分析' }}</span></button>
+                </div>
+            </div>
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0" data-page-i18n="preview.frame">预览帧</label>
+                    <span id="frameLabelPreview" class="mini-note">Frame 0 / 0</span>
+                </div>
+                <input type="range" class="form-range" id="frameSliderPreview" min="0" max="0" value="0" oninput="onPreviewFrameChange(this.value)">
+            </div>
+            <div class="preview-grid mb-4"><div class="maze-canvas-wrap"><canvas id="previewOriginal"></canvas></div><div class="maze-canvas-wrap"><canvas id="previewResult"></canvas></div></div>
+            <div class="param-grid">
+                <div class="maze-panel mb-0">
+                    <h6 data-page-i18n="detect.title">检测参数</h6>
+                    <div class="maze-grid">
+                        <div><label class="form-label" data-page-i18n="detect.method">检测方法</label><select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();"><option value="threshold" data-page-i18n="detect.threshold">灰度阈值</option><option value="static" data-page-i18n="detect.static">静态背景</option></select></div>
+                        <div id="bgTypeWrap"><label class="form-label" data-page-i18n="detect.bg_type">背景类型</label><select class="form-select" id="bgType" onchange="updateDebugPreview();"><option value="light" data-page-i18n="detect.bg_light">浅色背景 / 深色鼠</option><option value="dark" data-page-i18n="detect.bg_dark">深色背景 / 浅色鼠</option></select></div>
+                        <div id="grayThresholdWrap"><label class="form-label" data-page-i18n="detect.gray_threshold">灰度阈值</label><input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview();"><div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.min_area">最小面积</label><input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncRangeLabel('minArea'); updateDebugPreview();"><div class="range-line"><span>20</span><span id="minAreaLabel">120</span><span>5000</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.erosion_kernel">腐蚀核</label><input type="range" class="form-range" id="erosionKernel" min="1" max="15" value="3" oninput="syncRangeLabel('erosionKernel'); updateDebugPreview();"><div class="range-line"><span>1</span><span id="erosionKernelLabel">3</span><span>15</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.erosion_iter">腐蚀次数</label><input type="range" class="form-range" id="erosionIter" min="0" max="8" value="1" oninput="syncRangeLabel('erosionIter'); updateDebugPreview();"><div class="range-line"><span>0</span><span id="erosionIterLabel">1</span><span>8</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.dilation_kernel">膨胀核</label><input type="range" class="form-range" id="dilationKernel" min="1" max="15" value="5" oninput="syncRangeLabel('dilationKernel'); updateDebugPreview();"><div class="range-line"><span>1</span><span id="dilationKernelLabel">5</span><span>15</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.dilation_iter">膨胀次数</label><input type="range" class="form-range" id="dilationIter" min="0" max="8" value="2" oninput="syncRangeLabel('dilationIter'); updateDebugPreview();"><div class="range-line"><span>0</span><span id="dilationIterLabel">2</span><span>8</span></div></div>
+                    </div>
+                </div>
+                <div class="maze-panel mb-0">
+                    <h6 data-page-i18n="stats.title">统计参数</h6>
+                    <div class="maze-grid">
+                        <div><label class="form-label" data-page-i18n="stats.movement">运动阈值 (cm/s)</label><input type="number" class="form-control" id="movementThreshold" min="0" step="0.1" value="2.0" onchange="updateDebugPreview();"></div>
+                        <div><label class="form-label" data-page-i18n="stats.entry_depth">入臂深度比例</label><input type="number" class="form-control" id="entryDepthRatio" min="0.05" max="0.95" step="0.05" value="0.2" onchange="updateDebugPreview();"></div>
+                        <div><label class="form-label" data-page-i18n="stats.bin_seconds">分箱时长 (s)</label><input type="number" class="form-control" id="binSeconds" min="1" step="1" value="60"></div>
+                        <div class="d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="generateVideo" checked><label class="form-check-label" for="generateVideo" data-page-i18n="stats.generate_video">生成标注视频</label></div></div>
+                    </div>
+                    <div class="status-strip mt-3"><div class="status-pill" id="previewStatus" data-page-i18n="preview.waiting">等待预览</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MODULE='{{ maze_module }}';
+const sessionId='{{ session_id }}';
+const videoInfo={{ video_info | tojson }};
+const videoInfoList={{ video_info_list | tojson }};
+const isBatch={{ is_batch | tojson }};
+const launchMode={{ launch_mode | tojson }};
+const currentVideoIndexFromServer={{ current_video_index | tojson }};
+const batchWorkspaceUrl={{ batch_workspace_url | tojson }};
+const initialDraftPayload={{ draft_payload | tojson }};
+const videoList={{ (video_list or []) | tojson }};
+const ZONE_DEFS = MODULE === 'epm'
+    ? [
+        { key: 'center', zh: '中心区', en: 'Center', color: '#22c55e', required_points: 4 },
+        { key: 'open_1', zh: '开放臂 1', en: 'Open 1', color: '#3b82f6', required_points: 4 },
+        { key: 'open_2', zh: '开放臂 2', en: 'Open 2', color: '#60a5fa', required_points: 4 },
+        { key: 'closed_1', zh: '封闭臂 1', en: 'Closed 1', color: '#f97316', required_points: 4 },
+        { key: 'closed_2', zh: '封闭臂 2', en: 'Closed 2', color: '#fb923c', required_points: 4 }
+    ]
+    : [
+        { key: 'center', zh: '中心区', en: 'Center', color: '#22c55e', required_points: 3 },
+        { key: 'arm_a', zh: 'Arm A', en: 'Arm A', color: '#3b82f6', required_points: 4 },
+        { key: 'arm_b', zh: 'Arm B', en: 'Arm B', color: '#60a5fa', required_points: 4 },
+        { key: 'arm_c', zh: 'Arm C', en: 'Arm C', color: '#93c5fd', required_points: 4 }
+    ];
+const PAGE_I18N = {
+    zh: {
+        'header.title': MODULE === 'epm' ? '高架十字迷宫配置' : 'Y 迷宫配置',
+        'header.subtitle': MODULE === 'epm' ? '每个 ROI 的中心区和所有臂都手动画区，四点顺序不会影响最终区域。' : 'Y 迷宫中心区使用 3 个点绘制三角区，三条臂各用 4 个点，交替统计只依赖命名后的臂区。',
+        'header.manual': MODULE === 'epm' ? 'EPM 使用手册' : 'Y 迷宫使用手册',
+        'common.preview_video': '预览视频', 'common.step1': '1. 标定与 ROI', 'common.step2': '2. 调参与启动', 'common.select_frame': '选择帧',
+        'geom.center_size': '中心区边长 (cm)', 'geom.open_len': '开放臂长度 (cm)', 'geom.closed_len': '封闭臂长度 (cm)',
+        'geom.arm_len': '臂长 (cm)', 'geom.arm_width': '臂宽 (cm)', 'geom.scale_note': '换算方式',
+        'btn.new_roi': '新建 ROI', 'btn.undo': '撤销一点', 'btn.finish_mask': '完成检测遮罩', 'btn.cancel_mask': '取消遮罩编辑', 'btn.clear_zone': '清空当前区域', 'btn.clear_all': '清空全部',
+        'btn.to_tuning': '进入调参', 'btn.back': '返回标定', 'btn.refresh': '刷新预览', 'btn.start': MODULE === 'epm' ? '开始 EPM 分析' : '开始 Y 迷宫分析',
+        'status.roi_count': '已配置 ROI', 'status.complete_count': '完整 ROI', 'status.point_count': '当前点数', 'status.mask_points': '遮罩点数', 'status.hint': '当前提示',
+        'status.active_roi': '当前 ROI', 'status.active_zone': '当前区域',
+        'roi.title': 'ROI 列表', 'roi.hint': MODULE === 'epm' ? '每个 ROI 需要中心区 + 两条开放臂 + 两条封闭臂，共 5 个手画区域；如镜头边缘畸变明显，还可以额外绘制检测遮罩。' : '每个 ROI 需要 3 点三角形中心区 + Arm A/B/C 三条臂（各 4 点）；如镜头边缘畸变明显，还可以额外绘制检测遮罩。', 'roi.empty': '还没有添加 ROI',
+        'roi.name': '名称', 'roi.progress': '完成进度', 'roi.clear': '清空', 'roi.edit_mask': '编辑检测遮罩', 'roi.continue_mask': '继续编辑检测遮罩', 'roi.reset_mask': '恢复默认遮罩', 'roi.mask_default': '检测遮罩默认跟随已画区域', 'roi.mask_custom': '已自定义检测遮罩 ({0} 点)', 'roi.mask_note': '统计仍使用已命名的区域；检测时会优先使用这里的遮罩多边形。',
+        'time.mode': '统计模式', 'time.global': '跟随全局', 'time.precise': '精确时间段', 'time.start': '开始 (s)', 'time.end': '结束 (s)',
+        'preview.title': '调参与预览', 'preview.subtitle': '左侧显示原始帧，右侧显示检测结果与手画区域叠加。', 'preview.frame': '预览帧', 'preview.waiting': '等待预览',
+        'preview.detected': '检测到 {0} / {1} 个 ROI 目标', 'preview.failed': '预览失败',
+        'detect.title': '检测参数', 'detect.method': '检测方法', 'detect.threshold': '灰度阈值', 'detect.static': '静态背景',
+        'detect.bg_type': '背景类型', 'detect.bg_light': '浅色背景 / 深色鼠', 'detect.bg_dark': '深色背景 / 浅色鼠', 'detect.gray_threshold': '灰度阈值',
+        'detect.min_area': '最小面积', 'detect.erosion_kernel': '腐蚀核', 'detect.erosion_iter': '腐蚀次数', 'detect.dilation_kernel': '膨胀核', 'detect.dilation_iter': '膨胀次数',
+        'stats.title': '统计参数', 'stats.movement': '运动阈值 (cm/s)', 'stats.entry_depth': '入臂深度比例', 'stats.bin_seconds': '分箱时长 (s)', 'stats.generate_video': '生成标注视频',
+        'common.mode.draw_zone': '绘制区域: {0}', 'common.mode.draw_mask': '编辑检测遮罩: {0}',
+        'alert.need_roi': '请先完成至少一个完整 ROI。', 'alert.need_active_roi': '请先新建 ROI 或选择一个已有 ROI。', 'alert.mask_need_points': '检测遮罩至少需要 3 个点；点够后点击起点附近即可自动闭合。', 'alert.mask_invalid': 'ROI {0} 的检测遮罩至少需要 3 个点。', 'alert.unfinished_mask': '当前检测遮罩还没完成，至少需要 3 个点。',
+        'alert.batch_missing': '{0}. {1}: 缺少完整 ROI 配置', 'alert.batch_mask_invalid': '{0}. {1}: ROI {2} 的检测遮罩至少需要 3 个点。', 'alert.batch_incomplete': '开始批量分析前，请先完成每个视频的配置：\n{0}', 'alert.start_failed': '启动分析失败'
+    },
+    en: {
+        'header.title': MODULE === 'epm' ? 'Elevated Plus Maze Setup' : 'Y-Maze Setup',
+        'header.subtitle': MODULE === 'epm' ? 'Manually draw the center and every arm for each ROI. Corner order will not change the final region.' : 'Draw the center as a 3-point triangle and each arm as a 4-point zone. Alternation uses the named arms, not click order.',
+        'header.manual': MODULE === 'epm' ? 'EPM Manual' : 'Y-Maze Manual',
+        'common.preview_video': 'Preview Video', 'common.step1': '1. Calibration & ROI', 'common.step2': '2. Tuning & Start', 'common.select_frame': 'Select Frame',
+        'geom.center_size': 'Center Size (cm)', 'geom.open_len': 'Open-arm Length (cm)', 'geom.closed_len': 'Closed-arm Length (cm)',
+        'geom.arm_len': 'Arm Length (cm)', 'geom.arm_width': 'Arm Width (cm)', 'geom.scale_note': 'Scale',
+        'btn.new_roi': 'New ROI', 'btn.undo': 'Undo Point', 'btn.finish_mask': 'Finish Detection Mask', 'btn.cancel_mask': 'Cancel Mask Editing', 'btn.clear_zone': 'Clear Current Zone', 'btn.clear_all': 'Clear All',
+        'btn.to_tuning': 'Go to Tuning', 'btn.back': 'Back to Calibration', 'btn.refresh': 'Refresh Preview', 'btn.start': MODULE === 'epm' ? 'Start EPM Analysis' : 'Start Y-Maze Analysis',
+        'status.roi_count': 'Configured ROIs', 'status.complete_count': 'Complete ROIs', 'status.point_count': 'Current Points', 'status.mask_points': 'Mask Points', 'status.hint': 'Current Hint',
+        'status.active_roi': 'Active ROI', 'status.active_zone': 'Active Zone',
+        'roi.title': 'ROI List', 'roi.hint': MODULE === 'epm' ? 'Each ROI needs a center plus two open and two closed arms. If lens distortion is obvious, add a dedicated detection-mask polygon too.' : 'Each ROI needs a 3-point triangular center plus Arm A, B, and C drawn with 4 points each. If lens distortion is obvious, add a dedicated detection-mask polygon too.', 'roi.empty': 'No ROI added yet.',
+        'roi.name': 'Name', 'roi.progress': 'Progress', 'roi.clear': 'Clear', 'roi.edit_mask': 'Edit Detection Mask', 'roi.continue_mask': 'Continue Mask Editing', 'roi.reset_mask': 'Reset Default Mask', 'roi.mask_default': 'Detection mask follows the drawn zones by default', 'roi.mask_custom': 'Custom detection mask ({0} points)', 'roi.mask_note': 'Metrics still use the named zones; detection prioritizes this mask polygon.',
+        'time.mode': 'Window Mode', 'time.global': 'Follow Global Window', 'time.precise': 'Precise Time Range', 'time.start': 'Start (s)', 'time.end': 'End (s)',
+        'preview.title': 'Tuning & Preview', 'preview.subtitle': 'Original frame on the left, detection and manually drawn zones on the right.', 'preview.frame': 'Preview Frame', 'preview.waiting': 'Waiting for preview',
+        'preview.detected': 'Detected {0} / {1} ROI targets', 'preview.failed': 'Preview failed',
+        'detect.title': 'Detection Parameters', 'detect.method': 'Detection Method', 'detect.threshold': 'Grayscale Threshold', 'detect.static': 'Static Background',
+        'detect.bg_type': 'Background Type', 'detect.bg_light': 'Light background / dark mouse', 'detect.bg_dark': 'Dark background / light mouse', 'detect.gray_threshold': 'Gray Threshold',
+        'detect.min_area': 'Minimum Area', 'detect.erosion_kernel': 'Erosion Kernel', 'detect.erosion_iter': 'Erosion Iterations', 'detect.dilation_kernel': 'Dilation Kernel', 'detect.dilation_iter': 'Dilation Iterations',
+        'stats.title': 'Statistics Parameters', 'stats.movement': 'Movement Threshold (cm/s)', 'stats.entry_depth': 'Entry Depth Ratio', 'stats.bin_seconds': 'Bin Size (s)', 'stats.generate_video': 'Generate annotated video',
+        'common.mode.draw_zone': 'Drawing Zone: {0}', 'common.mode.draw_mask': 'Editing Detection Mask: {0}',
+        'alert.need_roi': 'Please finish at least one complete ROI first.', 'alert.need_active_roi': 'Please create or select an ROI first.', 'alert.mask_need_points': 'A detection mask needs at least 3 points. Click near the first point to close it.', 'alert.mask_invalid': 'ROI {0} needs at least 3 detection-mask points.', 'alert.unfinished_mask': 'The current detection mask is not finished yet and needs at least 3 points.',
+        'alert.batch_missing': '{0}. {1}: missing complete ROI configuration', 'alert.batch_mask_invalid': '{0}. {1}: ROI {2} detection mask needs at least 3 points.', 'alert.batch_incomplete': 'Please finish every batch video before starting analysis:\n{0}', 'alert.start_failed': 'Failed to start analysis'
+    }
+};
+let baseFrame=null,currentVideoIdx=parseInt(currentVideoIndexFromServer||0,10)||0,currentVideoInfo=videoInfoList[parseInt(currentVideoIndexFromServer||0,10)||0]||videoInfo,rois=[],currentPoints=[],currentMaskPoints=[],isDrawingMask=false,maskEditRoiIndex=null,editingRoiIndex=-1,activeZoneKey=ZONE_DEFS[0].key;
+const totalVideoCount=Math.max(videoInfoList.length,videoList.length,1);
+let videoConfigs=Array.from({length:totalVideoCount},()=>({geometry:MODULE==='epm'?{center_size_cm:5,open_arm_length_cm:30,closed_arm_length_cm:30}:{arm_length_cm:30,arm_width_cm:10},tuning:{bg_method:'threshold',bg_type:'light',gray_threshold:127,erosion_kernel:3,erosion_iter:1,dilation_kernel:5,dilation_iter:2,min_area:120,movement_threshold_cm_s:2,entry_depth_ratio:.2,bin_seconds:60},rois:[],current_points:[],current_mask_points:[],is_drawing_mask:false,mask_edit_roi_index:null,editing_roi_index:-1,active_zone_key:ZONE_DEFS[0].key}));
+function cloneState(v){return JSON.parse(JSON.stringify(v));}
+function getLangSafe(){return(typeof getLang==='function')?getLang():'zh';}
+function pageTr(key,fallback){const lang=getLangSafe();return(PAGE_I18N[lang]&&PAGE_I18N[lang][key]!==undefined)?PAGE_I18N[lang][key]:fallback;}
+function pageFormat(key,values,fallback){let text=pageTr(key,fallback);(values||[]).forEach((value,index)=>{text=text.replaceAll(`{${index}}`,value);});return text;}
+function zoneDef(key){return ZONE_DEFS.find(entry=>entry.key===key)||null;}
+function zoneLabel(key){const item=ZONE_DEFS.find(entry=>entry.key===key);return item?(getLangSafe()==='en'?item.en:item.zh):key;}
+function zoneColor(key){const item=ZONE_DEFS.find(entry=>entry.key===key);return item?item.color:'#cbd5e1';}
+function zoneRequiredPoints(key){const item=zoneDef(key);return item?Number(item.required_points||4):4;}
+function isLegacyVisibleZone(zoneKey,points){return MODULE==='ymaze'&&zoneKey==='center'&&Array.isArray(points)&&points.length===4;}
+function isZoneDrawn(zoneKey,points){const required=zoneRequiredPoints(zoneKey);return Array.isArray(points)&&(points.length===required||isLegacyVisibleZone(zoneKey,points));}
+function isZoneCompleteForRoi(roi,zoneKey){return Array.isArray(roi.zones?.[zoneKey])&&roi.zones[zoneKey].length===zoneRequiredPoints(zoneKey);}
+function emptyZones(){const zones={};ZONE_DEFS.forEach(zone=>{zones[zone.key]=null;});return zones;}
+function roiDefaultName(index){return `${MODULE==='epm'?'EPM':'Y-Maze'} ${index+1}`;}
+function createEmptyROI(index){return{name:roiDefaultName(index),zones:emptyZones(),time_config:{mode:'global',start:null,end:null},detection_points:null};}
+function currentVideoName(index){return(videoList[index]&&videoList[index].name)?videoList[index].name:`Video ${index+1}`;}
+function frameLabelText(current,total){return `Frame ${current} / ${total}`;}
+function normalizePolygon(points){const pts=(points||[]).map(point=>({x:Number(point.x),y:Number(point.y)}));const center=pts.reduce((acc,point)=>({x:acc.x+point.x,y:acc.y+point.y}),{x:0,y:0});center.x/=pts.length||1;center.y/=pts.length||1;return pts.slice().sort((a,b)=>Math.atan2(a.y-center.y,a.x-center.x)-Math.atan2(b.y-center.y,b.x-center.x));}
+const MIN_MASK_POINTS=3;
+const MAX_MASK_POINTS=32;
+const MASK_SNAP_RADIUS_PX=14;
+function maskPointDistance(a,b){return Math.hypot(Number(a?.x||0)-Number(b?.x||0),Number(a?.y||0)-Number(b?.y||0));}
+function maskCanClose(points=currentMaskPoints){return Array.isArray(points)&&points.length>=MIN_MASK_POINTS;}
+function shouldSnapMask(point){return Boolean(isDrawingMask&&maskCanClose(currentMaskPoints)&&maskPointDistance(point,currentMaskPoints[0])<=MASK_SNAP_RADIUS_PX);}
+function ensureROIShape(roi,index){const safe=cloneState(roi||{});safe.name=safe.name||roiDefaultName(index);safe.time_config=safe.time_config||{mode:'global',start:null,end:null};safe.zones=safe.zones||emptyZones();ZONE_DEFS.forEach(zone=>{const points=safe.zones[zone.key];safe.zones[zone.key]=isZoneDrawn(zone.key,points)?normalizePolygon(points):null;});const detectionPoints=safe.detection_points;safe.detection_points=Array.isArray(detectionPoints)&&detectionPoints.length>=MIN_MASK_POINTS?cloneState(detectionPoints):null;return safe;}
+function countCompletedZones(roi){return ZONE_DEFS.filter(zone=>isZoneCompleteForRoi(roi,zone.key)).length;}
+function isRoiComplete(roi){return countCompletedZones(roi)===ZONE_DEFS.length;}
+function getCompleteRois(source){return(source||rois).filter(isRoiComplete).map((roi,index)=>{const payload={name:roi.name||roiDefaultName(index),zones:cloneState(roi.zones),time_config:cloneState(roi.time_config||{mode:'global',start:null,end:null})};if(Array.isArray(roi.detection_points)&&roi.detection_points.length>=MIN_MASK_POINTS)payload.detection_points=cloneState(roi.detection_points);return payload;});}
+function nextMissingZoneKey(roi){const next=ZONE_DEFS.find(zone=>!isZoneCompleteForRoi(roi,zone.key));return next?next.key:ZONE_DEFS[0].key;}
+function ensureVideoConfig(index){if(!videoConfigs[index])videoConfigs[index]={geometry:{},tuning:{},rois:[],current_points:[],current_mask_points:[],is_drawing_mask:false,mask_edit_roi_index:null,editing_roi_index:-1,active_zone_key:ZONE_DEFS[0].key};return videoConfigs[index];}
+function instructions(){if(getLangSafe()==='en'){return MODULE==='epm'?['Create an ROI first, then click a zone button on the right.','Each EPM zone uses exactly 4 corner clicks, and the corner order is automatically normalized.','Optional: switch an ROI into detection-mask editing and trace the real visible boundary with 8-16 points.']:['Create an ROI first, then click a zone button on the right.','The Y-maze center uses 3 clicks to define a triangle, while Arm A/B/C each use 4 clicks. Point order is normalized automatically.','Optional: switch an ROI into detection-mask editing and trace the real visible boundary with 8-16 points.'];}return MODULE==='epm'?['先新建 ROI，再在右侧选择要编辑的区域。','EPM 的每个区域固定使用 4 个角点，角点顺序会自动归一化，不影响最终区域。','如镜头边缘畸变明显，可切到检测遮罩编辑，沿真实可检测边界补画 8-16 个点。']:['先新建 ROI，再在右侧选择要编辑的区域。','Y 迷宫中心区使用 3 个点绘制三角形，Arm A/B/C 三条臂各使用 4 个点；点序会自动归一化。','如镜头边缘畸变明显，可切到检测遮罩编辑，沿真实可检测边界补画 8-16 个点。'];}
+function currentHintText(){if(isDrawingMask&&maskEditRoiIndex!=null&&rois[maskEditRoiIndex])return pageFormat('common.mode.draw_mask',[rois[maskEditRoiIndex].name||roiDefaultName(maskEditRoiIndex)],`Editing Detection Mask: ${rois[maskEditRoiIndex].name||roiDefaultName(maskEditRoiIndex)}`);if(editingRoiIndex<0||!rois[editingRoiIndex])return pageTr('alert.need_active_roi','Please create or select an ROI first.');if(currentPoints.length===0)return pageFormat('common.mode.draw_zone',[zoneLabel(activeZoneKey)],`Drawing Zone: ${zoneLabel(activeZoneKey)}`);return `${zoneLabel(activeZoneKey)} ${currentPoints.length}/${zoneRequiredPoints(activeZoneKey)}`;}
+function escapeHtml(text){return String(text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function escapeHtmlAttr(text){return escapeHtml(text).replace(/`/g,'&#96;');}
+function applyPageLang(){document.querySelectorAll('[data-page-i18n]').forEach(el=>{const val=pageTr(el.getAttribute('data-page-i18n'),null);if(val!==null)el.textContent=val;});const scaleNote=document.getElementById('scaleNoteText');if(scaleNote)scaleNote.value=getLangSafe()==='en'?'Average cm/px estimated from drawn edge lengths':'按手画区边长估计平均 cm/px';const primaryActionText=document.getElementById('primaryActionText');if(primaryActionText&&launchMode==='workspace')primaryActionText.textContent=getLangSafe()==='en'?'Save Setup and Return to Batch Page':'保存设置并返回批次页面';document.getElementById('instructionList').innerHTML=instructions().map(item=>`<li>${escapeHtml(item)}</li>`).join('');updateROIList();updateStatusStrip();}
+function readGeometryFromControls(){return MODULE==='epm'?{center_size_cm:parseFloat(document.getElementById('centerSizeCm').value||'5'),open_arm_length_cm:parseFloat(document.getElementById('openArmLengthCm').value||'30'),closed_arm_length_cm:parseFloat(document.getElementById('closedArmLengthCm').value||'30')}:{arm_length_cm:parseFloat(document.getElementById('armLengthCm').value||'30'),arm_width_cm:parseFloat(document.getElementById('armWidthCm').value||'10')};}
+function applyGeometryToControls(geometry){const merged=cloneState(geometry||{});if(MODULE==='epm'){document.getElementById('centerSizeCm').value=String(merged.center_size_cm??5);document.getElementById('openArmLengthCm').value=String(merged.open_arm_length_cm??30);document.getElementById('closedArmLengthCm').value=String(merged.closed_arm_length_cm??30);}else{document.getElementById('armLengthCm').value=String(merged.arm_length_cm??30);document.getElementById('armWidthCm').value=String(merged.arm_width_cm??10);}}
+function readTuningFromControls(){return{bg_method:document.getElementById('bgMethod').value,bg_type:document.getElementById('bgType').value,gray_threshold:parseInt(document.getElementById('grayThreshold').value||'127',10),erosion_kernel:parseInt(document.getElementById('erosionKernel').value||'3',10),erosion_iter:parseInt(document.getElementById('erosionIter').value||'1',10),dilation_kernel:parseInt(document.getElementById('dilationKernel').value||'5',10),dilation_iter:parseInt(document.getElementById('dilationIter').value||'2',10),min_area:parseInt(document.getElementById('minArea').value||'120',10),movement_threshold_cm_s:parseFloat(document.getElementById('movementThreshold').value||'2'),entry_depth_ratio:parseFloat(document.getElementById('entryDepthRatio').value||'0.2'),bin_seconds:parseFloat(document.getElementById('binSeconds').value||'60')};}
+function applyTuningToControls(tuning){const merged=cloneState(tuning||{});document.getElementById('bgMethod').value=merged.bg_method||'threshold';document.getElementById('bgType').value=merged.bg_type||'light';document.getElementById('grayThreshold').value=merged.gray_threshold??127;document.getElementById('erosionKernel').value=merged.erosion_kernel??3;document.getElementById('erosionIter').value=merged.erosion_iter??1;document.getElementById('dilationKernel').value=merged.dilation_kernel??5;document.getElementById('dilationIter').value=merged.dilation_iter??2;document.getElementById('minArea').value=merged.min_area??120;document.getElementById('movementThreshold').value=merged.movement_threshold_cm_s??2;document.getElementById('entryDepthRatio').value=merged.entry_depth_ratio??.2;document.getElementById('binSeconds').value=merged.bin_seconds??60;['grayThreshold','erosionKernel','erosionIter','dilationKernel','dilationIter','minArea'].forEach(syncRangeLabel);updateBgMethodUI();}
+function persistCurrentVideoState(){const cfg=ensureVideoConfig(currentVideoIdx);cfg.geometry=readGeometryFromControls();cfg.tuning=readTuningFromControls();cfg.rois=cloneState(rois);cfg.current_points=cloneState(currentPoints);cfg.current_mask_points=cloneState(currentMaskPoints);cfg.is_drawing_mask=Boolean(isDrawingMask);cfg.mask_edit_roi_index=maskEditRoiIndex==null?null:Number(maskEditRoiIndex);cfg.editing_roi_index=editingRoiIndex;cfg.active_zone_key=activeZoneKey;}
+function applyCurrentVideoState(){const cfg=ensureVideoConfig(currentVideoIdx);rois=(cfg.rois||[]).map((roi,index)=>ensureROIShape(roi,index));currentPoints=cloneState(cfg.current_points||[]);currentMaskPoints=cloneState(cfg.current_mask_points||[]);isDrawingMask=Boolean(cfg.is_drawing_mask);maskEditRoiIndex=cfg.mask_edit_roi_index==null?null:Number(cfg.mask_edit_roi_index);editingRoiIndex=(typeof cfg.editing_roi_index==='number')?cfg.editing_roi_index:-1;activeZoneKey=cfg.active_zone_key||ZONE_DEFS[0].key;if(!(editingRoiIndex>=0&&editingRoiIndex<rois.length))editingRoiIndex=rois.length?0:-1;if(editingRoiIndex>=0&&!ZONE_DEFS.find(zone=>zone.key===activeZoneKey))activeZoneKey=nextMissingZoneKey(rois[editingRoiIndex]);if(currentPoints.length>=zoneRequiredPoints(activeZoneKey))currentPoints=[];if(maskEditRoiIndex!=null&&!(maskEditRoiIndex>=0&&maskEditRoiIndex<rois.length)){maskEditRoiIndex=null;currentMaskPoints=[];isDrawingMask=false;}applyGeometryToControls(cfg.geometry);applyTuningToControls(cfg.tuning);updateROIList();updateStatusStrip();syncVideoSelector();}
+function hydrateFromDraftPayload(){if(!initialDraftPayload||typeof initialDraftPayload!=='object')return;const workspaceConfigs=Array.isArray(initialDraftPayload.workspace_video_configs)?initialDraftPayload.workspace_video_configs:[];const savedConfigs=Array.isArray(initialDraftPayload.per_video_configs)?initialDraftPayload.per_video_configs:[];for(let index=0;index<totalVideoCount;index+=1){const target=ensureVideoConfig(index);const workspaceCfg=workspaceConfigs[index];if(workspaceCfg&&typeof workspaceCfg==='object'){target.geometry=cloneState(workspaceCfg.geometry||target.geometry||{});target.tuning=cloneState(workspaceCfg.tuning||target.tuning||{});target.rois=cloneState(workspaceCfg.rois||[]);target.current_points=cloneState(workspaceCfg.current_points||[]);target.current_mask_points=cloneState(workspaceCfg.current_mask_points||[]);target.is_drawing_mask=Boolean(workspaceCfg.is_drawing_mask);target.mask_edit_roi_index=workspaceCfg.mask_edit_roi_index??null;target.editing_roi_index=typeof workspaceCfg.editing_roi_index==='number'?workspaceCfg.editing_roi_index:-1;target.active_zone_key=workspaceCfg.active_zone_key||ZONE_DEFS[0].key;continue;}const savedCfg=savedConfigs[index];if(savedCfg&&typeof savedCfg==='object'){target.geometry=cloneState(MODULE==='epm'?{center_size_cm:savedCfg.center_size_cm,open_arm_length_cm:savedCfg.open_arm_length_cm,closed_arm_length_cm:savedCfg.closed_arm_length_cm}:{arm_length_cm:savedCfg.arm_length_cm,arm_width_cm:savedCfg.arm_width_cm});target.tuning=cloneState(savedCfg);target.rois=cloneState(savedCfg.rois||[]);target.current_points=[];target.current_mask_points=[];target.is_drawing_mask=false;target.mask_edit_roi_index=null;target.editing_roi_index=-1;target.active_zone_key=ZONE_DEFS[0].key;}}const generateVideo=document.getElementById('generateVideo');if(generateVideo&&typeof initialDraftPayload.generate_video==='boolean')generateVideo.checked=initialDraftPayload.generate_video;}
+function syncVideoSelector(){const selector=document.getElementById('videoSelector');if(!selector)return;selector.value=String(currentVideoIdx);Array.from(selector.options).forEach((option,index)=>{const ready=getCompleteRois(ensureVideoConfig(index).rois||[]).length>0;option.textContent=`${ready?'[OK]':'[ ]'} ${index+1}. ${currentVideoName(index)}`;});}
+function currentTotalFrames(){return Math.max(0,((currentVideoInfo&&currentVideoInfo.total_frames)||videoInfo.total_frames||1)-1);}
+function syncFrameControls(){const total=currentTotalFrames();document.getElementById('frameSliderDraw').max=total;document.getElementById('frameSliderPreview').max=total;document.getElementById('frameLabelDraw').textContent=frameLabelText(document.getElementById('frameSliderDraw').value||0,total);document.getElementById('frameLabelPreview').textContent=frameLabelText(document.getElementById('frameSliderPreview').value||0,total);}
+function activeRoiName(){if(!(editingRoiIndex>=0&&rois[editingRoiIndex]))return '-';return rois[editingRoiIndex].name||roiDefaultName(editingRoiIndex);}
+function updateStatusStrip(){const activeMaskCount=isDrawingMask?currentMaskPoints.length:(editingRoiIndex>=0&&rois[editingRoiIndex]&&Array.isArray(rois[editingRoiIndex].detection_points)?rois[editingRoiIndex].detection_points.length:0);document.getElementById('roiCountText').textContent=String(rois.length);document.getElementById('completeCountText').textContent=String(getCompleteRois().length);document.getElementById('pointCountText').textContent=isDrawingMask?'-':`${currentPoints.length} / ${zoneRequiredPoints(activeZoneKey)}`;document.getElementById('maskPointText').textContent=String(activeMaskCount);document.getElementById('pointHintText').textContent=currentHintText();document.getElementById('activeRoiText').textContent=isDrawingMask&&maskEditRoiIndex!=null&&rois[maskEditRoiIndex]?(rois[maskEditRoiIndex].name||roiDefaultName(maskEditRoiIndex)):activeRoiName();document.getElementById('activeZoneText').textContent=isDrawingMask?pageTr('roi.edit_mask','Edit Detection Mask'):editingRoiIndex>=0?zoneLabel(activeZoneKey):'-';document.getElementById('toTuningBtn').disabled=getCompleteRois().length===0;const maskFinishBtn=document.getElementById('maskFinishBtn');const maskCancelBtn=document.getElementById('maskCancelBtn');if(maskFinishBtn)maskFinishBtn.disabled=!isDrawingMask||currentMaskPoints.length<MIN_MASK_POINTS;if(maskCancelBtn)maskCancelBtn.disabled=!isDrawingMask;}
+function drawPoint(ctx,point,color){ctx.beginPath();ctx.arc(point.x,point.y,5,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();}
+function drawPolygon(ctx,points,color,active){if(!Array.isArray(points)||!points.length)return;ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);points.slice(1).forEach(point=>ctx.lineTo(point.x,point.y));ctx.closePath();ctx.fillStyle=`${color}24`;ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=active?3:2;ctx.stroke();points.forEach(point=>drawPoint(ctx,point,active?'#facc15':'#f8fafc'));}
+function drawLabel(ctx,x,y,text){ctx.fillStyle='#f8fafc';ctx.font='600 14px Segoe UI';ctx.fillText(text,x+6,y-8);}
+function drawROI(ctx,roi,index){ZONE_DEFS.forEach(zone=>{const points=roi.zones?.[zone.key];if(isZoneDrawn(zone.key,points)){drawPolygon(ctx,points,zone.color,!isDrawingMask&&editingRoiIndex===index&&activeZoneKey===zone.key);const cx=points.reduce((sum,point)=>sum+point.x,0)/points.length;const cy=points.reduce((sum,point)=>sum+point.y,0)/points.length;drawLabel(ctx,cx,cy,zoneLabel(zone.key));}});const detectionPoints=roi.detection_points;if(Array.isArray(detectionPoints)&&detectionPoints.length>=MIN_MASK_POINTS){drawPolygon(ctx,detectionPoints,'#f59e0b',isDrawingMask&&maskEditRoiIndex===index);}const centerPoints=roi.zones?.center;if(Array.isArray(centerPoints)&&centerPoints.length>=3){const cx=centerPoints.reduce((sum,point)=>sum+point.x,0)/centerPoints.length;const cy=centerPoints.reduce((sum,point)=>sum+point.y,0)/centerPoints.length;drawLabel(ctx,cx,cy+18,roi.name||roiDefaultName(index));}}
+function drawDraftPolygon(ctx){if(isDrawingMask&&maskEditRoiIndex!=null){if(!currentMaskPoints.length)return;const color='#f59e0b';if(currentMaskPoints.length>=2){ctx.save();ctx.beginPath();ctx.moveTo(currentMaskPoints[0].x,currentMaskPoints[0].y);currentMaskPoints.slice(1).forEach(point=>ctx.lineTo(point.x,point.y));if(maskCanClose(currentMaskPoints)){ctx.closePath();ctx.fillStyle='rgba(245, 158, 11, 0.14)';ctx.fill();}ctx.setLineDash([10,6]);ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();ctx.restore();}currentMaskPoints.forEach((point,index)=>drawPoint(ctx,point,index===0?'#22c55e':'#facc15'));if(maskCanClose(currentMaskPoints)){ctx.beginPath();ctx.arc(currentMaskPoints[0].x,currentMaskPoints[0].y,9,0,Math.PI*2);ctx.strokeStyle='#22c55e';ctx.lineWidth=1.5;ctx.stroke();}return;}if(!currentPoints.length||editingRoiIndex<0)return;const color=zoneColor(activeZoneKey);if(currentPoints.length>=2){ctx.beginPath();ctx.moveTo(currentPoints[0].x,currentPoints[0].y);currentPoints.slice(1).forEach(point=>ctx.lineTo(point.x,point.y));ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();}currentPoints.forEach(point=>drawPoint(ctx,point,'#facc15'));}
+function drawMazeCanvas(){const canvas=document.getElementById('mazeCanvas');if(!canvas||!baseFrame)return;const ctx=canvas.getContext('2d');canvas.width=baseFrame.width;canvas.height=baseFrame.height;ctx.drawImage(baseFrame,0,0);rois.forEach((roi,index)=>drawROI(ctx,roi,index));drawDraftPolygon(ctx);}
+function updateROIList(){const list=document.getElementById('roiList');if(!rois.length){list.innerHTML=`<div class="mini-note">${escapeHtml(pageTr('roi.empty','No ROI added yet.'))}</div>`;return;}list.innerHTML=rois.map((roi,index)=>{const timeConfig=roi.time_config||{mode:'global',start:null,end:null};const progressText=`${countCompletedZones(roi)} / ${ZONE_DEFS.length}`;const detectionCount=(roi.detection_points||[]).length;const isEditingMask=isDrawingMask&&maskEditRoiIndex===index;const zoneMarkup=ZONE_DEFS.map(zone=>{const done=isZoneCompleteForRoi(roi,zone.key);const active=!isDrawingMask&&editingRoiIndex===index&&activeZoneKey===zone.key;return `<div class="zone-grid"><button class="btn btn-sm ${active?'btn-primary':done?'btn-outline-success':'btn-outline-secondary'}" onclick="selectZoneForEdit(${index}, '${zone.key}')">${escapeHtml(zoneLabel(zone.key))}</button><button class="btn btn-sm btn-outline-danger" onclick="clearZone(${index}, '${zone.key}')">${escapeHtml(pageTr('roi.clear','Clear'))}</button></div>`;}).join('');const timeFields=timeConfig.mode==='precise'?`<div><label class="form-label">${escapeHtml(pageTr('time.start','Start (s)'))}</label><input type="number" class="form-control" step="0.1" value="${timeConfig.start??''}" oninput="updateTimeValue(${index}, 'start', this.value)"></div><div><label class="form-label">${escapeHtml(pageTr('time.end','End (s)'))}</label><input type="number" class="form-control" step="0.1" value="${timeConfig.end??''}" oninput="updateTimeValue(${index}, 'end', this.value)"></div>`:'';const maskHint=detectionCount>=MIN_MASK_POINTS?pageFormat('roi.mask_custom',[detectionCount],`Custom detection mask (${detectionCount} points)`):pageTr('roi.mask_default','Detection mask follows the drawn zones by default');return `<div class="roi-card ${(editingRoiIndex===index&&!isDrawingMask)||isEditingMask?'active':''}"><div class="roi-card-head"><div><div class="roi-card-title">${escapeHtml(roi.name||roiDefaultName(index))}</div><small>${escapeHtml(pageTr('roi.progress','Progress'))}: ${progressText}</small></div><button class="btn btn-outline-danger btn-sm" onclick="removeROI(${index})"><i class="fas fa-trash"></i></button></div><div class="maze-grid"><div><label class="form-label">${escapeHtml(pageTr('roi.name','Name'))}</label><input class="form-control" value="${escapeHtmlAttr(roi.name||roiDefaultName(index))}" oninput="updateRoiName(${index}, this.value)"></div><div><label class="form-label">${escapeHtml(pageTr('time.mode','Window Mode'))}</label><select class="form-select" onchange="updateTimeMode(${index}, this.value)"><option value="global" ${timeConfig.mode==='global'?'selected':''}>${escapeHtml(pageTr('time.global','Follow Global Window'))}</option><option value="precise" ${timeConfig.mode==='precise'?'selected':''}>${escapeHtml(pageTr('time.precise','Precise Time Range'))}</option></select></div>${timeFields}</div><div class="mt-3">${zoneMarkup}</div><div class="mt-3"><div class="d-flex flex-wrap gap-2"><button class="btn btn-sm ${isEditingMask?'btn-warning':'btn-outline-warning'}" onclick="startMaskEditing(${index})"><i class="fas fa-draw-polygon me-1"></i>${escapeHtml(isEditingMask?pageTr('roi.continue_mask','Continue Mask Editing'):pageTr('roi.edit_mask','Edit Detection Mask'))}</button><button class="btn btn-sm btn-outline-secondary" onclick="resetMask(${index})"><i class="fas fa-rotate-left me-1"></i>${escapeHtml(pageTr('roi.reset_mask','Reset Default Mask'))}</button></div><div class="mini-note mt-2">${escapeHtml(maskHint)}</div><div class="mini-note">${escapeHtml(pageTr('roi.mask_note','Metrics still use the named zones; detection prioritizes this mask polygon.'))}</div></div></div>`;}).join('');}
+function updateRoiName(index,value){rois[index].name=value||roiDefaultName(index);persistCurrentVideoState();updateStatusStrip();}
+function updateTimeMode(index,mode){if(!rois[index].time_config)rois[index].time_config={mode:'global',start:null,end:null};rois[index].time_config.mode=mode;if(mode==='global'){rois[index].time_config.start=null;rois[index].time_config.end=null;}persistCurrentVideoState();updateROIList();}
+function updateTimeValue(index,key,value){if(!rois[index].time_config)rois[index].time_config={mode:'precise',start:null,end:null};rois[index].time_config[key]=value===''?null:parseFloat(value);persistCurrentVideoState();}
+function startMaskEditing(index){if(!(index>=0&&index<rois.length))return;isDrawingMask=true;maskEditRoiIndex=index;currentMaskPoints=cloneState(rois[index].detection_points||[]);currentPoints=[];editingRoiIndex=index;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function finishMaskEditing(){if(!isDrawingMask||maskEditRoiIndex==null)return;if(currentMaskPoints.length<MIN_MASK_POINTS){alert(pageTr('alert.mask_need_points','A detection mask needs at least 3 points. Click near the first point to close it.'));return;}rois[maskEditRoiIndex].detection_points=cloneState(currentMaskPoints);isDrawingMask=false;currentMaskPoints=[];maskEditRoiIndex=null;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function cancelMaskEditing(){if(!isDrawingMask)return;isDrawingMask=false;currentMaskPoints=[];maskEditRoiIndex=null;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function resetMask(index){if(!(index>=0&&index<rois.length))return;rois[index].detection_points=null;if(maskEditRoiIndex===index){isDrawingMask=false;maskEditRoiIndex=null;currentMaskPoints=[];}persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function selectZoneForEdit(index,zoneKey){isDrawingMask=false;maskEditRoiIndex=null;currentMaskPoints=[];editingRoiIndex=index;activeZoneKey=zoneKey;currentPoints=[];persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function clearZone(index,zoneKey){rois[index].zones[zoneKey]=null;if(editingRoiIndex===index&&activeZoneKey===zoneKey)currentPoints=[];persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function removeROI(index){rois.splice(index,1);rois=rois.map((roi,idx)=>ensureROIShape(roi,idx));if(editingRoiIndex===index){editingRoiIndex=rois.length?Math.min(index,rois.length-1):-1;activeZoneKey=editingRoiIndex>=0?nextMissingZoneKey(rois[editingRoiIndex]):ZONE_DEFS[0].key;currentPoints=[];}else if(editingRoiIndex>index){editingRoiIndex-=1;}if(maskEditRoiIndex===index){maskEditRoiIndex=null;currentMaskPoints=[];isDrawingMask=false;}else if(maskEditRoiIndex!=null&&maskEditRoiIndex>index){maskEditRoiIndex-=1;}persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function normalizeCanvasPoint(event,canvas){const rect=canvas.getBoundingClientRect();return{x:(event.clientX-rect.left)*(canvas.width/rect.width),y:(event.clientY-rect.top)*(canvas.height/rect.height)};}
+function ensureActiveROIForDrawing(){if(isDrawingMask&&maskEditRoiIndex!=null&&rois[maskEditRoiIndex])return true;if(editingRoiIndex>=0&&rois[editingRoiIndex])return true;if(!rois.length){startNewROI();return true;}editingRoiIndex=0;activeZoneKey=nextMissingZoneKey(rois[0]);currentPoints=[];persistCurrentVideoState();updateROIList();updateStatusStrip();return true;}
+function addCanvasPoint(point){if(!ensureActiveROIForDrawing())return;if(isDrawingMask&&maskEditRoiIndex!=null){if(shouldSnapMask(point)){finishMaskEditing();return;}if(currentMaskPoints.length<MAX_MASK_POINTS)currentMaskPoints.push(point);persistCurrentVideoState();updateStatusStrip();drawMazeCanvas();return;}currentPoints.push(point);if(currentPoints.length===zoneRequiredPoints(activeZoneKey)){rois[editingRoiIndex].zones[activeZoneKey]=normalizePolygon(currentPoints);currentPoints=[];activeZoneKey=nextMissingZoneKey(rois[editingRoiIndex]);}persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function startNewROI(){isDrawingMask=false;maskEditRoiIndex=null;currentMaskPoints=[];rois.push(createEmptyROI(rois.length));editingRoiIndex=rois.length-1;activeZoneKey=ZONE_DEFS[0].key;currentPoints=[];persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function undoCurrentPoint(){if(isDrawingMask){currentMaskPoints.pop();}else{currentPoints.pop();}persistCurrentVideoState();updateStatusStrip();drawMazeCanvas();}
+function clearActiveZone(){if(isDrawingMask&&maskEditRoiIndex!=null){currentMaskPoints=[];rois[maskEditRoiIndex].detection_points=null;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();return;}if(!(editingRoiIndex>=0&&rois[editingRoiIndex]))return;currentPoints=[];rois[editingRoiIndex].zones[activeZoneKey]=null;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function clearAllROIs(){rois=[];currentPoints=[];currentMaskPoints=[];isDrawingMask=false;maskEditRoiIndex=null;editingRoiIndex=-1;activeZoneKey=ZONE_DEFS[0].key;persistCurrentVideoState();updateROIList();updateStatusStrip();drawMazeCanvas();}
+function updateStepNav(activeStep){[1,2].forEach(step=>{const el=document.getElementById(`stepNav${step}`);el.classList.remove('active','done');if(step<activeStep)el.classList.add('done');if(step===activeStep)el.classList.add('active');});}
+function goToStep(step){if(step===2&&getCompleteRois().length===0){alert(pageTr('alert.need_roi','Please finish at least one complete ROI first.'));return;}document.getElementById('step1').classList.toggle('active',step===1);document.getElementById('step2').classList.toggle('active',step===2);updateStepNav(step);if(step===2&&getCompleteRois().length)updateDebugPreview();}
+function syncRangeLabel(id){const input=document.getElementById(id);const label=document.getElementById(id+'Label');if(input&&label)label.textContent=input.value;}
+function updateBgMethodUI(){const showThreshold=document.getElementById('bgMethod').value==='threshold';document.getElementById('bgTypeWrap').style.display=showThreshold?'':'none';document.getElementById('grayThresholdWrap').style.display=showThreshold?'':'none';}
+function buildPerVideoConfigs(geometry,tuning){return videoConfigs.map((cfg,index)=>({...(index===currentVideoIdx?tuning:(cfg.tuning||{})),...(index===currentVideoIdx?geometry:(cfg.geometry||{})),rois:getCompleteRois(index===currentVideoIdx?rois:(cfg.rois||[]))}));}
+function buildRequestBody(frameIdx){persistCurrentVideoState();const geometry=readGeometryFromControls();const tuning=readTuningFromControls();return{frame:frameIdx===undefined?parseInt(document.getElementById('frameSliderPreview').value||'0',10):frameIdx,video:currentVideoIdx,rois:getCompleteRois(),per_video_configs:buildPerVideoConfigs(geometry,tuning),bg_method:tuning.bg_method,bg_type:tuning.bg_type,gray_threshold:tuning.gray_threshold,erosion_kernel:tuning.erosion_kernel,erosion_iter:tuning.erosion_iter,dilation_kernel:tuning.dilation_kernel,dilation_iter:tuning.dilation_iter,min_area:tuning.min_area,movement_threshold_cm_s:tuning.movement_threshold_cm_s,entry_depth_ratio:tuning.entry_depth_ratio,bin_seconds:tuning.bin_seconds,generate_video:document.getElementById('generateVideo').checked,...geometry};}
+async function saveDraftPayload(redirectToWorkspace=false){persistCurrentVideoState();const body=buildRequestBody();body.workspace_video_configs=cloneState(videoConfigs);body._selected_video_idx=currentVideoIdx;const response=await fetch(`/api/draft/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'保存当前设置失败');if(redirectToWorkspace&&batchWorkspaceUrl){window.location.href=batchWorkspaceUrl;}return data;}
+function drawImageOnCanvas(canvasId,base64Data){const canvas=document.getElementById(canvasId);const ctx=canvas.getContext('2d');const img=new Image();img.onload=function(){canvas.width=img.width;canvas.height=img.height;ctx.drawImage(img,0,0);};img.src='data:image/jpeg;base64,'+base64Data;}
+function updateDebugPreview(frameIdx){if(getCompleteRois().length===0)return;fetch(`/api/debug_preview/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildRequestBody(frameIdx))}).then(r=>r.json()).then(data=>{if(data.error){document.getElementById('previewStatus').textContent=data.error;return;}drawImageOnCanvas('previewOriginal',data.original);drawImageOnCanvas('previewResult',data.result);document.getElementById('previewStatus').textContent=pageFormat('preview.detected',[data.detections||0,data.roi_count||getCompleteRois().length],'Detected {0} / {1} ROI targets');}).catch(()=>{document.getElementById('previewStatus').textContent=pageTr('preview.failed','Preview failed');});}
+function startAnalysis(){if(isDrawingMask){alert(pageTr('alert.unfinished_mask','The current detection mask is not finished yet and needs at least 3 points.'));return;}if(getCompleteRois().length===0){alert(pageTr('alert.need_roi','Please finish at least one complete ROI first.'));return;}const invalidMask=rois.findIndex(roi=>roi.detection_points&&roi.detection_points.length<MIN_MASK_POINTS);if(invalidMask>=0){alert(pageFormat('alert.mask_invalid',[invalidMask+1],`ROI ${invalidMask+1} needs at least 3 detection-mask points.`));return;}if(launchMode==='workspace'){document.getElementById('loading').style.display='flex';saveDraftPayload(true).catch(error=>{document.getElementById('loading').style.display='none';alert(error.message||'保存当前设置失败');});return;}const body=buildRequestBody();if(isBatch){const incomplete=[];body.per_video_configs.forEach((cfg,index)=>{if(!(cfg.rois||[]).length){incomplete.push(pageFormat('alert.batch_missing',[index+1,currentVideoName(index)],'{0}. {1}: missing complete ROI configuration'));return;}const invalidBatchMask=(cfg.rois||[]).findIndex(roi=>roi.detection_points&&roi.detection_points.length<MIN_MASK_POINTS);if(invalidBatchMask>=0)incomplete.push(pageFormat('alert.batch_mask_invalid',[index+1,currentVideoName(index),invalidBatchMask+1],'{0}. {1}: ROI {2} detection mask needs at least 3 points.'));});if(incomplete.length){alert(pageFormat('alert.batch_incomplete',[incomplete.join('\n')],'Please finish every batch video before starting analysis:\n{0}'));return;}}document.getElementById('loading').style.display='flex';fetch(`/api/start_analysis/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(data=>{if(data.success){window.location.href=`/monitor/${sessionId}`;return;}document.getElementById('loading').style.display='none';alert(data.error||pageTr('alert.start_failed','Failed to start analysis'));}).catch(err=>{document.getElementById('loading').style.display='none';alert(err);});}
+function loadFrame(frameIdx,callback){fetch(`/api/get_first_frame/${sessionId}?frame=${frameIdx}&video=${currentVideoIdx}`).then(r=>r.json()).then(data=>{if(data.error){alert(data.error);return;}if(data.video_info){currentVideoInfo=data.video_info;videoInfoList[currentVideoIdx]=data.video_info;syncFrameControls();}const img=new Image();img.onload=function(){baseFrame=img;drawMazeCanvas();if(callback)callback();};img.src='data:image/jpeg;base64,'+data.image;});}
+function onDrawFrameChange(value){document.getElementById('frameLabelDraw').textContent=frameLabelText(value,currentTotalFrames());loadFrame(parseInt(value,10));}
+function onPreviewFrameChange(value){document.getElementById('frameLabelPreview').textContent=frameLabelText(value,currentTotalFrames());loadFrame(parseInt(value,10),()=>updateDebugPreview(parseInt(value,10)));}
+function onVideoChange(value){persistCurrentVideoState();currentVideoIdx=parseInt(value,10)||0;currentVideoInfo=videoInfoList[currentVideoIdx]||videoInfo;document.getElementById('frameSliderDraw').value='0';document.getElementById('frameSliderPreview').value='0';applyCurrentVideoState();syncFrameControls();loadFrame(0,()=>{if(document.getElementById('step2').classList.contains('active')&&getCompleteRois().length)updateDebugPreview(0);});}
+document.addEventListener('DOMContentLoaded',function(){hydrateFromDraftPayload();applyPageLang();['grayThreshold','erosionKernel','erosionIter','dilationKernel','dilationIter','minArea'].forEach(syncRangeLabel);updateBgMethodUI();syncVideoSelector();applyCurrentVideoState();syncFrameControls();loadFrame(0);if(launchMode==='workspace'){const primaryActionText=document.getElementById('primaryActionText');if(primaryActionText)primaryActionText.textContent='保存设置并返回批次页面';}const canvas=document.getElementById('mazeCanvas');canvas.addEventListener('click',event=>addCanvasPoint(normalizeCanvasPoint(event,canvas)));canvas.addEventListener('contextmenu',event=>{event.preventDefault();undoCurrentPoint();});});
+document.addEventListener('mousescope:langchange',applyPageLang);
+</script>
+{% endblock %}

@@ -52,6 +52,17 @@
 </div>
 
 <div class="oft-shell">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <strong>批量单视频编辑模式</strong>
+            <div class="small mt-1">当前正在编辑第 {{ current_video_index + 1 }} 个视频。保存当前设置后返回批次页面，再统一启动整批分析。</div>
+        </div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
+            <i class="fas fa-layer-group me-2"></i>返回批次页面
+        </a>
+    </div>
+    {% endif %}
     <div class="oft-header">
         <div>
             <h1 class="display-6 cyber-text mb-1" data-i18n="oft.calib.header.title">旷场实验配置</h1>
@@ -76,7 +87,7 @@
                         <label class="form-label" data-i18n="oft.calib.arena_side">旷场边长 (cm)</label>
                         <input type="number" class="form-control" id="arenaSideCm" min="1" step="0.1" value="50" onchange="drawArenaCanvas(); updateDebugPreview();">
                     </div>
-                    {% if is_batch %}
+                    {% if is_batch and launch_mode != 'workspace' %}
                     <div>
                         <label class="form-label" data-i18n="oft.calib.preview_video">预览视频</label>
                         <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
@@ -159,8 +170,8 @@
                     <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()">
                         <i class="fas fa-sync-alt me-2"></i><span data-i18n="oft.calib.btn.refresh">刷新预览</span>
                     </button>
-                    <button class="btn btn-success" type="button" onclick="startAnalysis()">
-                        <i class="fas fa-play me-2"></i><span data-i18n="oft.calib.btn.start">开始 OFT 分析</span>
+                    <button class="btn btn-success" type="button" id="primaryActionBtn" onclick="startAnalysis()">
+                        <i class="fas fa-play me-2"></i><span id="primaryActionText" data-i18n="oft.calib.btn.start">开始 OFT 分析</span>
                     </button>
                 </div>
             </div>
@@ -283,6 +294,10 @@ const sessionId = '{{ session_id }}';
 const videoInfo = {{ video_info | tojson }};
 const videoInfoList = {{ video_info_list | tojson }};
 const isBatch = {{ is_batch | tojson }};
+const launchMode = {{ launch_mode | tojson }};
+const currentVideoIndexFromServer = {{ current_video_index | tojson }};
+const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
+const initialDraftPayload = {{ draft_payload | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
 {% else %}
@@ -290,8 +305,8 @@ const videoList = [];
 {% endif %}
 
 let baseFrame = null;
-let currentVideoIdx = 0;
-let currentVideoInfo = videoInfoList[0] || videoInfo;
+let currentVideoIdx = parseInt(currentVideoIndexFromServer || 0, 10) || 0;
+let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
 let rois = [];
 let currentROI = [];
 let isDrawingArena = false;
@@ -299,7 +314,9 @@ let currentMaskPoints = [];
 let isDrawingMask = false;
 let maskEditArenaIndex = null;
 let debounceTimers = {};
-const MAX_MASK_POINTS = 24;
+const MIN_MASK_POINTS = 3;
+const MAX_MASK_POINTS = 32;
+const MASK_SNAP_RADIUS_PX = 14;
 const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
 function defaultTuningParams() {
     return {
@@ -461,6 +478,46 @@ function applyCurrentVideoState() {
     syncVideoSelectors();
 }
 
+function hydrateFromDraftPayload() {
+    if (!initialDraftPayload || typeof initialDraftPayload !== 'object') return;
+    const workspaceConfigs = Array.isArray(initialDraftPayload.workspace_video_configs)
+        ? initialDraftPayload.workspace_video_configs
+        : [];
+    const savedConfigs = Array.isArray(initialDraftPayload.per_video_configs)
+        ? initialDraftPayload.per_video_configs
+        : [];
+    for (let index = 0; index < totalVideoCount; index += 1) {
+        const target = ensureVideoConfig(index);
+        const workspaceCfg = workspaceConfigs[index];
+        if (workspaceCfg && typeof workspaceCfg === 'object') {
+            target.arena_side_cm = workspaceCfg.arena_side_cm ?? target.arena_side_cm;
+            target.rois = cloneState(workspaceCfg.rois || []);
+            target.current_roi = cloneState(workspaceCfg.current_roi || []);
+            target.is_drawing_arena = Boolean(workspaceCfg.is_drawing_arena);
+            target.current_mask_points = cloneState(workspaceCfg.current_mask_points || []);
+            target.is_drawing_mask = Boolean(workspaceCfg.is_drawing_mask);
+            target.mask_edit_arena_index = workspaceCfg.mask_edit_arena_index ?? null;
+            target.tuning_params = { ...defaultTuningParams(), ...(workspaceCfg.tuning_params || {}) };
+            continue;
+        }
+        const savedCfg = savedConfigs[index];
+        if (savedCfg && typeof savedCfg === 'object') {
+            target.arena_side_cm = savedCfg.arena_side_cm ?? target.arena_side_cm;
+            target.rois = cloneState(savedCfg.rois || []);
+            target.current_roi = [];
+            target.is_drawing_arena = false;
+            target.current_mask_points = [];
+            target.is_drawing_mask = false;
+            target.mask_edit_arena_index = null;
+            target.tuning_params = { ...defaultTuningParams(), ...(savedCfg || {}) };
+        }
+    }
+    const generateVideo = document.getElementById('generateVideo');
+    if (generateVideo && typeof initialDraftPayload.generate_video === 'boolean') {
+        generateVideo.checked = initialDraftPayload.generate_video;
+    }
+}
+
 function currentTotalFrames() {
     return Math.max(0, ((currentVideoInfo && currentVideoInfo.total_frames) || videoInfo.total_frames || 1) - 1);
 }
@@ -504,12 +561,24 @@ function currentDrawModeLabel() {
     return '查看';
 }
 
+function maskPointDistance(a, b) {
+    return Math.hypot(Number(a?.x || 0) - Number(b?.x || 0), Number(a?.y || 0) - Number(b?.y || 0));
+}
+
+function maskCanClose(points = currentMaskPoints) {
+    return Array.isArray(points) && points.length >= MIN_MASK_POINTS;
+}
+
+function shouldSnapMaskClose(point) {
+    return Boolean(isDrawingMask && maskCanClose(currentMaskPoints) && maskPointDistance(point, currentMaskPoints[0]) <= MASK_SNAP_RADIUS_PX);
+}
+
 function updateMaskToolbar() {
     const finishBtn = document.getElementById('finishMaskBtn');
     const cancelBtn = document.getElementById('cancelMaskBtn');
     finishBtn.style.display = isDrawingMask ? '' : 'none';
     cancelBtn.style.display = isDrawingMask ? '' : 'none';
-    finishBtn.disabled = !isDrawingMask || currentMaskPoints.length < 4;
+    finishBtn.disabled = !isDrawingMask || currentMaskPoints.length < MIN_MASK_POINTS;
 }
 
 function updateBgMethodUI() {
@@ -587,7 +656,7 @@ function drawArenaCanvas() {
         ctx.stroke();
 
         const detectionPoints = roi.detection_points || [];
-        if (detectionPoints.length >= 4) {
+        if (detectionPoints.length >= MIN_MASK_POINTS) {
             ctx.save();
             ctx.beginPath();
             ctx.moveTo(detectionPoints[0].x, detectionPoints[0].y);
@@ -647,8 +716,10 @@ function drawArenaCanvas() {
         ctx.beginPath();
         ctx.moveTo(currentMaskPoints[0].x, currentMaskPoints[0].y);
         currentMaskPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-        if (currentMaskPoints.length >= 4) {
+        if (currentMaskPoints.length >= MIN_MASK_POINTS) {
             ctx.closePath();
+            ctx.fillStyle = 'rgba(249, 115, 22, 0.14)';
+            ctx.fill();
         }
         ctx.setLineDash([10, 6]);
         ctx.strokeStyle = '#f97316';
@@ -662,6 +733,13 @@ function drawArenaCanvas() {
             ctx.fillStyle = index === 0 ? '#22c55e' : '#f97316';
             ctx.fill();
         });
+        if (maskCanClose(currentMaskPoints)) {
+            ctx.beginPath();
+            ctx.arc(currentMaskPoints[0].x, currentMaskPoints[0].y, 9, 0, Math.PI * 2);
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
     }
 
     document.getElementById('arenaCountText').textContent = String(rois.length);
@@ -673,6 +751,11 @@ function drawArenaCanvas() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    hydrateFromDraftPayload();
+    if (launchMode === 'workspace') {
+        const primaryActionText = document.getElementById('primaryActionText');
+        if (primaryActionText) primaryActionText.textContent = '保存设置并返回批次页面';
+    }
     const canvas = document.getElementById('arenaCanvas');
     canvas.addEventListener('click', function (e) {
         const rect = canvas.getBoundingClientRect();
@@ -681,8 +764,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const x = Math.round((e.clientX - rect.left) * scaleX);
         const y = Math.round((e.clientY - rect.top) * scaleY);
         if (isDrawingMask) {
+            const nextPoint = { x, y };
+            if (shouldSnapMaskClose(nextPoint)) {
+                finishDetectionMaskEdit();
+                return;
+            }
             if (currentMaskPoints.length < MAX_MASK_POINTS) {
-                currentMaskPoints.push({ x, y });
+                currentMaskPoints.push(nextPoint);
                 persistCurrentVideoState();
                 syncVideoSelectors();
                 drawArenaCanvas();
@@ -755,8 +843,8 @@ function startDetectionMaskEdit(index) {
 
 function finishDetectionMaskEdit() {
     if (!isDrawingMask || maskEditArenaIndex == null) return;
-    if (currentMaskPoints.length < 4) {
-        alert(tr('oft.calib.alert.mask_need_points', 'A detection mask needs at least 4 points. Drawing 8-16 points along the curved edge is recommended.'));
+    if (currentMaskPoints.length < MIN_MASK_POINTS) {
+        alert(tr('oft.calib.alert.mask_need_points', 'A detection mask needs at least 3 points. Click near the first point to close it.'));
         return;
     }
     rois[maskEditArenaIndex].detection_points = cloneState(currentMaskPoints);
@@ -868,7 +956,7 @@ function updateArenaList() {
                 <div class="arena-card-head">
                     <div>
                         <div class="arena-card-title">ROI ${index + 1}</div>
-                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')} · ${detectionCount >= 4 ? `已自定义检测遮罩 (${detectionCount} 点)` : '检测遮罩默认跟随 arena'}</small>
+                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')} · ${detectionCount >= MIN_MASK_POINTS ? `已自定义检测遮罩 (${detectionCount} 点)` : '检测遮罩默认跟随 arena'}</small>
                     </div>
                     <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteArena(${index})">
                         <i class="fas fa-trash"></i>
@@ -901,7 +989,7 @@ function updateArenaList() {
                     <button class="btn btn-sm ${isEditingMask ? 'btn-warning' : 'btn-outline-warning'}" type="button" onclick="startDetectionMaskEdit(${index})">
                         <i class="fas fa-draw-polygon me-1"></i>${isEditingMask ? '继续编辑检测遮罩' : '编辑检测遮罩'}
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetDetectionMask(${index})" ${detectionCount >= 4 ? '' : 'disabled'}>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetDetectionMask(${index})" ${detectionCount >= MIN_MASK_POINTS ? '' : 'disabled'}>
                         <i class="fas fa-rotate-left me-1"></i>恢复默认遮罩
                     </button>
                 </div>
@@ -968,11 +1056,11 @@ function goToStep(step) {
         alert(tr('oft.calib.alert.need_arena', 'Please complete at least one arena calibration.'));
         return;
     }
-    if (step === 2 && isDrawingMask && currentMaskPoints.length > 0 && currentMaskPoints.length < 4) {
-        alert(tr('oft.calib.alert.unfinished_mask', 'The current detection mask is not finished yet and needs at least 4 points.'));
+    if (step === 2 && isDrawingMask && currentMaskPoints.length > 0 && currentMaskPoints.length < MIN_MASK_POINTS) {
+        alert(tr('oft.calib.alert.unfinished_mask', 'The current detection mask is not finished yet and needs at least 3 points.'));
         return;
     }
-    if (step === 2 && isDrawingMask && currentMaskPoints.length >= 4) {
+    if (step === 2 && isDrawingMask && currentMaskPoints.length >= MIN_MASK_POINTS) {
         finishDetectionMaskEdit();
     }
     document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
@@ -1040,8 +1128,27 @@ function buildRequestBody(frameIdx) {
         wall_margin_cm: currentTuningParams.wall_margin_cm,
         movement_threshold_cm_s: currentTuningParams.movement_threshold_cm_s,
         bin_seconds: currentTuningParams.bin_seconds,
+        workspace_video_configs: cloneState(videoConfigs),
         generate_video: document.getElementById('generateVideo').checked
     };
+}
+
+async function saveDraftPayload(redirectToWorkspace = false) {
+    const body = buildRequestBody();
+    body._selected_video_idx = currentVideoIdx;
+    const response = await fetch(`/api/draft/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.error || '保存当前设置失败');
+    }
+    if (redirectToWorkspace && batchWorkspaceUrl) {
+        window.location.href = batchWorkspaceUrl;
+    }
+    return data;
 }
 
 function updateDebugPreview(frameIdx) {
@@ -1074,9 +1181,17 @@ function startAnalysis() {
         alert(tr('oft.calib.alert.finish_arena', 'Please finish arena calibration first.'));
         return;
     }
-    const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+    const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < MIN_MASK_POINTS);
     if (invalidMask !== -1) {
-        alert(trFormat('oft.calib.alert.mask_invalid', [invalidMask + 1], 'ROI {0} needs at least 4 detection-mask points.'));
+        alert(trFormat('oft.calib.alert.mask_invalid', [invalidMask + 1], 'ROI {0} needs at least 3 detection-mask points.'));
+        return;
+    }
+    if (launchMode === 'workspace') {
+        document.getElementById('loading').style.display = 'flex';
+        saveDraftPayload(true).catch(error => {
+            document.getElementById('loading').style.display = 'none';
+            alert(error.message || '保存当前设置失败');
+        });
         return;
     }
     const body = buildRequestBody();
@@ -1092,13 +1207,13 @@ function startAnalysis() {
                     )
                 );
             }
-            const invalidArenaMask = cfg.rois.findIndex(roi => roi.detection_points && roi.detection_points.length < 4);
+            const invalidArenaMask = cfg.rois.findIndex(roi => roi.detection_points && roi.detection_points.length < MIN_MASK_POINTS);
             if (invalidArenaMask !== -1) {
                 incomplete.push(
                     trFormat(
                         'oft.calib.alert.batch_mask_invalid',
                         [index + 1, currentVideoName(index), invalidArenaMask + 1],
-                        '{0}. {1}: ROI {2} detection mask needs at least 4 points'
+                        '{0}. {1}: ROI {2} detection mask needs at least 3 points'
                     )
                 );
             }

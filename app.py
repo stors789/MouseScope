@@ -91,6 +91,22 @@ from novel_object import (
     render_novel_object_heatmap,
     render_novel_object_trackmap,
 )
+from elevated_plus import (
+    ElevatedPlusTracker,
+    draw_elevated_plus_results,
+    render_elevated_plus_heatmap,
+    render_elevated_plus_trackmap,
+    render_elevated_plus_image_grid,
+    sanitize_name as sanitize_epm_name,
+)
+from y_maze import (
+    YMazeTracker,
+    draw_y_maze_results,
+    render_y_maze_heatmap,
+    render_y_maze_trackmap,
+    render_y_maze_image_grid,
+    sanitize_name as sanitize_y_maze_name,
+)
 from file_utils import (
     build_ascii_file_name,
     clean_display_name,
@@ -99,6 +115,15 @@ from file_utils import (
     normalized_path_key,
 )
 from performance_utils import enable_opencv_optimizations
+from services.session_store import SessionStore
+from services.experiment_registry import (
+    get_experiment_spec,
+    get_manual_module,
+    list_experiments,
+    normalize_experiment_type,
+    summarize_batch_state,
+)
+from services.analysis_builders import build_analysis_config
 
 try:
     import pandas as pd
@@ -128,6 +153,10 @@ for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR, WORK_DIR]:
 CHINA_TZ = timezone(timedelta(hours=8))
 CSV_ENCODING = 'utf-8-sig'
 VALID_VIDEO_EXTS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+DETECTION_MASK_MIN_POINTS = 3
+EPM_ZONE_KEYS = ('center', 'open_1', 'open_2', 'closed_1', 'closed_2')
+YMAZE_ZONE_KEYS = ('center', 'arm_a', 'arm_b', 'arm_c')
+YMAZE_ZONE_POINT_COUNTS = {'center': 3, 'arm_a': 4, 'arm_b': 4, 'arm_c': 4}
 staged_original_names = {}
 SESSION_PENDING_TTL_SECONDS = 2 * 60 * 60
 SESSION_FINISHED_TTL_SECONDS = 12 * 60 * 60
@@ -152,6 +181,43 @@ def china_now():
 
 def _now_ts():
     return time.time()
+
+
+def _bi_label(zh_text, en_text):
+    return f"{zh_text} ({en_text})"
+
+
+def _report_value(value, suffix=''):
+    if value is None or value == '':
+        return '-'
+    return f"{value}{suffix}"
+
+
+def _report_time_mode_label(mode):
+    labels = {
+        'global': ('跟随全局', 'Global'),
+        'relative': ('相对检测时间', 'Relative Detection Time'),
+        'precise': ('精确时间段', 'Precise Time Range'),
+    }
+    zh_text, en_text = labels.get(str(mode or 'global').lower(), ('时间模式', str(mode or 'global')))
+    return _bi_label(zh_text, en_text)
+
+
+def _report_phase_label(phase):
+    value = str(phase or 'recognition').strip().lower()
+    labels = {
+        'recognition': ('识别期', 'Recognition'),
+        'training': ('熟悉期', 'Familiarization'),
+        'familiarization': ('熟悉期', 'Familiarization'),
+        'sample': ('熟悉期', 'Familiarization'),
+    }
+    zh_text, en_text = labels.get(value, ('阶段', value or 'recognition'))
+    return _bi_label(zh_text, en_text)
+
+
+def _write_report_metric_lines(handle, summary, metric_specs, indent='  '):
+    for zh_text, en_text, key, suffix in metric_specs:
+        handle.write(f"{indent}{_bi_label(zh_text, en_text)}: {_report_value(summary.get(key), suffix)}\n")
 
 
 def _register_original_name(path, original_name):
@@ -323,18 +389,20 @@ app = Flask(__name__,
 app.secret_key = secrets.token_hex(32)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
-# 会话存储（内存中，无数据库）
-analysis_sessions = {}
+# 会话存储（运行时 + 磁盘快照）
+analysis_sessions = SessionStore(
+    upload_dir=UPLOAD_DIR,
+    work_dir=WORK_DIR,
+    pending_ttl_seconds=SESSION_PENDING_TTL_SECONDS,
+    finished_ttl_seconds=SESSION_FINISHED_TTL_SECONDS,
+    error_ttl_seconds=SESSION_ERROR_TTL_SECONDS,
+    now_fn=_now_ts,
+)
 debug_static_bg_cache = {}
 
 
 def _experiment_type_to_manual_module(experiment_type):
-    exp = str(experiment_type or '').strip().lower()
-    if exp == 'open_field':
-        return 'oft'
-    if exp == 'novel_object':
-        return 'nor'
-    return 'tst'
+    return get_manual_module(experiment_type)
 
 
 def _safe_internal_return_to(value):
@@ -485,10 +553,11 @@ def before_request_guard():
 def inject_navigation_context():
     endpoint = request.endpoint or ''
     manual_return_to = _safe_internal_return_to(request.args.get('return_to'))
+    valid_manual_modules = {spec.manual_module for spec in list_experiments()}
 
     if endpoint == 'manual':
         manual_module = str(request.args.get('module', 'tst')).strip().lower()
-        if manual_module not in {'tst', 'oft', 'nor'}:
+        if manual_module not in valid_manual_modules:
             manual_module = 'tst'
         manual_nav_target = None
         manual_nav_rel = None
@@ -523,6 +592,58 @@ def _coerce_point_list(points, min_points=4):
             parsed.append([float(point[0]), float(point[1])])
     if len(parsed) < min_points:
         raise ValueError(f'Polygon requires at least {min_points} points.')
+    return parsed
+
+
+def _sort_polygon_points(points):
+    pts = np.asarray(points, dtype=np.float32)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError('Polygon points must be Nx2.')
+    center = np.mean(pts, axis=0)
+    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+    order = np.argsort(angles)
+    return pts[order].astype(np.float32).tolist()
+
+
+def _coerce_quad_points(points):
+    parsed = _coerce_point_list(points, min_points=4)
+    if len(parsed) != 4:
+        raise ValueError('Zone requires exactly 4 points.')
+    return _sort_polygon_points(parsed)
+
+
+def _coerce_triangle_points(points):
+    parsed = _coerce_point_list(points, min_points=3)
+    if len(parsed) != 3:
+        raise ValueError('Zone requires exactly 3 points.')
+    return _sort_polygon_points(parsed)
+
+
+def _coerce_zone_polygons(raw_zones, required_keys, experiment_name):
+    if not isinstance(raw_zones, dict):
+        raise ValueError(f'{experiment_name} ROI zones must be an object.')
+    parsed = {}
+    for key in required_keys:
+        parsed[key] = _coerce_quad_points(raw_zones.get(key))
+    return parsed
+
+
+def _coerce_zone_polygons_with_schema(raw_zones, zone_point_counts, experiment_name):
+    if not isinstance(raw_zones, dict):
+        raise ValueError(f'{experiment_name} ROI zones must be an object.')
+    parsed = {}
+    for key, expected_points in zone_point_counts.items():
+        expected_points = int(expected_points)
+        if int(expected_points) == 3:
+            try:
+                parsed[key] = _coerce_triangle_points(raw_zones.get(key))
+            except Exception as exc:
+                raise ValueError(f'Zone "{key}" requires exactly {expected_points} points.') from exc
+            continue
+        try:
+            parsed[key] = _coerce_quad_points(raw_zones.get(key))
+        except Exception as exc:
+            raise ValueError(f'Zone "{key}" requires exactly {expected_points} points.') from exc
     return parsed
 
 
@@ -1053,21 +1174,26 @@ class VisionAnalysisSession:
     def _generate_txt_report(self, immobility_summaries, txt_path):
         try:
             with open(txt_path, 'w', encoding='utf-8') as f:
-                f.write("=" * 60 + "\n")
-                f.write("MouseScope 动物行为分析报告\n")
-                f.write("=" * 60 + "\n\n")
-                f.write(f"分析时间: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"分析对象数量: {len(immobility_summaries)}\n\n")
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope 悬尾实验报告 (Tail Suspension Test Report)\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"{_bi_label('分析时间', 'Analysis Time')}: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"{_bi_label('ROI 数量', 'ROI Count')}: {len(immobility_summaries)}\n\n")
                 for i, summary in enumerate(immobility_summaries, 1):
                     roi_name = summary.get('roi_name', f"ROI {summary['roi_id']}")
-                    f.write(f"对象 {i} ({roi_name}):\n")
-                    f.write(f"  总时长: {summary['total_time_seconds']} 秒\n")
-                    f.write(f"  不动时间: {summary['immobility_time_seconds']} 秒\n")
-                    f.write(f"  不动比例: {summary['immobility_percent']}%\n")
-                    f.write(f"  挣扎时间: {summary['struggling_time_seconds']} 秒\n")
-                    f.write(f"  挣扎比例: {summary['struggling_percent']}%\n")
-                    if summary.get('latency_to_immobility_seconds'):
-                        f.write(f"  首次不动潜伏期: {summary['latency_to_immobility_seconds']} 秒\n")
+                    f.write(f"{_bi_label('对象', 'Subject')} {i}: {roi_name}\n")
+                    _write_report_metric_lines(f, summary, [
+                        ('总时长', 'Total Time', 'total_time_seconds', ' s'),
+                        ('不动时间', 'Immobility Time', 'immobility_time_seconds', ' s'),
+                        ('不动比例', 'Immobility Percent', 'immobility_percent', '%'),
+                        ('挣扎时间', 'Struggling Time', 'struggling_time_seconds', ' s'),
+                        ('挣扎比例', 'Struggling Percent', 'struggling_percent', '%'),
+                    ])
+                    if summary.get('latency_to_immobility_seconds') is not None:
+                        f.write(
+                            f"  {_bi_label('首次不动潜伏期', 'Latency to First Immobility')}: "
+                            f"{_report_value(summary.get('latency_to_immobility_seconds'), ' s')}\n"
+                        )
                     f.write("\n")
         except Exception as e:
             print(f"生成TXT报告失败: {e}")
@@ -1166,7 +1292,7 @@ class OpenFieldMultiArenaAnalysisSession:
 
             detection_points = None
             if isinstance(roi, dict) and roi.get('detection_points'):
-                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=4)
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
 
             if isinstance(roi, dict):
                 roi_name = str(roi.get('name') or f'Arena {idx + 1}').strip() or f'Arena {idx + 1}'
@@ -1553,41 +1679,36 @@ class OpenFieldMultiArenaAnalysisSession:
         try:
             with open(txt_path, 'w', encoding='utf-8') as f:
                 f.write("=" * 68 + "\n")
-                f.write("MouseScope Open Field Test Report\n")
+                f.write("MouseScope 旷场实验报告 (Open Field Test Report)\n")
                 f.write("=" * 68 + "\n\n")
-                f.write(f"Analysis time: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"{_bi_label('分析时间', 'Analysis Time')}: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 if summaries:
-                    f.write(f"Video: {summaries[0].get('video_name', '')}\n")
-                f.write(f"Arena count: {len(summaries)}\n\n")
+                    f.write(f"{_bi_label('视频', 'Video')}: {summaries[0].get('video_name', '')}\n")
+                f.write(f"{_bi_label('场地数量', 'Arena Count')}: {len(summaries)}\n\n")
 
                 for summary in summaries:
                     f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
-                    f.write(f"  Time mode: {summary.get('time_mode', 'global')}\n")
+                    f.write(f"  {_bi_label('统计模式', 'Time Mode')}: {_report_time_mode_label(summary.get('time_mode', 'global'))}\n")
                     if summary.get('time_start_s') is not None:
-                        f.write(f"  Window start: {summary.get('time_start_s')} s\n")
+                        f.write(f"  {_bi_label('起始时间', 'Window Start')}: {_report_value(summary.get('time_start_s'), ' s')}\n")
                     if summary.get('time_end_s') is not None:
-                        f.write(f"  Window end: {summary.get('time_end_s')} s\n")
-                    for label, key, suffix in [
-                        ('Total time', 'total_time_s', 's'),
-                        ('Detected rate', 'detected_rate_percent', '%'),
-                        ('Total distance', 'total_distance_cm', 'cm'),
-                        ('Mean speed', 'mean_speed_cm_s', 'cm/s'),
-                        ('Max speed', 'max_speed_cm_s', 'cm/s'),
-                        ('Center time', 'center_time_s', 's'),
-                        ('Center percent', 'center_percent', '%'),
-                        ('Center entries', 'center_entries', ''),
-                        ('Center latency', 'center_latency_s', 's'),
-                        ('Wall time', 'wall_time_s', 's'),
-                        ('Wall percent', 'wall_percent', '%'),
-                        ('Outer time', 'outer_time_s', 's'),
-                        ('Moving time', 'moving_time_s', 's'),
-                        ('Immobility time', 'immobility_time_s', 's'),
-                    ]:
-                        value = summary.get(key)
-                        if value is None:
-                            value = '-'
-                            suffix = ''
-                        f.write(f"  {label}: {value}{suffix}\n")
+                        f.write(f"  {_bi_label('结束时间', 'Window End')}: {_report_value(summary.get('time_end_s'), ' s')}\n")
+                    _write_report_metric_lines(f, summary, [
+                        ('总时长', 'Total Time', 'total_time_s', ' s'),
+                        ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
+                        ('总距离', 'Total Distance', 'total_distance_cm', ' cm'),
+                        ('平均速度', 'Mean Speed', 'mean_speed_cm_s', ' cm/s'),
+                        ('最大速度', 'Max Speed', 'max_speed_cm_s', ' cm/s'),
+                        ('中心区时间', 'Center Time', 'center_time_s', ' s'),
+                        ('中心区比例', 'Center Percent', 'center_percent', '%'),
+                        ('中心区进入次数', 'Center Entries', 'center_entries', ''),
+                        ('中心区潜伏期', 'Center Latency', 'center_latency_s', ' s'),
+                        ('壁区时间', 'Wall Time', 'wall_time_s', ' s'),
+                        ('壁区比例', 'Wall Percent', 'wall_percent', '%'),
+                        ('外周区时间', 'Outer Time', 'outer_time_s', ' s'),
+                        ('运动时间', 'Moving Time', 'moving_time_s', ' s'),
+                        ('静止时间', 'Immobility Time', 'immobility_time_s', ' s'),
+                    ])
                     f.write("\n")
         except Exception as e:
             print(f"Failed to write OFT report: {e}")
@@ -1680,7 +1801,7 @@ class NovelObjectMultiArenaAnalysisSession:
 
             detection_points = None
             if isinstance(roi, dict) and roi.get('detection_points'):
-                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=4)
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
 
             objects = roi.get('objects') if isinstance(roi, dict) else None
             if not objects or len(objects) != 2:
@@ -2101,51 +2222,1032 @@ class NovelObjectMultiArenaAnalysisSession:
         try:
             with open(txt_path, 'w', encoding='utf-8') as f:
                 f.write("=" * 72 + "\n")
-                f.write("MouseScope Novel Object Recognition Report\n")
+                f.write("MouseScope 新奇物体识别报告 (Novel Object Recognition Report)\n")
                 f.write("=" * 72 + "\n\n")
-                f.write(f"Analysis time: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"{_bi_label('分析时间', 'Analysis Time')}: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 if summaries:
-                    f.write(f"Video: {summaries[0].get('video_name', '')}\n")
-                    f.write(f"Phase: {summaries[0].get('phase', 'recognition')}\n")
-                f.write(f"ROI count: {len(summaries)}\n")
-                f.write("Rule: exploration uses contour proximity with head-direction gating when the nose estimate is confident; low-confidence frames fall back to proximity.\n\n")
+                    f.write(f"{_bi_label('视频', 'Video')}: {summaries[0].get('video_name', '')}\n")
+                    f.write(f"{_bi_label('实验阶段', 'Phase')}: {_report_phase_label(summaries[0].get('phase', 'recognition'))}\n")
+                f.write(f"{_bi_label('ROI 数量', 'ROI Count')}: {len(summaries)}\n")
+                f.write(
+                    f"{_bi_label('统计规则', 'Scoring Rule')}: "
+                    "探索判定优先使用轮廓接近与头部朝向门控；当鼻尖估计置信度不足时回退到接近规则 "
+                    "(Exploration uses contour proximity with head-direction gating when the nose estimate is confident; "
+                    "low-confidence frames fall back to proximity.)\n\n"
+                )
 
                 for summary in summaries:
                     f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
-                    f.write(f"  Time mode: {summary.get('time_mode', 'global')}\n")
+                    f.write(f"  {_bi_label('统计模式', 'Time Mode')}: {_report_time_mode_label(summary.get('time_mode', 'global'))}\n")
                     if summary.get('time_start_s') is not None:
-                        f.write(f"  Window start: {summary.get('time_start_s')} s\n")
+                        f.write(f"  {_bi_label('起始时间', 'Window Start')}: {_report_value(summary.get('time_start_s'), ' s')}\n")
                     if summary.get('time_end_s') is not None:
-                        f.write(f"  Window end: {summary.get('time_end_s')} s\n")
+                        f.write(f"  {_bi_label('结束时间', 'Window End')}: {_report_value(summary.get('time_end_s'), ' s')}\n")
 
-                    for label, key, suffix in [
-                        ('Total time', 'total_time_s', 's'),
-                        ('Detected rate', 'detected_rate_percent', '%'),
-                        ('Total distance', 'total_distance_cm', 'cm'),
-                        ('Mean speed', 'mean_speed_cm_s', 'cm/s'),
-                        ('Center time', 'center_time_s', 's'),
-                        ('Center percent', 'center_percent', '%'),
-                        ('Object 1 exploration', 'object_1_exploration_s', 's'),
-                        ('Object 2 exploration', 'object_2_exploration_s', 's'),
-                        ('Total exploration', 'total_object_exploration_s', 's'),
-                        ('Head-supported exploration', 'head_supported_exploration_s', 's'),
-                        ('Fallback exploration', 'fallback_exploration_s', 's'),
-                        ('Novel exploration', 'novel_exploration_s', 's'),
-                        ('Familiar exploration', 'familiar_exploration_s', 's'),
-                        ('Discrimination index', 'discrimination_index', ''),
-                        ('Preference index', 'preference_index_percent', '%'),
-                        ('Head estimated rate', 'head_estimated_rate_percent', '%'),
-                        ('Head confident rate', 'head_confident_rate_percent', '%'),
-                        ('Head angle threshold', 'head_angle_threshold_deg', 'deg'),
-                    ]:
-                        value = summary.get(key)
-                        if value is None:
-                            value = '-'
-                            suffix = ''
-                        f.write(f"  {label}: {value}{suffix}\n")
+                    _write_report_metric_lines(f, summary, [
+                        ('总时长', 'Total Time', 'total_time_s', ' s'),
+                        ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
+                        ('总距离', 'Total Distance', 'total_distance_cm', ' cm'),
+                        ('平均速度', 'Mean Speed', 'mean_speed_cm_s', ' cm/s'),
+                        ('中心区时间', 'Center Time', 'center_time_s', ' s'),
+                        ('中心区比例', 'Center Percent', 'center_percent', '%'),
+                        ('物体 1 探索时间', 'Object 1 Exploration', 'object_1_exploration_s', ' s'),
+                        ('物体 2 探索时间', 'Object 2 Exploration', 'object_2_exploration_s', ' s'),
+                        ('总探索时间', 'Total Exploration', 'total_object_exploration_s', ' s'),
+                        ('头部支持探索时间', 'Head-Supported Exploration', 'head_supported_exploration_s', ' s'),
+                        ('回退探索时间', 'Fallback Exploration', 'fallback_exploration_s', ' s'),
+                        ('新奇物体探索时间', 'Novel Exploration', 'novel_exploration_s', ' s'),
+                        ('熟悉物体探索时间', 'Familiar Exploration', 'familiar_exploration_s', ' s'),
+                        ('辨别指数', 'Discrimination Index', 'discrimination_index', ''),
+                        ('偏好指数', 'Preference Index', 'preference_index_percent', '%'),
+                        ('头部估计率', 'Head Estimated Rate', 'head_estimated_rate_percent', '%'),
+                        ('头部高置信率', 'Head Confident Rate', 'head_confident_rate_percent', '%'),
+                        ('头部角度阈值', 'Head Angle Threshold', 'head_angle_threshold_deg', ' deg'),
+                    ])
                     f.write("\n")
         except Exception as e:
             print(f"Failed to write NOR report: {e}")
+
+
+class ElevatedPlusMultiArenaAnalysisSession:
+    """Multi-ROI Elevated Plus Maze analysis session."""
+
+    def __init__(self, session_id, video_paths, video_infos, config):
+        self.session_id = session_id
+        self.video_paths = video_paths
+        self.video_infos = video_infos
+        self.config = config
+        self.experiment_type = 'elevated_plus'
+
+        self.status = 'waiting'
+        self.progress = 0
+        self.message = 'Waiting to start...'
+        self.logs = []
+        self.realtime_data = []
+        self.result_files = []
+        self.processed_frames = 0
+        self.is_running = False
+        self.start_time = None
+        self.end_time = None
+        self.current_frame = None
+        self.live_metrics = {}
+        self.output_groups = {
+            'video': [],
+            'track_csv': [],
+            'summary_csv': [],
+            'bins_csv': [],
+            'report': [],
+            'heatmap': [],
+            'trackmap': [],
+        }
+
+    def start(self):
+        self.is_running = True
+        self.status = 'analyzing'
+        self.start_time = time.time()
+        thread = threading.Thread(target=self._run, daemon=True)
+        thread.start()
+
+    def _log(self, message):
+        timestamp = china_now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        self.logs.append(log_entry)
+        print(log_entry)
+
+    def _append_result_file(self, path, group=None):
+        if not path or not os.path.exists(path):
+            return
+        if path not in self.result_files:
+            self.result_files.append(path)
+        if group and path not in self.output_groups[group]:
+            self.output_groups[group].append(path)
+
+    def _config_for_video(self, video_index):
+        vision_config = copy.deepcopy(self.config)
+        per_video_configs = vision_config.pop('per_video_configs', None) or []
+        video_index = int(video_index or 0)
+        if 0 <= video_index < len(per_video_configs):
+            per_video_config = per_video_configs[video_index] or {}
+            for key, value in per_video_config.items():
+                vision_config[key] = copy.deepcopy(value)
+        return vision_config
+
+    def _parse_rois(self, config=None):
+        active_config = config or self.config
+        rois = active_config.get('rois') or []
+        if isinstance(rois, str):
+            rois = json.loads(rois)
+
+        parsed = []
+        for idx, roi in enumerate(rois):
+            if not isinstance(roi, dict):
+                raise ValueError(f'EPM ROI {idx + 1} must be an object.')
+            zone_polygons = _coerce_zone_polygons(roi.get('zones'), EPM_ZONE_KEYS, 'EPM')
+
+            roi_name = str(roi.get('name') or f'EPM {idx + 1}').strip() or f'EPM {idx + 1}'
+            time_config = roi.get('time_config') or {'mode': 'global', 'start': None, 'end': None}
+            detection_points = None
+            if isinstance(roi, dict) and roi.get('detection_points'):
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+
+            parsed.append({
+                'roi_id': idx + 1,
+                'name': roi_name,
+                'zones': zone_polygons,
+                'time_config': time_config,
+                'detection_points': detection_points,
+            })
+
+        if not parsed:
+            raise ValueError('Elevated plus maze analysis requires at least one ROI.')
+        return parsed
+
+    @staticmethod
+    def _build_live_metrics(rows):
+        if not rows:
+            return {}
+        valid_open = [float(row['open_time_percent_total']) for row in rows if row.get('open_time_percent_total') is not None]
+        return {
+            'roi_count': len(rows),
+            'detected_roi_count': sum(1 for row in rows if row.get('detected')),
+            'total_distance_cm': round(sum(float(row.get('distance_cm', 0.0) or 0.0) for row in rows), 3),
+            'mean_open_time_percent_total': round(sum(valid_open) / len(valid_open), 3) if valid_open else None,
+            'total_open_entries': sum(int(row.get('open_entries') or 0) for row in rows),
+        }
+
+    def _run(self):
+        try:
+            if len(self.video_paths) == 1:
+                self._analyze_single_video(self.video_paths[0], self.video_infos[0])
+            else:
+                for i, (path, info) in enumerate(zip(self.video_paths, self.video_infos)):
+                    if not self.is_running:
+                        break
+                    self._log(f"Processing EPM video {i + 1}/{len(self.video_paths)}: {info.get('original_name', '')}")
+                    self._analyze_single_video(path, info, batch_index=i)
+                    self.progress = int((i + 1) / len(self.video_paths) * 100)
+
+                if self.is_running:
+                    self.status = 'completed'
+                    self.end_time = time.time()
+                    self.message = f'All {len(self.video_paths)} EPM videos finished.'
+                    self._log(self.message)
+        except Exception as e:
+            self.status = 'error'
+            self.message = f'Analysis error: {str(e)}'
+            self._log(self.message)
+            import traceback
+            self._log(traceback.format_exc())
+
+    def _analyze_single_video(self, video_path, video_info, batch_index=None):
+        video_start_time = time.time()
+        video_index = 0 if batch_index is None else int(batch_index)
+        vision_config = self._config_for_video(video_index)
+        result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='epm',
+            result_folder=result_folder,
+            fallback='video',
+            batch_index=video_index,
+            batch_count=len(self.video_paths),
+        )
+
+        video_name = output_info['display_stem']
+        output_base = output_info['work_base']
+        final_base = output_info['final_base']
+        output_video_path = f"{output_base}_analyzed.mp4"
+        final_output_video_path = f"{final_base}_analyzed.mp4"
+        generate_video = bool(vision_config.get('generate_video', True))
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to open video: {video_path}")
+            return
+
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = vision_config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._log(f"EPM video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+
+        bg_method = vision_config.get('bg_method', 'threshold')
+        if bg_method == 'threshold':
+            bg_subtractor = BackgroundSubtractor(
+                method='threshold',
+                threshold=vision_config.get('gray_threshold', 127),
+                invert=vision_config.get('invert', False),
+            )
+        elif bg_method == 'static':
+            bg = create_static_background(video_path, num_frames=15)
+            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
+            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+        else:
+            bg_subtractor = BackgroundSubtractor(method=bg_method)
+
+        morph_processor = MorphologyProcessor(
+            erosion_kernel=vision_config.get('erosion_kernel', 3),
+            erosion_iterations=vision_config.get('erosion_iter', 1),
+            dilation_kernel=vision_config.get('dilation_kernel', 5),
+            dilation_iterations=vision_config.get('dilation_iter', 2),
+        )
+        detector = MouseDetector(
+            min_area=vision_config.get('min_area', 120),
+            max_area=vision_config.get('max_area', 50000),
+        )
+
+        start_sec = vision_config.get('start_sec')
+        end_sec = vision_config.get('end_sec')
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+        roi_configs = self._parse_rois(vision_config)
+
+        trackers = []
+        for roi in roi_configs:
+            trackers.append(
+                ElevatedPlusTracker(
+                    zone_polygons=roi['zones'],
+                    detection_polygon=roi.get('detection_points'),
+                    center_size_cm=float(vision_config.get('center_size_cm', 5.0)),
+                    open_arm_length_cm=float(vision_config.get('open_arm_length_cm', 30.0)),
+                    closed_arm_length_cm=float(vision_config.get('closed_arm_length_cm', 30.0)),
+                    fps=fps,
+                    movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
+                    entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    time_config=roi.get('time_config'),
+                    global_start_time_s=global_start_time_s,
+                )
+            )
+        self._log(f"Configured {len(trackers)} EPM mazes")
+
+        writer = None
+        if generate_video:
+            for codec in ('avc1', 'H264', 'mp4v'):
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        writer = test_writer
+                        self._log(f"EPM video codec: {codec}")
+                        break
+                    test_writer.release()
+                except Exception:
+                    pass
+
+        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
+        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            self._log(f"Start EPM analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+
+        frames_to_process = max(0, end_frame - start_frame + 1)
+        frame_idx = 0
+
+        while self.is_running:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            try:
+                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            except Exception:
+                current_frame_no = start_frame + frame_idx
+
+            if current_frame_no > end_frame:
+                break
+
+            current_time = current_frame_no / max(fps, 1e-6)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+
+            if frame_idx % 15 == 0:
+                rows = []
+                for tracker, result in zip(trackers, results):
+                    summary = tracker.build_summary()
+                    rows.append({
+                        'roi_id': tracker.roi_id,
+                        'roi_name': tracker.roi_name,
+                        'detected': bool(result.get('detected')),
+                        'zone': result.get('zone_label', 'Unknown'),
+                        'speed_cm_s': round(float(result.get('speed_cm_s', 0.0)), 3),
+                        'distance_cm': summary['total_distance_cm'],
+                        'open_time_percent_total': summary.get('open_time_percent_total'),
+                        'open_entries': summary.get('open_entries'),
+                        'closed_entries': summary.get('closed_entries'),
+                        'open_entry_percent': summary.get('open_entry_percent'),
+                        'in_stats_window': bool(result.get('in_stats_window', True)),
+                    })
+                self.realtime_data = rows
+                self.live_metrics = self._build_live_metrics(rows)
+
+            if generate_video and writer is not None:
+                result_frame = draw_elevated_plus_results(frame, list(zip(trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 10 == 0:
+                    self.current_frame = result_frame
+
+            frame_idx += 1
+            self.processed_frames += 1
+
+            if frame_idx % 20 == 0:
+                if batch_index is not None:
+                    batch_progress = int(batch_index / len(self.video_paths) * 100)
+                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    self.progress = batch_progress + video_progress
+                else:
+                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
+                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+
+        cap.release()
+        if writer is not None:
+            writer.release()
+
+        summary_rows = []
+        track_rows = []
+        bins_rows = []
+        for tracker in trackers:
+            summary = tracker.build_summary()
+            summary['video_name'] = video_info.get('original_name', video_name)
+            summary_rows.append(summary)
+
+            for row in tracker.frame_records:
+                record = dict(row)
+                record['video_name'] = video_info.get('original_name', video_name)
+                track_rows.append(record)
+
+            for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 60.0))):
+                bucket = dict(row)
+                bucket['video_name'] = video_info.get('original_name', video_name)
+                bins_rows.append(bucket)
+
+        if HAS_PANDAS and track_rows:
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
+
+        if HAS_PANDAS and summary_rows:
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and bins_rows:
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
+
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
+        self._append_result_file(report_txt_path, 'report')
+
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
+        for tracker in trackers:
+            roi_slug = sanitize_epm_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"epm_{tracker.roi_id:02d}")
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
+
+            if render_elevated_plus_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
+            else:
+                self._log(f"Failed to save EPM heatmap: {heatmap_final_path}")
+
+            if render_elevated_plus_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
+            else:
+                self._log(f"Failed to save EPM trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_elevated_plus_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | EPM Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save EPM heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_elevated_plus_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | EPM Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save EPM trackmap grid: {trackmap_grid_final_path}")
+
+        if generate_video and os.path.exists(output_video_path):
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"EPM annotated video saved: {exported_video}")
+
+        self.realtime_data = [
+            {
+                'roi_id': row['roi_id'],
+                'roi_name': row['roi_name'],
+                'detected': True,
+                'zone': 'Completed',
+                'speed_cm_s': row['mean_speed_cm_s'],
+                'distance_cm': row['total_distance_cm'],
+                'open_time_percent_total': row.get('open_time_percent_total'),
+                'open_entries': row.get('open_entries'),
+                'closed_entries': row.get('closed_entries'),
+                'open_entry_percent': row.get('open_entry_percent'),
+                'in_stats_window': True,
+            }
+            for row in summary_rows
+        ]
+        self.live_metrics = self._build_live_metrics(self.realtime_data)
+
+        if batch_index is None and self.is_running:
+            self.status = 'completed'
+            self.end_time = time.time()
+            self.progress = 100
+            self.message = 'Elevated plus maze analysis completed.'
+
+        elapsed = time.time() - video_start_time
+        self._log(f"EPM video processed in {elapsed:.1f}s, {frame_idx} frames")
+
+        import gc
+        gc.collect()
+
+    def stop(self):
+        self.is_running = False
+        self.status = 'stopped'
+        self.end_time = time.time()
+
+    def get_status(self):
+        elapsed = 0
+        if self.start_time:
+            elapsed = (self.end_time or time.time()) - self.start_time
+        processing_fps = self.processed_frames / elapsed if elapsed > 0 else 0
+        return {
+            'session_id': self.session_id,
+            'experiment_type': self.experiment_type,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'logs': self.logs[-10:],
+            'realtime_data': self.realtime_data,
+            'result_files': self.result_files,
+            'experiment_stats': self.live_metrics,
+            'stats': {
+                'processed_frames': self.processed_frames,
+                'elapsed_time': elapsed,
+                'fps': processing_fps,
+            }
+        }
+
+    def get_download_file_map(self):
+        return self.output_groups
+
+    def _generate_txt_report(self, summaries, txt_path):
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope 高架十字迷宫报告 (Elevated Plus Maze Report)\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"{_bi_label('分析时间', 'Analysis Time')}: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                if summaries:
+                    f.write(f"{_bi_label('视频', 'Video')}: {summaries[0].get('video_name', '')}\n")
+                f.write(f"{_bi_label('ROI 数量', 'ROI Count')}: {len(summaries)}\n")
+                f.write(
+                    f"{_bi_label('统计规则', 'Scoring Rule')}: "
+                    "当质心越过各臂内部入口阈值时记为一次入臂 "
+                    "(Arm entries are scored when the centroid crosses the inner entry threshold inside each arm.)\n\n"
+                )
+
+                for summary in summaries:
+                    f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
+                    _write_report_metric_lines(f, summary, [
+                        ('总时长', 'Total Time', 'total_time_s', ' s'),
+                        ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
+                        ('总距离', 'Total Distance', 'total_distance_cm', ' cm'),
+                        ('平均速度', 'Mean Speed', 'mean_speed_cm_s', ' cm/s'),
+                        ('开放臂时间', 'Open Time', 'open_time_s', ' s'),
+                        ('封闭臂时间', 'Closed Time', 'closed_time_s', ' s'),
+                        ('中心区时间', 'Center Time', 'center_time_s', ' s'),
+                        ('开放臂时间占比（总时长）', 'Open Time % (Total)', 'open_time_percent_total', '%'),
+                        ('开放臂时间占比（仅双臂）', 'Open Time % (Arms Only)', 'open_time_percent_arms_only', '%'),
+                        ('开放臂进入次数', 'Open Entries', 'open_entries', ''),
+                        ('封闭臂进入次数', 'Closed Entries', 'closed_entries', ''),
+                        ('开放臂进入占比', 'Open Entry %', 'open_entry_percent', '%'),
+                        ('首次进入开放臂潜伏期', 'First Open-Entry Latency', 'first_open_entry_latency_s', ' s'),
+                    ])
+                    f.write("\n")
+        except Exception as e:
+            print(f"Failed to write EPM report: {e}")
+
+
+class YMazeMultiArenaAnalysisSession:
+    """Multi-ROI Y-maze spontaneous alternation analysis session."""
+
+    def __init__(self, session_id, video_paths, video_infos, config):
+        self.session_id = session_id
+        self.video_paths = video_paths
+        self.video_infos = video_infos
+        self.config = config
+        self.experiment_type = 'y_maze'
+
+        self.status = 'waiting'
+        self.progress = 0
+        self.message = 'Waiting to start...'
+        self.logs = []
+        self.realtime_data = []
+        self.result_files = []
+        self.processed_frames = 0
+        self.is_running = False
+        self.start_time = None
+        self.end_time = None
+        self.current_frame = None
+        self.live_metrics = {}
+        self.output_groups = {
+            'video': [],
+            'track_csv': [],
+            'summary_csv': [],
+            'bins_csv': [],
+            'report': [],
+            'heatmap': [],
+            'trackmap': [],
+        }
+
+    def start(self):
+        self.is_running = True
+        self.status = 'analyzing'
+        self.start_time = time.time()
+        thread = threading.Thread(target=self._run, daemon=True)
+        thread.start()
+
+    def _log(self, message):
+        timestamp = china_now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        self.logs.append(log_entry)
+        print(log_entry)
+
+    def _append_result_file(self, path, group=None):
+        if not path or not os.path.exists(path):
+            return
+        if path not in self.result_files:
+            self.result_files.append(path)
+        if group and path not in self.output_groups[group]:
+            self.output_groups[group].append(path)
+
+    def _config_for_video(self, video_index):
+        vision_config = copy.deepcopy(self.config)
+        per_video_configs = vision_config.pop('per_video_configs', None) or []
+        video_index = int(video_index or 0)
+        if 0 <= video_index < len(per_video_configs):
+            per_video_config = per_video_configs[video_index] or {}
+            for key, value in per_video_config.items():
+                vision_config[key] = copy.deepcopy(value)
+        return vision_config
+
+    def _parse_rois(self, config=None):
+        active_config = config or self.config
+        rois = active_config.get('rois') or []
+        if isinstance(rois, str):
+            rois = json.loads(rois)
+
+        parsed = []
+        for idx, roi in enumerate(rois):
+            if not isinstance(roi, dict):
+                raise ValueError(f'Y-maze ROI {idx + 1} must be an object.')
+            zone_polygons = _coerce_zone_polygons_with_schema(roi.get('zones'), YMAZE_ZONE_POINT_COUNTS, 'Y-maze')
+
+            roi_name = str(roi.get('name') or f'Y-Maze {idx + 1}').strip() or f'Y-Maze {idx + 1}'
+            time_config = roi.get('time_config') or {'mode': 'global', 'start': None, 'end': None}
+            detection_points = None
+            if isinstance(roi, dict) and roi.get('detection_points'):
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            parsed.append({
+                'roi_id': idx + 1,
+                'name': roi_name,
+                'zones': zone_polygons,
+                'time_config': time_config,
+                'detection_points': detection_points,
+            })
+
+        if not parsed:
+            raise ValueError('Y-maze analysis requires at least one ROI.')
+        return parsed
+
+    @staticmethod
+    def _build_live_metrics(rows):
+        if not rows:
+            return {}
+        valid_alt = [float(row['alternation_percent']) for row in rows if row.get('alternation_percent') is not None]
+        return {
+            'roi_count': len(rows),
+            'detected_roi_count': sum(1 for row in rows if row.get('detected')),
+            'total_distance_cm': round(sum(float(row.get('distance_cm', 0.0) or 0.0) for row in rows), 3),
+            'total_arm_entries': sum(int(row.get('total_arm_entries') or 0) for row in rows),
+            'mean_alternation_percent': round(sum(valid_alt) / len(valid_alt), 3) if valid_alt else None,
+        }
+
+    def _run(self):
+        try:
+            if len(self.video_paths) == 1:
+                self._analyze_single_video(self.video_paths[0], self.video_infos[0])
+            else:
+                for i, (path, info) in enumerate(zip(self.video_paths, self.video_infos)):
+                    if not self.is_running:
+                        break
+                    self._log(f"Processing Y-maze video {i + 1}/{len(self.video_paths)}: {info.get('original_name', '')}")
+                    self._analyze_single_video(path, info, batch_index=i)
+                    self.progress = int((i + 1) / len(self.video_paths) * 100)
+
+                if self.is_running:
+                    self.status = 'completed'
+                    self.end_time = time.time()
+                    self.message = f'All {len(self.video_paths)} Y-maze videos finished.'
+                    self._log(self.message)
+        except Exception as e:
+            self.status = 'error'
+            self.message = f'Analysis error: {str(e)}'
+            self._log(self.message)
+            import traceback
+            self._log(traceback.format_exc())
+
+    def _analyze_single_video(self, video_path, video_info, batch_index=None):
+        video_start_time = time.time()
+        video_index = 0 if batch_index is None else int(batch_index)
+        vision_config = self._config_for_video(video_index)
+        result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
+        output_info = _prepare_output_paths(
+            self.session_id,
+            video_info.get('original_name', 'video'),
+            suffix='ymaze',
+            result_folder=result_folder,
+            fallback='video',
+            batch_index=video_index,
+            batch_count=len(self.video_paths),
+        )
+
+        video_name = output_info['display_stem']
+        output_base = output_info['work_base']
+        final_base = output_info['final_base']
+        output_video_path = f"{output_base}_analyzed.mp4"
+        final_output_video_path = f"{final_base}_analyzed.mp4"
+        generate_video = bool(vision_config.get('generate_video', True))
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to open video: {video_path}")
+            return
+
+        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps_override = vision_config.get('fps_override')
+        fps = fps_override if fps_override else detected_fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._log(f"Y-maze video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+
+        bg_method = vision_config.get('bg_method', 'threshold')
+        if bg_method == 'threshold':
+            bg_subtractor = BackgroundSubtractor(
+                method='threshold',
+                threshold=vision_config.get('gray_threshold', 127),
+                invert=vision_config.get('invert', False),
+            )
+        elif bg_method == 'static':
+            bg = create_static_background(video_path, num_frames=15)
+            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
+            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+        else:
+            bg_subtractor = BackgroundSubtractor(method=bg_method)
+
+        morph_processor = MorphologyProcessor(
+            erosion_kernel=vision_config.get('erosion_kernel', 3),
+            erosion_iterations=vision_config.get('erosion_iter', 1),
+            dilation_kernel=vision_config.get('dilation_kernel', 5),
+            dilation_iterations=vision_config.get('dilation_iter', 2),
+        )
+        detector = MouseDetector(
+            min_area=vision_config.get('min_area', 120),
+            max_area=vision_config.get('max_area', 50000),
+        )
+
+        start_sec = vision_config.get('start_sec')
+        end_sec = vision_config.get('end_sec')
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+        roi_configs = self._parse_rois(vision_config)
+
+        trackers = []
+        for roi in roi_configs:
+            trackers.append(
+                YMazeTracker(
+                    zone_polygons=roi['zones'],
+                    detection_polygon=roi.get('detection_points'),
+                    arm_length_cm=float(vision_config.get('arm_length_cm', 30.0)),
+                    arm_width_cm=float(vision_config.get('arm_width_cm', 10.0)),
+                    fps=fps,
+                    movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
+                    entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    time_config=roi.get('time_config'),
+                    global_start_time_s=global_start_time_s,
+                )
+            )
+        self._log(f"Configured {len(trackers)} Y-maze arenas")
+
+        writer = None
+        if generate_video:
+            for codec in ('avc1', 'H264', 'mp4v'):
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec)
+                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        writer = test_writer
+                        self._log(f"Y-maze video codec: {codec}")
+                        break
+                    test_writer.release()
+                except Exception:
+                    pass
+
+        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
+        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            self._log(f"Start Y-maze analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+
+        frames_to_process = max(0, end_frame - start_frame + 1)
+        frame_idx = 0
+
+        while self.is_running:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            try:
+                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+            except Exception:
+                current_frame_no = start_frame + frame_idx
+
+            if current_frame_no > end_frame:
+                break
+
+            current_time = current_frame_no / max(fps, 1e-6)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+
+            if frame_idx % 15 == 0:
+                rows = []
+                for tracker, result in zip(trackers, results):
+                    summary = tracker.build_summary()
+                    rows.append({
+                        'roi_id': tracker.roi_id,
+                        'roi_name': tracker.roi_name,
+                        'detected': bool(result.get('detected')),
+                        'zone': result.get('zone_label', 'Unknown'),
+                        'speed_cm_s': round(float(result.get('speed_cm_s', 0.0)), 3),
+                        'distance_cm': summary['total_distance_cm'],
+                        'total_arm_entries': summary.get('total_arm_entries'),
+                        'alternation_count': summary.get('alternation_count'),
+                        'alternation_percent': summary.get('alternation_percent'),
+                        'in_stats_window': bool(result.get('in_stats_window', True)),
+                    })
+                self.realtime_data = rows
+                self.live_metrics = self._build_live_metrics(rows)
+
+            if generate_video and writer is not None:
+                result_frame = draw_y_maze_results(frame, list(zip(trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 10 == 0:
+                    self.current_frame = result_frame
+
+            frame_idx += 1
+            self.processed_frames += 1
+
+            if frame_idx % 20 == 0:
+                if batch_index is not None:
+                    batch_progress = int(batch_index / len(self.video_paths) * 100)
+                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    self.progress = batch_progress + video_progress
+                else:
+                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
+                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+
+        cap.release()
+        if writer is not None:
+            writer.release()
+
+        summary_rows = []
+        track_rows = []
+        bins_rows = []
+        for tracker in trackers:
+            summary = tracker.build_summary()
+            summary['video_name'] = video_info.get('original_name', video_name)
+            summary_rows.append(summary)
+
+            for row in tracker.frame_records:
+                record = dict(row)
+                record['video_name'] = video_info.get('original_name', video_name)
+                track_rows.append(record)
+
+            for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 60.0))):
+                bucket = dict(row)
+                bucket['video_name'] = video_info.get('original_name', video_name)
+                bins_rows.append(bucket)
+
+        if HAS_PANDAS and track_rows:
+            track_csv_work_path = f"{output_base}_track.csv"
+            if _write_dataframe_csv(track_rows, track_csv_work_path):
+                track_csv_path = _export_result_file(track_csv_work_path, f"{final_base}_track.csv")
+                self._append_result_file(track_csv_path, 'track_csv')
+
+        if HAS_PANDAS and summary_rows:
+            summary_csv_work_path = f"{output_base}_summary.csv"
+            if _write_dataframe_csv(summary_rows, summary_csv_work_path):
+                summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
+                self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and bins_rows:
+            bins_csv_work_path = f"{output_base}_bins.csv"
+            if _write_dataframe_csv(bins_rows, bins_csv_work_path):
+                bins_csv_path = _export_result_file(bins_csv_work_path, f"{final_base}_bins.csv")
+                self._append_result_file(bins_csv_path, 'bins_csv')
+
+        report_txt_work_path = f"{output_base}_report.txt"
+        self._generate_txt_report(summary_rows, report_txt_work_path)
+        report_txt_path = _export_result_file(report_txt_work_path, f"{final_base}_report.txt")
+        self._append_result_file(report_txt_path, 'report')
+
+        heatmap_work_paths = []
+        heatmap_final_paths = []
+        trackmap_work_paths = []
+        trackmap_final_paths = []
+        for tracker in trackers:
+            roi_slug = sanitize_y_maze_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"ymaze_{tracker.roi_id:02d}")
+            heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
+            trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
+            trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
+
+            if render_y_maze_heatmap(tracker, heatmap_work_path):
+                exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
+                heatmap_work_paths.append(heatmap_work_path)
+                heatmap_final_paths.append(exported_heatmap)
+                self._append_result_file(exported_heatmap)
+            else:
+                self._log(f"Failed to save Y-maze heatmap: {heatmap_final_path}")
+
+            if render_y_maze_trackmap(tracker, trackmap_work_path):
+                exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
+                trackmap_work_paths.append(trackmap_work_path)
+                trackmap_final_paths.append(exported_trackmap)
+                self._append_result_file(exported_trackmap)
+            else:
+                self._log(f"Failed to save Y-maze trackmap: {trackmap_final_path}")
+
+        if heatmap_work_paths:
+            if len(heatmap_final_paths) == 1:
+                self._append_result_file(heatmap_final_paths[0], 'heatmap')
+            else:
+                heatmap_grid_work_path = f"{output_base}_heatmaps.png"
+                heatmap_grid_final_path = f"{final_base}_heatmaps.png"
+                if render_y_maze_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Y-maze Heatmaps"):
+                    self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
+                else:
+                    self._log(f"Failed to save Y-maze heatmap grid: {heatmap_grid_final_path}")
+
+        if trackmap_work_paths:
+            if len(trackmap_final_paths) == 1:
+                self._append_result_file(trackmap_final_paths[0], 'trackmap')
+            else:
+                trackmap_grid_work_path = f"{output_base}_trackmaps.png"
+                trackmap_grid_final_path = f"{final_base}_trackmaps.png"
+                if render_y_maze_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Y-maze Trajectory Maps"):
+                    self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
+                else:
+                    self._log(f"Failed to save Y-maze trackmap grid: {trackmap_grid_final_path}")
+
+        if generate_video and os.path.exists(output_video_path):
+            exported_video = _export_result_file(output_video_path, final_output_video_path)
+            self._append_result_file(exported_video, 'video')
+            if exported_video:
+                self._log(f"Y-maze annotated video saved: {exported_video}")
+
+        self.realtime_data = [
+            {
+                'roi_id': row['roi_id'],
+                'roi_name': row['roi_name'],
+                'detected': True,
+                'zone': 'Completed',
+                'speed_cm_s': row['mean_speed_cm_s'],
+                'distance_cm': row['total_distance_cm'],
+                'total_arm_entries': row.get('total_arm_entries'),
+                'alternation_count': row.get('alternation_count'),
+                'alternation_percent': row.get('alternation_percent'),
+                'in_stats_window': True,
+            }
+            for row in summary_rows
+        ]
+        self.live_metrics = self._build_live_metrics(self.realtime_data)
+
+        if batch_index is None and self.is_running:
+            self.status = 'completed'
+            self.end_time = time.time()
+            self.progress = 100
+            self.message = 'Y-maze analysis completed.'
+
+        elapsed = time.time() - video_start_time
+        self._log(f"Y-maze video processed in {elapsed:.1f}s, {frame_idx} frames")
+
+        import gc
+        gc.collect()
+
+    def stop(self):
+        self.is_running = False
+        self.status = 'stopped'
+        self.end_time = time.time()
+
+    def get_status(self):
+        elapsed = 0
+        if self.start_time:
+            elapsed = (self.end_time or time.time()) - self.start_time
+        processing_fps = self.processed_frames / elapsed if elapsed > 0 else 0
+        return {
+            'session_id': self.session_id,
+            'experiment_type': self.experiment_type,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'logs': self.logs[-10:],
+            'realtime_data': self.realtime_data,
+            'result_files': self.result_files,
+            'experiment_stats': self.live_metrics,
+            'stats': {
+                'processed_frames': self.processed_frames,
+                'elapsed_time': elapsed,
+                'fps': processing_fps,
+            }
+        }
+
+    def get_download_file_map(self):
+        return self.output_groups
+
+    def _generate_txt_report(self, summaries, txt_path):
+        try:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 72 + "\n")
+                f.write("MouseScope Y 迷宫报告 (Y-Maze Report)\n")
+                f.write("=" * 72 + "\n\n")
+                f.write(f"{_bi_label('分析时间', 'Analysis Time')}: {china_now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                if summaries:
+                    f.write(f"{_bi_label('视频', 'Video')}: {summaries[0].get('video_name', '')}\n")
+                f.write(f"{_bi_label('ROI 数量', 'ROI Count')}: {len(summaries)}\n")
+                f.write(
+                    f"{_bi_label('统计规则', 'Scoring Rule')}: "
+                    "连续 3 次入臂且 3 个臂均不相同时记为一次自发交替 "
+                    "(Spontaneous alternation is scored when 3 consecutive arm entries are all different.)\n\n"
+                )
+
+                for summary in summaries:
+                    f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
+                    _write_report_metric_lines(f, summary, [
+                        ('总时长', 'Total Time', 'total_time_s', ' s'),
+                        ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
+                        ('总距离', 'Total Distance', 'total_distance_cm', ' cm'),
+                        ('平均速度', 'Mean Speed', 'mean_speed_cm_s', ' cm/s'),
+                        ('中心区时间', 'Center Time', 'center_time_s', ' s'),
+                        ('A 臂进入次数', 'Arm A Entries', 'arm_a_entries', ''),
+                        ('B 臂进入次数', 'Arm B Entries', 'arm_b_entries', ''),
+                        ('C 臂进入次数', 'Arm C Entries', 'arm_c_entries', ''),
+                        ('总入臂次数', 'Total Arm Entries', 'total_arm_entries', ''),
+                        ('交替次数', 'Alternation Count', 'alternation_count', ''),
+                        ('交替机会数', 'Alternation Opportunities', 'alternation_opportunities', ''),
+                        ('交替百分比', 'Alternation Percent', 'alternation_percent', '%'),
+                    ])
+                    f.write("\n")
+        except Exception as e:
+            print(f"Failed to write Y-maze report: {e}")
 
 # ==================== 路由 ====================
 
@@ -2165,7 +3267,7 @@ def upload_page():
 def manual():
     """使用手册"""
     manual_type = request.args.get('module', 'tst').strip().lower()
-    if manual_type not in {'tst', 'oft', 'nor'}:
+    if manual_type not in {'tst', 'oft', 'nor', 'epm', 'ymaze'}:
         manual_type = 'tst'
     return render_template('manual.html', manual_type=manual_type)
 
@@ -2246,13 +3348,7 @@ def do_upload():
     session_id = secrets.token_hex(16)
     uploaded_files = request.files.getlist('videos')
     local_paths_raw = request.form.get('local_paths', '').strip()
-    experiment_type = request.form.get('experiment_type', 'tst').strip() or 'tst'
-    if experiment_type == 'open_field':
-        experiment_type = 'open_field'
-    elif experiment_type == 'novel_object':
-        experiment_type = 'novel_object'
-    else:
-        experiment_type = 'tst'
+    experiment_type = normalize_experiment_type(request.form.get('experiment_type', 'tst'))
 
     video_paths = []
     video_infos = []
@@ -2318,21 +3414,30 @@ def do_upload():
         'output_dir': resolved_output_dir,
         'fps_override': fps_override_value,
         'is_batch': len(video_paths) > 1,
+        'draft_payload': None,
+        'draft_updated_at': None,
+        'selected_video_idx': 0,
         'created_at': _now_ts(),
         'last_accessed_at': _now_ts(),
     }
 
+    if len(video_paths) > 1:
+        return redirect(url_for('batch_workspace', session_id=session_id))
     return redirect(url_for('calibrate', session_id=session_id))
 
 
-@app.route('/calibrate/<session_id>')
-def calibrate(session_id):
-    """标定页面（ROI + 参数调试）"""
+def _render_calibrate_page(session_id, sess, video_idx=0, launch_mode='direct'):
     sess = analysis_sessions.get(session_id)
     if not sess:
         flash('会话不存在或已过期，请重新上传', 'error')
         return redirect(url_for('index'))
 
+    total_videos = len(sess.get('video_infos') or [])
+    if total_videos <= 0:
+        flash('会话中没有可用视频，请重新上传', 'error')
+        return redirect(url_for('upload_page'))
+
+    video_idx = min(max(int(video_idx or 0), 0), total_videos - 1)
     video_list = []
     if sess['is_batch']:
         for i, info in enumerate(sess['video_infos']):
@@ -2342,22 +3447,80 @@ def calibrate(session_id):
                 'video_info': _extract_video_info_from_entry(info, fps_override=sess.get('fps_override')),
             })
 
-    if sess.get('experiment_type') == 'open_field':
-        template_name = 'calibrate_openfield.html'
-    elif sess.get('experiment_type') == 'novel_object':
-        template_name = 'calibrate_nor.html'
-    else:
-        template_name = 'calibrate.html'
+    spec = get_experiment_spec(sess.get('experiment_type'))
     return render_template(
-        template_name,
+        spec.calibrate_template,
         session_id=session_id,
-        video_info=_session_video_info(sess, 0),
+        video_info=_session_video_info(sess, video_idx),
         video_info_list=[_extract_video_info_from_entry(info, fps_override=sess.get('fps_override')) for info in sess['video_infos']],
-        video_path=sess['video_paths'][0],
+        video_path=sess['video_paths'][video_idx],
         is_batch=sess['is_batch'],
         video_list=video_list,
         experiment_type=sess.get('experiment_type', 'tst'),
+        maze_module=spec.maze_module,
+        experiment_spec=spec,
+        current_video_index=video_idx,
+        launch_mode=launch_mode,
+        batch_workspace_url=url_for('batch_workspace', session_id=session_id) if sess.get('is_batch') else None,
+        draft_payload=sess.get('draft_payload'),
     )
+
+
+@app.route('/batch/<session_id>')
+def batch_workspace(session_id):
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        flash('会话不存在或已过期，请重新上传', 'error')
+        return redirect(url_for('index'))
+    if not sess.get('is_batch'):
+        return redirect(url_for('calibrate', session_id=session_id))
+    spec = get_experiment_spec(sess.get('experiment_type'))
+    cards = summarize_batch_state(
+        sess.get('experiment_type'),
+        sess.get('draft_payload'),
+        sess.get('video_infos'),
+    )
+    complete_count = sum(1 for card in cards if card.get('complete'))
+    return render_template(
+        'batch_workspace.html',
+        session_id=session_id,
+        experiment_spec=spec,
+        cards=cards,
+        complete_count=complete_count,
+        total_videos=len(cards),
+        draft_updated_at=sess.get('draft_updated_at'),
+        start_seconds=sess.get('start_seconds'),
+        end_seconds=sess.get('end_seconds'),
+        output_dir=sess.get('output_dir'),
+        fps_override=sess.get('fps_override'),
+        batch_state_url=url_for('api_batch_state', session_id=session_id),
+    )
+
+
+@app.route('/calibrate/<session_id>')
+def calibrate(session_id):
+    """标定页面（ROI + 参数调试）"""
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        flash('会话不存在或已过期，请重新上传', 'error')
+        return redirect(url_for('index'))
+    if sess.get('is_batch'):
+        selected_video_idx = int(sess.get('selected_video_idx') or 0)
+        return redirect(url_for('calibrate_video', session_id=session_id, video_idx=selected_video_idx))
+    return _render_calibrate_page(session_id, sess, video_idx=0, launch_mode='direct')
+
+
+@app.route('/calibrate/<session_id>/video/<int:video_idx>')
+def calibrate_video(session_id, video_idx):
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        flash('会话不存在或已过期，请重新上传', 'error')
+        return redirect(url_for('index'))
+    if not sess.get('is_batch'):
+        return redirect(url_for('calibrate', session_id=session_id))
+    sess['selected_video_idx'] = int(video_idx)
+    analysis_sessions.persist(session_id)
+    return _render_calibrate_page(session_id, sess, video_idx=video_idx, launch_mode='workspace')
 
 
 @app.route('/monitor/<session_id>')
@@ -2367,13 +3530,14 @@ def monitor(session_id):
     if not sess:
         flash('Session expired. Please start again.', 'error')
         return redirect(url_for('index'))
-    if sess.get('experiment_type') == 'open_field':
-        template_name = 'monitor_openfield.html'
-    elif sess.get('experiment_type') == 'novel_object':
-        template_name = 'monitor_nor.html'
-    else:
-        template_name = 'monitor.html'
-    return render_template(template_name, session_id=session_id)
+    spec = get_experiment_spec(sess.get('experiment_type'))
+    return render_template(
+        spec.monitor_template,
+        session_id=session_id,
+        maze_module=spec.maze_module,
+        experiment_spec=spec,
+        is_batch=sess.get('is_batch', False),
+    )
 
 
 # ==================== API 路由 ====================
@@ -2405,6 +3569,112 @@ def get_first_frame(session_id):
         'frame_idx': frame_idx,
         'total_frames': _session_video_info(sess, video_idx)['total_frames'],
         'video_info': _session_video_info(sess, video_idx),
+    })
+
+
+@app.route('/api/batch_state/<session_id>')
+def api_batch_state(session_id):
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        return jsonify({'error': '会话不存在'}), 404
+    cards = summarize_batch_state(
+        sess.get('experiment_type'),
+        sess.get('draft_payload'),
+        sess.get('video_infos'),
+    )
+    complete_count = sum(1 for card in cards if card.get('complete'))
+    return jsonify({
+        'session_id': session_id,
+        'experiment_type': sess.get('experiment_type'),
+        'is_batch': bool(sess.get('is_batch')),
+        'cards': cards,
+        'complete_count': complete_count,
+        'total_videos': len(cards),
+        'can_start': bool(cards) and complete_count == len(cards),
+        'draft_updated_at': sess.get('draft_updated_at'),
+        'selected_video_idx': int(sess.get('selected_video_idx') or 0),
+    })
+
+
+@app.route('/api/draft/<session_id>', methods=['GET', 'POST'])
+def api_draft_payload(session_id):
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        return jsonify({'error': '会话不存在'}), 404
+
+    if request.method == 'GET':
+        return jsonify({
+            'session_id': session_id,
+            'draft_payload': sess.get('draft_payload'),
+            'draft_updated_at': sess.get('draft_updated_at'),
+            'selected_video_idx': int(sess.get('selected_video_idx') or 0),
+        })
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': '草稿数据格式无效'}), 400
+
+    selected_video_idx = payload.pop('_selected_video_idx', None)
+    analysis_sessions.save_draft(session_id, payload, selected_video_idx=selected_video_idx)
+    cards = summarize_batch_state(
+        sess.get('experiment_type'),
+        payload,
+        sess.get('video_infos'),
+    )
+    return jsonify({
+        'success': True,
+        'draft_updated_at': sess.get('draft_updated_at'),
+        'cards': cards,
+    })
+
+
+@app.route('/api/draft_action/<session_id>', methods=['POST'])
+def api_draft_action(session_id):
+    sess = analysis_sessions.get(session_id)
+    if not sess:
+        return jsonify({'error': '会话不存在'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get('action') or '').strip().lower()
+    draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
+    total_videos = len(sess.get('video_infos') or [])
+    per_video_configs = draft_payload.get('per_video_configs')
+    if not isinstance(per_video_configs, list):
+        per_video_configs = []
+    while len(per_video_configs) < total_videos:
+        per_video_configs.append({})
+
+    if action == 'copy':
+        source_index = int(payload.get('source_index', -1))
+        target_indices = payload.get('target_indices') or []
+        if not (0 <= source_index < total_videos):
+            return jsonify({'error': '源视频索引无效'}), 400
+        if not isinstance(target_indices, list) or not target_indices:
+            return jsonify({'error': '目标视频索引无效'}), 400
+        source_config = copy.deepcopy(per_video_configs[source_index] or {})
+        for raw_idx in target_indices:
+            idx = int(raw_idx)
+            if 0 <= idx < total_videos:
+                per_video_configs[idx] = copy.deepcopy(source_config)
+    elif action == 'reset':
+        target_index = int(payload.get('target_index', -1))
+        if not (0 <= target_index < total_videos):
+            return jsonify({'error': '目标视频索引无效'}), 400
+        per_video_configs[target_index] = {}
+    else:
+        return jsonify({'error': '不支持的草稿操作'}), 400
+
+    draft_payload['per_video_configs'] = per_video_configs
+    analysis_sessions.save_draft(session_id, draft_payload)
+    cards = summarize_batch_state(
+        sess.get('experiment_type'),
+        draft_payload,
+        sess.get('video_infos'),
+    )
+    return jsonify({
+        'success': True,
+        'draft_updated_at': sess.get('draft_updated_at'),
+        'cards': cards,
     })
 
 
@@ -2566,6 +3836,153 @@ def _novel_object_debug_preview(frame, data, video_path):
     })
 
 
+def _elevated_plus_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    bg_type = data.get('bg_type', 'light')
+    invert = (bg_type == 'dark')
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 120))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'Elevated plus maze preview requires at least one ROI.'}), 400
+
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+
+    morph = MorphologyProcessor(
+        erosion_kernel=erosion_kernel,
+        erosion_iterations=erosion_iter,
+        dilation_kernel=dilation_kernel,
+        dilation_iterations=dilation_iter
+    )
+    det = MouseDetector(min_area=min_area, max_area=50000)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    tracker_results = []
+    detected_count = 0
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'EPM ROI {idx + 1} must be an object.'}), 400
+        try:
+            zone_polygons = _coerce_zone_polygons(roi.get('zones'), EPM_ZONE_KEYS, 'EPM')
+        except Exception as exc:
+            return jsonify({'error': f'EPM ROI {idx + 1}: {exc}'}), 400
+        detection_points = None
+        if isinstance(roi, dict) and roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'EPM ROI {idx + 1}: detection mask {exc}'}), 400
+
+        tracker = ElevatedPlusTracker(
+            zone_polygons=zone_polygons,
+            detection_polygon=detection_points,
+            center_size_cm=float(data.get('center_size_cm', 5.0)),
+            open_arm_length_cm=float(data.get('open_arm_length_cm', 30.0)),
+            closed_arm_length_cm=float(data.get('closed_arm_length_cm', 30.0)),
+            fps=30.0,
+            movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+            entry_depth_ratio=float(data.get('entry_depth_ratio', 0.2)),
+            roi_id=idx + 1,
+            roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'EPM {idx + 1}',
+            time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
+        )
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+
+    result_frame = draw_elevated_plus_results(frame, tracker_results)
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
+
+def _y_maze_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    bg_type = data.get('bg_type', 'light')
+    invert = (bg_type == 'dark')
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 120))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'Y-maze preview requires at least one ROI.'}), 400
+
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+
+    morph = MorphologyProcessor(
+        erosion_kernel=erosion_kernel,
+        erosion_iterations=erosion_iter,
+        dilation_kernel=dilation_kernel,
+        dilation_iterations=dilation_iter
+    )
+    det = MouseDetector(min_area=min_area, max_area=50000)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    tracker_results = []
+    detected_count = 0
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'Y-maze ROI {idx + 1} must be an object.'}), 400
+        try:
+            zone_polygons = _coerce_zone_polygons_with_schema(roi.get('zones'), YMAZE_ZONE_POINT_COUNTS, 'Y-maze')
+        except Exception as exc:
+            return jsonify({'error': f'Y-maze ROI {idx + 1}: {exc}'}), 400
+        detection_points = None
+        if isinstance(roi, dict) and roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'Y-maze ROI {idx + 1}: detection mask {exc}'}), 400
+
+        tracker = YMazeTracker(
+            zone_polygons=zone_polygons,
+            detection_polygon=detection_points,
+            arm_length_cm=float(data.get('arm_length_cm', 30.0)),
+            arm_width_cm=float(data.get('arm_width_cm', 10.0)),
+            fps=30.0,
+            movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+            entry_depth_ratio=float(data.get('entry_depth_ratio', 0.2)),
+            roi_id=idx + 1,
+            roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'Y-Maze {idx + 1}',
+            time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
+        )
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+
+    result_frame = draw_y_maze_results(frame, tracker_results)
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
+
 @app.route('/api/debug_preview/<session_id>', methods=['POST'])
 def debug_preview(session_id):
     """参数调试预览"""
@@ -2591,6 +4008,10 @@ def debug_preview(session_id):
         return _open_field_debug_preview(frame, data, video_path)
     if sess.get('experiment_type') == 'novel_object':
         return _novel_object_debug_preview(frame, data, video_path)
+    if sess.get('experiment_type') == 'elevated_plus':
+        return _elevated_plus_debug_preview(frame, data, video_path)
+    if sess.get('experiment_type') == 'y_maze':
+        return _y_maze_debug_preview(frame, data, video_path)
 
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))
@@ -2669,229 +4090,40 @@ def start_analysis(session_id):
     if not sess:
         return jsonify({'error': '会话不存在'}), 404
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    use_saved_draft = bool(data.get('use_saved_draft'))
+    if use_saved_draft:
+        draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
+        if not draft_payload:
+            return jsonify({'error': '当前没有可用于启动分析的已保存配置'}), 400
+        data = draft_payload
+    elif not data and sess.get('draft_payload'):
+        data = copy.deepcopy(sess.get('draft_payload') or {})
 
-    if sess.get('experiment_type') == 'open_field':
-        per_video_configs = []
-        raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
-        default_bg_method = data.get('bg_method', 'threshold')
-        default_bg_type = data.get('bg_type', 'light')
-        default_gray_threshold = int(data.get('gray_threshold', 127))
-        default_erosion_kernel = int(data.get('erosion_kernel', 3))
-        default_erosion_iter = int(data.get('erosion_iter', 1))
-        default_dilation_kernel = int(data.get('dilation_kernel', 5))
-        default_dilation_iter = int(data.get('dilation_iter', 2))
-        default_min_area = int(data.get('min_area', 120))
-        default_arena_side_cm = float(data.get('arena_side_cm', data.get('arena_width_cm', 50.0)))
-        default_center_ratio_x = float(data.get('center_ratio_x', 0.5))
-        default_center_ratio_y = float(data.get('center_ratio_y', 0.5))
-        default_wall_margin_cm = float(data.get('wall_margin_cm', 8.0))
-        default_movement_threshold_cm_s = float(data.get('movement_threshold_cm_s', 2.0))
-        default_bin_seconds = float(data.get('bin_seconds', 300.0))
-        for idx, _ in enumerate(sess.get('video_infos', [])):
-            raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
-            per_video_configs.append({
-                'bg_method': raw_cfg.get('bg_method', default_bg_method),
-                'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
-                'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
-                'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
-                'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
-                'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
-                'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
-                'min_area': int(raw_cfg.get('min_area', default_min_area)),
-                'arena_side_cm': float(raw_cfg.get('arena_side_cm', default_arena_side_cm)),
-                'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
-                'center_ratio_x': float(raw_cfg.get('center_ratio_x', default_center_ratio_x)),
-                'center_ratio_y': float(raw_cfg.get('center_ratio_y', default_center_ratio_y)),
-                'wall_margin_cm': float(raw_cfg.get('wall_margin_cm', default_wall_margin_cm)),
-                'movement_threshold_cm_s': float(raw_cfg.get('movement_threshold_cm_s', default_movement_threshold_cm_s)),
-                'bin_seconds': float(raw_cfg.get('bin_seconds', default_bin_seconds)),
-            })
+    if isinstance(data, dict) and data:
+        selected_video_idx = data.get('video', sess.get('selected_video_idx'))
+        analysis_sessions.save_draft(session_id, data, selected_video_idx=selected_video_idx)
 
-        vision_config = {
-            'bg_method': default_bg_method,
-            'gray_threshold': default_gray_threshold,
-            'invert': str(default_bg_type).lower() == 'dark',
-            'erosion_kernel': default_erosion_kernel,
-            'erosion_iter': default_erosion_iter,
-            'dilation_kernel': default_dilation_kernel,
-            'dilation_iter': default_dilation_iter,
-            'min_area': default_min_area,
-            'max_area': int(data.get('max_area', 50000)),
-            'rois': data.get('rois', []),
-            'arena_points': data.get('arena_points', []),
-            'arena_side_cm': default_arena_side_cm,
-            'per_video_configs': per_video_configs,
-            'center_ratio_x': default_center_ratio_x,
-            'center_ratio_y': default_center_ratio_y,
-            'wall_margin_cm': default_wall_margin_cm,
-            'movement_threshold_cm_s': default_movement_threshold_cm_s,
-            'bin_seconds': default_bin_seconds,
-            'generate_video': data.get('generate_video', True),
-            'output_dir': sess.get('output_dir'),
-            'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
-            'end_sec': float(sess['end_seconds']) if sess.get('end_seconds') else None,
-            'fps_override': sess.get('fps_override'),
-        }
-
-        analysis = OpenFieldMultiArenaAnalysisSession(
-            session_id=session_id,
-            video_paths=sess['video_paths'],
-            video_infos=sess['video_infos'],
-            config=vision_config
-        )
-
-        analysis_sessions[session_id]['analysis'] = analysis
-        analysis.start()
-        return jsonify({'success': True, 'session_id': session_id})
-
-    if sess.get('experiment_type') == 'novel_object':
-        per_video_configs = []
-        raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
-        default_phase = data.get('phase', 'recognition')
-        default_bg_method = data.get('bg_method', 'threshold')
-        default_bg_type = data.get('bg_type', 'light')
-        default_gray_threshold = int(data.get('gray_threshold', 127))
-        default_erosion_kernel = int(data.get('erosion_kernel', 3))
-        default_erosion_iter = int(data.get('erosion_iter', 1))
-        default_dilation_kernel = int(data.get('dilation_kernel', 5))
-        default_dilation_iter = int(data.get('dilation_iter', 2))
-        default_min_area = int(data.get('min_area', 120))
-        default_arena_width_cm = float(data.get('arena_width_cm', data.get('arena_side_cm', 50.0)))
-        default_arena_height_cm = float(data.get('arena_height_cm', data.get('arena_side_cm', 50.0)))
-        default_center_ratio_x = float(data.get('center_ratio_x', 0.5))
-        default_center_ratio_y = float(data.get('center_ratio_y', 0.5))
-        default_interaction_radius_cm = float(data.get('interaction_radius_cm', 4.0))
-        default_exploration_max_speed_cm_s = float(data.get('exploration_max_speed_cm_s', 12.0))
-        default_use_head_direction = bool(data.get('use_head_direction', True))
-        default_head_angle_threshold_deg = float(data.get('head_angle_threshold_deg', 50.0))
-        default_head_confidence_threshold = float(data.get('head_confidence_threshold', 0.35))
-        default_movement_threshold_cm_s = float(data.get('movement_threshold_cm_s', 2.0))
-        default_min_valid_exploration_s = float(data.get('min_valid_exploration_s', 20.0))
-        default_bin_seconds = float(data.get('bin_seconds', 300.0))
-        for idx, _ in enumerate(sess.get('video_infos', [])):
-            raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
-            per_video_configs.append({
-                'bg_method': raw_cfg.get('bg_method', default_bg_method),
-                'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
-                'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
-                'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
-                'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
-                'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
-                'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
-                'min_area': int(raw_cfg.get('min_area', default_min_area)),
-                'phase': raw_cfg.get('phase', default_phase),
-                'arena_width_cm': float(raw_cfg.get('arena_width_cm', default_arena_width_cm)),
-                'arena_height_cm': float(raw_cfg.get('arena_height_cm', default_arena_height_cm)),
-                'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
-                'center_ratio_x': float(raw_cfg.get('center_ratio_x', default_center_ratio_x)),
-                'center_ratio_y': float(raw_cfg.get('center_ratio_y', default_center_ratio_y)),
-                'interaction_radius_cm': float(raw_cfg.get('interaction_radius_cm', default_interaction_radius_cm)),
-                'exploration_max_speed_cm_s': float(raw_cfg.get('exploration_max_speed_cm_s', default_exploration_max_speed_cm_s)),
-                'use_head_direction': bool(raw_cfg.get('use_head_direction', default_use_head_direction)),
-                'head_angle_threshold_deg': float(raw_cfg.get('head_angle_threshold_deg', default_head_angle_threshold_deg)),
-                'head_confidence_threshold': float(raw_cfg.get('head_confidence_threshold', default_head_confidence_threshold)),
-                'movement_threshold_cm_s': float(raw_cfg.get('movement_threshold_cm_s', default_movement_threshold_cm_s)),
-                'min_valid_exploration_s': float(raw_cfg.get('min_valid_exploration_s', default_min_valid_exploration_s)),
-                'bin_seconds': float(raw_cfg.get('bin_seconds', default_bin_seconds)),
-            })
-
-        vision_config = {
-            'bg_method': default_bg_method,
-            'gray_threshold': default_gray_threshold,
-            'invert': str(default_bg_type).lower() == 'dark',
-            'erosion_kernel': default_erosion_kernel,
-            'erosion_iter': default_erosion_iter,
-            'dilation_kernel': default_dilation_kernel,
-            'dilation_iter': default_dilation_iter,
-            'min_area': default_min_area,
-            'max_area': int(data.get('max_area', 50000)),
-            'phase': default_phase,
-            'rois': data.get('rois', []),
-            'per_video_configs': per_video_configs,
-            'arena_width_cm': default_arena_width_cm,
-            'arena_height_cm': default_arena_height_cm,
-            'center_ratio_x': default_center_ratio_x,
-            'center_ratio_y': default_center_ratio_y,
-            'interaction_radius_cm': default_interaction_radius_cm,
-            'exploration_max_speed_cm_s': default_exploration_max_speed_cm_s,
-            'use_head_direction': default_use_head_direction,
-            'head_angle_threshold_deg': default_head_angle_threshold_deg,
-            'head_confidence_threshold': default_head_confidence_threshold,
-            'movement_threshold_cm_s': default_movement_threshold_cm_s,
-            'min_valid_exploration_s': default_min_valid_exploration_s,
-            'bin_seconds': default_bin_seconds,
-            'generate_video': data.get('generate_video', True),
-            'output_dir': sess.get('output_dir'),
-            'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
-            'end_sec': float(sess['end_seconds']) if sess.get('end_seconds') else None,
-            'fps_override': sess.get('fps_override'),
-        }
-
-        analysis = NovelObjectMultiArenaAnalysisSession(
-            session_id=session_id,
-            video_paths=sess['video_paths'],
-            video_infos=sess['video_infos'],
-            config=vision_config
-        )
-
-        analysis_sessions[session_id]['analysis'] = analysis
-        analysis.start()
-        return jsonify({'success': True, 'session_id': session_id})
-
-    per_video_configs = []
-    raw_per_video_configs = data.get('per_video_configs', []) if isinstance(data, dict) else []
-    default_bg_method = data.get('bg_method', 'threshold')
-    default_bg_type = data.get('bg_type', 'light')
-    default_gray_threshold = int(data.get('gray_threshold', 127))
-    default_erosion_kernel = int(data.get('erosion_kernel', 3))
-    default_erosion_iter = int(data.get('erosion_iter', 2))
-    default_dilation_kernel = int(data.get('dilation_kernel', 5))
-    default_dilation_iter = int(data.get('dilation_iter', 3))
-    default_min_area = int(data.get('min_area', 100))
-    for idx, _ in enumerate(sess.get('video_infos', [])):
-        raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
-        per_video_configs.append({
-            'bg_method': raw_cfg.get('bg_method', default_bg_method),
-            'gray_threshold': int(raw_cfg.get('gray_threshold', default_gray_threshold)),
-            'invert': str(raw_cfg.get('bg_type', default_bg_type)).lower() == 'dark',
-            'erosion_kernel': int(raw_cfg.get('erosion_kernel', default_erosion_kernel)),
-            'erosion_iter': int(raw_cfg.get('erosion_iter', default_erosion_iter)),
-            'dilation_kernel': int(raw_cfg.get('dilation_kernel', default_dilation_kernel)),
-            'dilation_iter': int(raw_cfg.get('dilation_iter', default_dilation_iter)),
-            'min_area': int(raw_cfg.get('min_area', default_min_area)),
-            'pixel_to_mm': float(raw_cfg.get('pixel_to_mm', data.get('pixel_to_mm', 1.0))),
-            'rois': copy.deepcopy(raw_cfg.get('rois', data.get('rois', []))),
-        })
-
-    vision_config = {
-        'bg_method': default_bg_method,
-        'gray_threshold': default_gray_threshold,
-        'invert': str(default_bg_type).lower() == 'dark',
-        'erosion_kernel': default_erosion_kernel,
-        'erosion_iter': default_erosion_iter,
-        'dilation_kernel': default_dilation_kernel,
-        'dilation_iter': default_dilation_iter,
-        'min_area': default_min_area,
-        'pixel_to_mm': float(data.get('pixel_to_mm', 1.0)),
-        'rois': data.get('rois', []),
-        'per_video_configs': per_video_configs,
-        'generate_video': data.get('generate_video', True),
-        'output_dir': sess.get('output_dir'),
-        'start_sec': float(sess['start_seconds']) if sess.get('start_seconds') else None,
-        'end_sec': float(sess['end_seconds']) if sess.get('end_seconds') else None,
-        'fps_override': sess.get('fps_override'),
+    experiment_type = str(sess.get('experiment_type') or 'tst').strip().lower()
+    vision_config = build_analysis_config(experiment_type, sess, data)
+    analysis_class_map = {
+        'tst': VisionAnalysisSession,
+        'open_field': OpenFieldMultiArenaAnalysisSession,
+        'novel_object': NovelObjectMultiArenaAnalysisSession,
+        'elevated_plus': ElevatedPlusMultiArenaAnalysisSession,
+        'y_maze': YMazeMultiArenaAnalysisSession,
     }
-
-    # 创建分析会话
-    analysis = VisionAnalysisSession(
+    analysis_class = analysis_class_map.get(experiment_type, VisionAnalysisSession)
+    analysis = analysis_class(
         session_id=session_id,
         video_paths=sess['video_paths'],
         video_infos=sess['video_infos'],
         config=vision_config
     )
 
-    analysis_sessions[session_id]['analysis'] = analysis
+    analysis_sessions.set_analysis(session_id, analysis)
     analysis.start()
 
     return jsonify({'success': True, 'session_id': session_id})

@@ -1,0 +1,393 @@
+<div class="manual-lang-block" data-manual-lang="zh">
+    <section class="manual-hero">
+        <div class="manual-hero-top">
+            <div>
+                <div class="manual-eyebrow">Elevated Plus Maze / EPM</div>
+                <h2>高架十字迷宫完整操作手册</h2>
+                <p>本手册覆盖实验逻辑、采集要求、5 区手动画区、检测遮罩、时间窗、主要参数，以及 EPM 结果字段的解释方式。</p>
+            </div>
+            <div class="manual-chip-row">
+                <span class="manual-chip">5 区手动画区</span>
+                <span class="manual-chip">开放臂 / 封闭臂时间</span>
+                <span class="manual-chip">入臂深度判定</span>
+                <span class="manual-chip">检测遮罩可选</span>
+                <span class="manual-chip">track / summary / bins</span>
+            </div>
+        </div>
+        <div class="manual-hero-grid">
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-compass-drafting" style="color: var(--primary-color);"></i><span>主要统计什么</span></h4>
+                <p>分别统计开放臂、封闭臂和中心区时间，并输出开放臂时间比例、开放臂进入比例、潜伏期、距离和速度。</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-draw-polygon" style="color: var(--primary-color);"></i><span>为什么改成手动画区</span></h4>
+                <p>每个 ROI 都显式画出中心区、两条开放臂和两条封闭臂，避免自动推导整套迷宫带来的边界偏差。</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-ruler-combined" style="color: var(--primary-color);"></i><span>为什么有入臂深度</span></h4>
+                <p>只有质心进入臂区更深的位置才记为入臂，可减少臂口附近反复试探造成的重复计数。</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="card manual-flow-card">
+        <div class="card-body py-3">
+            <div class="flow-steps justify-content-center">
+                <span class="flow-step">1. 采集要求</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. 上传与时间范围</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">3. 5 区画区</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">4. 调参与预览</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">5. 结果复核</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                <a href="#epm-overview-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>总览</span></a>
+                <a href="#epm-recording-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>采集要求</span></a>
+                <a href="#epm-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>上传与时间范围</span></a>
+                <a href="#epm-calibration-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>5 区画区与时间窗</span></a>
+                <a href="#epm-params-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>参数字典</span></a>
+                <a href="#epm-outputs-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>结果字典</span></a>
+                <a href="#epm-batch-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span>批量流程</span></a>
+                <a href="#epm-trouble-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">8</span><span>常见问题与排错</span></a>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <section class="manual-section" id="epm-overview-zh">
+                <h3><span class="step-number">1</span><span>总览</span></h3>
+                <p>EPM 模块用于分析小鼠在开放臂、封闭臂和中心区之间的空间偏好。最关键的是把迷宫边界画准，再用预览确认区域切换和入臂计数稳定。</p>
+                <ul class="manual-list">
+                    <li>开放臂时间比例和开放臂进入比例通常要和总入臂数、总距离一起解释，避免把低活动视频误读成高焦虑。</li>
+                    <li>中心区单独统计，不会被并入开放臂或封闭臂，因此更容易发现长时间停留中心的视频。</li>
+                    <li>一个视频里如果有多个迷宫，每个 ROI 都会独立输出自己的结果表和热图。</li>
+                </ul>
+                <div class="manual-callout warning">
+                    <h4>注意两个开放臂时间比例</h4>
+                    <p>MouseScope 同时输出 <code>open_time_percent_total</code> 和 <code>open_time_percent_arms_only</code>。前者以总统计时长为分母，后者只以开放臂和封闭臂总时长为分母。</p>
+                </div>
+            </section>
+
+            <section class="manual-section" id="epm-recording-zh">
+                <h3><span class="step-number">2</span><span>采集要求</span></h3>
+                <p>EPM 对边界清晰度和俯视稳定性比较敏感。边界越完整，后面的区域判定越可靠。</p>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-camera" style="color: var(--primary-color);"></i><span>机位与视角</span></h4>
+                    <ul class="manual-list">
+                        <li>优先使用稳定俯视或接近俯视的固定机位，不要在录制中移动或变焦。</li>
+                        <li>中心区和四条臂都应完整可见，尽量不要让臂端或交叉区被裁切。</li>
+                    </ul>
+                </div>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-lightbulb" style="color: var(--primary-color);"></i><span>背景与干扰</span></h4>
+                    <ul class="manual-list">
+                        <li>保持鼠体与迷宫地面有明显亮度对比，减少阴影、反光和护栏高亮。</li>
+                        <li>开放臂外侧如果有亮背景或实验台边缘，建议优先使用检测遮罩。</li>
+                    </ul>
+                </div>
+                <div class="manual-callout info">
+                    <h4>不要用缩小统计区来掩盖误检</h4>
+                    <p>如果开放臂外侧背景容易被误检，更推荐加检测遮罩，而不是把开放臂区域硬缩小。</p>
+                </div>
+            </section>
+
+            <section class="manual-section" id="epm-upload-zh">
+                <h3><span class="step-number">3</span><span>上传与时间范围</span></h3>
+                <p>上传页定义默认统计时间、FPS 覆盖和输出目录。ROI 设为“跟随全局”时，会直接沿用这里的时间窗口。</p>
+                <ul class="manual-list">
+                    <li>如果只想分析视频中的一段，可先在上传页设置全局开始和结束时间。</li>
+                    <li>FPS 元数据不可靠时建议手动覆盖，否则速度、距离和潜伏期可能受影响。</li>
+                    <li>多视频模式下会先进入批次页面，再逐条完成每个视频的 EPM 设置。</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="epm-calibration-zh">
+                <h3><span class="step-number">4</span><span>5 区画区与时间窗</span></h3>
+                <p>每个 ROI 对应一个完整迷宫，只有中心区、开放臂 1/2、封闭臂 1/2 全部完成后，才会进入预览和正式分析。</p>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-vector-square" style="color: var(--primary-color);"></i><span>5 区手动画区</span></h4>
+                    <ul class="manual-list">
+                        <li>每个区域都用 4 个角点绘制，系统会自动归一化点序，所以关键是边界位置是否准确。</li>
+                        <li>中心区建议贴合十字交叉部分的真实范围；各臂建议按实际可活动区域绘制。</li>
+                    </ul>
+                </div>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-ruler" style="color: var(--primary-color);"></i><span>真实尺寸与厘米换算</span></h4>
+                    <ul class="manual-list">
+                        <li>请填写中心区边长、开放臂长度和封闭臂长度，系统会据此估算 <code>cm_per_px_est</code>。</li>
+                        <li>这个尺度会影响距离、速度和运动阈值。</li>
+                    </ul>
+                </div>
+                <div class="manual-sub-block">
+                    <h4><i class="fas fa-mask" style="color: var(--primary-color);"></i><span>检测遮罩 detection mask</span></h4>
+                    <ul class="manual-list">
+                        <li>遮罩只限制允许检测前景的区域，不会改变开放臂、封闭臂和中心区的统计边界。</li>
+                        <li>如果不单独绘制，系统默认使用 5 个手画区域的并集作为检测区域。</li>
+                    </ul>
+                </div>
+                <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>ROI 时间窗模式</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>模式</th><th>含义</th><th>推荐场景</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>global</code></td><td>跟随上传页的全局开始 / 结束时间。</td><td>大多数标准 EPM 分析。</td></tr>
+                        <tr><td><code>precise</code></td><td>按视频绝对时间指定开始 / 结束秒数。</td><td>只分析固定片段，例如前 300 s。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-callout warning">
+                    <h4>完整 ROI 才会被统计</h4>
+                    <p>如果某个 ROI 只有部分区域完成，系统不会把它纳入预览或正式分析。</p>
+                </div>
+            </section>
+
+            <section class="manual-section" id="epm-params-zh">
+                <h3><span class="step-number">5</span><span>参数字典</span></h3>
+                <p>EPM 参数可以分为检测参数和行为统计参数两类。</p>
+                <div class="manual-caption"><i class="fas fa-sliders-h" style="color: var(--primary-color);"></i><span>检测参数</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>参数</th><th>作用</th><th>常见调法</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>bg_type</code></td><td>指定背景偏浅还是偏深，决定前景分割方向。</td><td>深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。</td></tr>
+                        <tr><td><code>gray_threshold</code></td><td>控制前景分割的严格程度。</td><td>噪点多就提高；轮廓断裂或漏检就降低。</td></tr>
+                        <tr><td><code>erosion_kernel</code> / <code>erosion_iter</code></td><td>去掉碎点和毛边。</td><td>边缘噪点多时增大；鼠体被过度侵蚀时减小。</td></tr>
+                        <tr><td><code>dilation_kernel</code> / <code>dilation_iter</code></td><td>修补断裂轮廓。</td><td>轮廓碎裂时增大；背景粘进鼠体时减小。</td></tr>
+                        <tr><td><code>min_area</code></td><td>过滤过小误检轮廓。</td><td>小亮点误检多就提高；小鼠体被漏掉就降低。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-caption"><i class="fas fa-clipboard-list" style="color: var(--primary-color);"></i><span>行为统计参数</span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>参数</th><th>作用</th><th>结果影响</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才记为一次入臂。</td><td>直接影响 <code>open_entries</code>、<code>closed_entries</code> 和 <code>open_entry_percent</code>。</td></tr>
+                        <tr><td><code>movement_threshold_cm_s</code></td><td>区分移动与低活动 / 静止。</td><td>影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。</td></tr>
+                        <tr><td><code>bin_seconds</code></td><td>时间分箱长度。</td><td>决定 <code>*_bins.csv</code> 每一行覆盖的时长。</td></tr>
+                        <tr><td><code>generate_video</code></td><td>是否导出带标注结果视频。</td><td>关闭可提速，但会失去最直观的复核材料。</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="epm-outputs-zh">
+                <h3><span class="step-number">6</span><span>结果字典</span></h3>
+                <p>EPM 会导出结果视频、逐帧轨迹 CSV、summary CSV、分箱 CSV，以及每个 ROI 的热图和轨迹图。</p>
+                <div class="manual-file-grid">
+                    <div class="manual-file-card"><h4><i class="fas fa-file-video" style="color: var(--primary-color);"></i><span><code>*_analyzed.mp4</code></span></h4><p>叠加手画区域、当前区域标签、入臂事件和轨迹的结果视频。</p></div>
+                    <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></h4><p>逐帧记录区域、速度、累计距离和入臂事件。</p></div>
+                    <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code> / <code>*_bins.csv</code></span></h4><p>输出核心统计结果和固定时间箱汇总。</p></div>
+                </div>
+                <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>字段</th><th>含义</th><th>解读建议</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>frame</code></td><td>原视频帧号。</td><td>可用于回定位到结果视频。</td></tr>
+                        <tr><td><code>time_s</code> / <code>window_time_s</code></td><td>视频绝对时间与统计窗内相对时间。</td><td>适合做时序分析。</td></tr>
+                        <tr><td><code>zone</code> / <code>zone_group</code></td><td>当前所在区域及其分组。</td><td><code>zone_group</code> 常见值为 <code>open</code>、<code>closed</code>、<code>center</code>。</td></tr>
+                        <tr><td><code>arm_entry_event</code> / <code>arm_entry_name</code></td><td>是否触发入臂以及对应臂名。</td><td>建议结合结果视频一起复核。</td></tr>
+                    </tbody>
+                </table>
+                <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                <table class="manual-data-table">
+                    <thead><tr><th>字段</th><th>含义</th><th>解读建议</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>open_time_s</code> / <code>closed_time_s</code> / <code>center_time_s</code></td><td>各区域总停留时间。</td><td>建议和总活动量一起解释。</td></tr>
+                        <tr><td><code>open_time_percent_total</code></td><td>开放臂时间占总统计时长的百分比。</td><td>最常用的开放臂时间指标。</td></tr>
+                        <tr><td><code>open_time_percent_arms_only</code></td><td>开放臂时间占开放 + 封闭臂总时长的百分比。</td><td>适合排除中心区停留影响后再比较。</td></tr>
+                        <tr><td><code>open_entries</code> / <code>closed_entries</code> / <code>total_arm_entries</code></td><td>入臂次数。</td><td>总入臂数很低时应谨慎解释比例。</td></tr>
+                        <tr><td><code>open_entry_percent</code></td><td>开放臂进入占比。</td><td>常与开放臂时间比例配合报告。</td></tr>
+                        <tr><td><code>first_open_entry_latency_s</code></td><td>首次进入开放臂潜伏期。</td><td>若始终未进入开放臂，可能为空。</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="epm-batch-zh">
+                <h3><span class="step-number">7</span><span>批量流程</span></h3>
+                <p>EPM 的批量模式是“每个视频各自配置，再统一运行”。不要只画第一个视频就直接开始整批分析。</p>
+                <ol class="manual-step-list">
+                    <li>上传多个 EPM 视频，并设置全局时间窗、FPS 覆盖和输出目录。</li>
+                    <li>逐条打开视频卡片，完成当前视频的 5 区画区、检测遮罩、时间窗和参数设置。</li>
+                    <li>保存当前设置并返回批次页面，再继续处理下一条视频。</li>
+                    <li>确认所有卡片都显示为已完成后，再统一开始批量分析。</li>
+                </ol>
+            </section>
+
+            <section class="manual-section" id="epm-trouble-zh">
+                <h3><span class="step-number">8</span><span>常见问题与排错</span></h3>
+                <ul class="manual-list">
+                    <li>开放臂时间异常高：检查开放臂是否画得过宽，或外侧亮背景是否漏进了检测区域。</li>
+                    <li>开放臂时间异常低：检查开放臂是否画得过窄，或边缘阴影是否把鼠体切断了。</li>
+                    <li>入臂数明显偏高：优先提高 <code>entry_depth_ratio</code>，并确认中心区与各臂交界处没有重叠。</li>
+                    <li>频繁出现 <code>Unknown</code>：通常是区域之间存在空隙，或质心落到了未覆盖边界。</li>
+                    <li>热图看起来偏位：先复核 5 区画区和真实尺寸填写是否正确。</li>
+                </ul>
+                <div class="manual-callout danger">
+                    <h4>什么时候一定要人工复核</h4>
+                    <p>如果结果将用于正式统计或论文结论，建议至少抽查结果视频，尤其是开放臂边缘反光明显、总入臂数过低或区域切换异常频繁的视频。</p>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<div class="manual-lang-block" data-manual-lang="en" style="display:none;">
+    <section class="manual-hero">
+        <div class="manual-hero-top">
+            <div>
+                <div class="manual-eyebrow">Elevated Plus Maze / EPM</div>
+                <h2>Complete Elevated Plus Maze Manual</h2>
+                <p>This manual covers assay logic, recording requirements, five-zone drawing, detection masks, time windows, key parameters, and EPM result interpretation.</p>
+            </div>
+            <div class="manual-chip-row">
+                <span class="manual-chip">5 manual zones</span>
+                <span class="manual-chip">Open / closed arm time</span>
+                <span class="manual-chip">Entry-depth gating</span>
+                <span class="manual-chip">Optional mask</span>
+                <span class="manual-chip">track / summary / bins</span>
+            </div>
+        </div>
+        <div class="manual-hero-grid">
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-compass-drafting" style="color: var(--primary-color);"></i><span>What is quantified</span></h4>
+                <p>The module separately measures open-arm, closed-arm, and center occupancy, then exports ratios, latency, distance, speed, and arm-entry metrics.</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-draw-polygon" style="color: var(--primary-color);"></i><span>Why all five zones are manual</span></h4>
+                <p>Each ROI explicitly defines center, open arm 1/2, and closed arm 1/2, which avoids boundary drift from auto-derived geometry.</p>
+            </div>
+            <div class="manual-mini-card">
+                <h4><i class="fas fa-ruler-combined" style="color: var(--primary-color);"></i><span>Why entry depth matters</span></h4>
+                <p>An arm entry is counted only after the centroid moves deeper into the arm, reducing repeated counting near the center junction.</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="card manual-flow-card">
+        <div class="card-body py-3">
+            <div class="flow-steps justify-content-center">
+                <span class="flow-step">1. Recording</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. Upload</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">3. Zone drawing</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">4. Tuning</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">5. Review outputs</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-3 mb-4">
+            <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                <a href="#epm-overview-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>Overview</span></a>
+                <a href="#epm-recording-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>Recording requirements</span></a>
+                <a href="#epm-upload-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>Upload and timing</span></a>
+                <a href="#epm-calibration-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>Five-zone drawing</span></a>
+                <a href="#epm-params-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>Parameters</span></a>
+                <a href="#epm-outputs-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>Outputs</span></a>
+                <a href="#epm-batch-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">7</span><span>Batch workflow</span></a>
+                <a href="#epm-trouble-en" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">8</span><span>Troubleshooting</span></a>
+            </div>
+        </div>
+        <div class="col-lg-9">
+            <section class="manual-section" id="epm-overview-en">
+                <h3><span class="step-number">1</span><span>Overview</span></h3>
+                <p>The EPM module quantifies preference across open arms, closed arms, and the center. Accurate zone drawing and preview-based confirmation of arm-entry logic are the most important steps.</p>
+                <ul class="manual-list">
+                    <li>Open-arm time ratio and open-entry ratio should usually be interpreted together with total arm entries and total distance.</li>
+                    <li>The center is tracked separately instead of being merged into either arm class.</li>
+                    <li>If a video contains multiple mazes, each ROI generates its own result tables and maps.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="epm-recording-en">
+                <h3><span class="step-number">2</span><span>Recording requirements</span></h3>
+                <ul class="manual-list">
+                    <li>Use a stable top view or near-top view and avoid camera motion or zoom changes.</li>
+                    <li>Keep the center and all four arms visible with minimal clipping.</li>
+                    <li>Maintain strong contrast between the mouse and maze floor while minimizing glare and shadow.</li>
+                    <li>If bright background outside an open arm causes false detection, prefer a detection mask.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="epm-upload-en">
+                <h3><span class="step-number">3</span><span>Upload and timing</span></h3>
+                <ul class="manual-list">
+                    <li>Use global start and end time if you only want a specific segment of the video.</li>
+                    <li>Override FPS if metadata is unreliable, because speed, distance, and latency depend on it.</li>
+                    <li>Multi-video sessions open the batch page first so each video can be configured independently.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="epm-calibration-en">
+                <h3><span class="step-number">4</span><span>Five-zone drawing and timing</span></h3>
+                <ul class="manual-list">
+                    <li>Each ROI represents one full maze with center, open arm 1/2, and closed arm 1/2.</li>
+                    <li>Each zone is defined by four corner clicks. Point order is normalized automatically.</li>
+                    <li>Enter center size, open-arm length, and closed-arm length so MouseScope can estimate <code>cm_per_px_est</code>.</li>
+                    <li>The detection mask limits where foreground detection is allowed but does not redefine the statistical zones.</li>
+                </ul>
+                <table class="manual-data-table">
+                    <thead><tr><th>Mode</th><th>Meaning</th><th>Recommended use</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>global</code></td><td>Follow the upload-page global start and end time.</td><td>Most standard EPM analyses.</td></tr>
+                        <tr><td><code>precise</code></td><td>Use absolute video-time start and end.</td><td>When only a fixed segment should be analyzed.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="epm-params-en">
+                <h3><span class="step-number">5</span><span>Parameters</span></h3>
+                <table class="manual-data-table">
+                    <thead><tr><th>Parameter</th><th>Role</th><th>Typical adjustment</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>bg_type</code></td><td>Defines whether the background is light or dark.</td><td>Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.</td></tr>
+                        <tr><td><code>gray_threshold</code></td><td>Controls how strict the foreground split is.</td><td>Increase when noise is abundant; decrease when contours break or disappear.</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before counting as an entry.</td><td>Increase when entries are repeatedly counted near the center junction.</td></tr>
+                        <tr><td><code>movement_threshold_cm_s</code></td><td>Separates moving frames from low-motion frames.</td><td>Adjust when moving / immobile labels look unstable.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="manual-section" id="epm-outputs-en">
+                <h3><span class="step-number">6</span><span>Outputs</span></h3>
+                <ul class="manual-list">
+                    <li><code>*_analyzed.mp4</code>: annotated video with hand-drawn zones, zone labels, entry events, and trajectory overlay.</li>
+                    <li><code>*_track.csv</code>: frame-level records of zone, speed, cumulative distance, and arm-entry events.</li>
+                    <li><code>*_summary.csv</code>: one-row-per-ROI summary table with the main EPM metrics.</li>
+                    <li><code>*_bins.csv</code>: fixed-width temporal bins for time allocation, entries, and distance.</li>
+                </ul>
+            </section>
+
+            <section class="manual-section" id="epm-batch-en">
+                <h3><span class="step-number">7</span><span>Batch workflow</span></h3>
+                <ol class="manual-step-list">
+                    <li>Upload multiple EPM videos and define global timing, FPS override, and output folder.</li>
+                    <li>Open each video card and finish five-zone drawing, masks, timing, and tuning for that video.</li>
+                    <li>Save the current setup and return to the batch page before moving to the next video.</li>
+                    <li>Only start analysis after all cards are marked complete.</li>
+                </ol>
+            </section>
+
+            <section class="manual-section" id="epm-trouble-en">
+                <h3><span class="step-number">8</span><span>Troubleshooting</span></h3>
+                <ul class="manual-list">
+                    <li>Open-arm time unexpectedly high: check whether the open arms are too wide or whether bright background leaked into detection.</li>
+                    <li>Open-arm time unexpectedly low: check whether the open arms are too narrow or arm-edge shadows are breaking the contour.</li>
+                    <li>Entry counts too high: increase <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
+                    <li>Frequent <code>Unknown</code> states usually indicate gaps between zones or uncovered boundary areas.</li>
+                </ul>
+            </section>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function updateManualLang() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        document.querySelectorAll('.manual-lang-block[data-manual-lang]').forEach(block => {
+            block.style.display = block.getAttribute('data-manual-lang') === lang ? '' : 'none';
+        });
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+    document.addEventListener('DOMContentLoaded', updateManualLang);
+    document.addEventListener('mousescope:langchange', updateManualLang);
+})();
+</script>

@@ -1,163 +1,129 @@
 {% extends "base.html" %}
-{% block title %}分析监控 - MouseScope{% endblock %}
+{% block title %}悬尾实验监控 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.tst-monitor { max-width: 1480px; margin: 0 auto; }
+.monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.monitor-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: 1rem; align-items: start; }
+.monitor-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.2rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.9rem; }
+.metric-box { background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 16px; padding: 1rem; }
+.metric-label { color: var(--text-muted); font-size: 0.85rem; }
+.metric-value { color: var(--text-primary); font-size: 1.35rem; font-weight: 700; margin-top: 0.2rem; }
+.download-grid { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.roi-table-wrap { overflow-x: auto; }
+.roi-table { width: 100%; border-collapse: collapse; }
+.roi-table th, .roi-table td { padding: 0.82rem 0.72rem; border-bottom: 1px solid var(--border-card); white-space: nowrap; }
+.roi-table th { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.roi-table td { color: var(--text-primary); }
+.state-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 82px; padding: 0.28rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 700; }
+.state-pill.struggling { background: rgba(181, 51, 51, 0.12); color: #8f2020; }
+.state-pill.immobile { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+.state-pill.unknown { background: rgba(148, 163, 184, 0.15); color: #475569; }
+.log-box { background: #191816; color: #f3eee8; border-radius: 16px; padding: 1rem; font-family: Consolas, Monaco, monospace; font-size: 0.85rem; min-height: 220px; max-height: 420px; overflow-y: auto; }
+.live-stream { display: grid; gap: 0.8rem; }
+.live-card { border: 1px solid var(--border-card); border-radius: 16px; background: var(--bg-page); padding: 0.95rem; }
+.live-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem; }
+.live-name { font-weight: 700; color: var(--text-primary); }
+.live-meta { color: var(--text-muted); font-size: 0.9rem; }
+@media (max-width: 1180px) {
+    .monitor-grid { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+    .metric-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <h1 class="display-6 cyber-text mb-2"><i class="fas fa-chart-line me-3"
-                        style="color:var(--primary-color);"></i><span data-i18n="monitor.title">实时分析监控</span></h1>
-                <p class="text-secondary" data-i18n="monitor.subtitle">实时追踪分析进度与性能指标</p>
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i
-                        class="fas fa-stop me-2"></i><span data-i18n="monitor.stop">停止分析</span></button>
-                <button class="btn btn-info" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span
-                        data-i18n="monitor.refresh">刷新</span></button>
-            </div>
+<div class="tst-monitor">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">悬尾实验实时监控</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">实时显示多 ROI 的挣扎/静止状态、光流强度与分析进度。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i class="fas fa-stop me-2"></i><span data-page-i18n="btn.stop">停止分析</span></button>
+            <button class="btn btn-outline-primary" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新</span></button>
         </div>
     </div>
-</div>
 
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="cyber-text mb-0"><i class="fas fa-microchip me-2"
-                        style="color:var(--primary-color);"></i><span data-i18n="monitor.status.title">处理状态</span></h5>
-            </div>
-            <div class="card-body">
-                <div class="data-grid mb-4">
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-play-circle"></i></div>
-                        <div class="stat-value" id="statusText" data-i18n="monitor.status.loading">加载中...</div>
-                        <div class="stat-label" data-i18n="monitor.status.label">分析状态</div>
-                        <span class="status-indicator" id="statusIndicator"
-                            style="position: absolute; top: 15px; right: 15px;"></span>
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-page-i18n="processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-page-i18n="processing.waiting">等待引擎响应...</div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-percentage"></i></div>
-                        <div class="stat-value" id="progressText">0%</div>
-                        <div class="stat-label" data-i18n="monitor.progress.label">完成进度</div>
+                    <div class="text-end">
+                        <div class="metric-label" data-page-i18n="processing.status">状态</div>
+                        <div class="metric-value" id="statusText" data-page-i18n="status.waiting">等待中</div>
                     </div>
                 </div>
+                <div class="progress mb-2" style="height: 14px;"><div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div></div>
+                <div class="text-secondary small"><span data-page-i18n="processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
 
-                <div class="progress mb-4">
-                    <div class="progress-bar" id="progressBar" role="progressbar" style="width: 0%" aria-valuenow="0"
-                        aria-valuemin="0" aria-valuemax="100"></div>
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.frames">已处理帧</div><div class="metric-value" id="processedFrames">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.elapsed">运行时间</div><div class="metric-value" id="elapsedTime">0s</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.speed">处理速度</div><div class="metric-value" id="processingSpeed">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.rois">ROI 数量</div><div class="metric-value" id="roiCount">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.struggling">挣扎中 ROI</div><div class="metric-value" id="strugglingCount">0</div></div>
                 </div>
-                <div class="tech-panel">
-                    <h6 class="cyber-text mb-2"><i class="fas fa-terminal me-2"></i><span
-                            data-i18n="monitor.engine">处理状态</span></h6>
-                    <div class="rounded p-3"
-                        style="background:#0f172a;color:#e2e8f0;font-family:monospace;font-size:0.85rem;">
-                        <code id="messageText" data-i18n="monitor.waiting">等待引擎响应...</code>
-                    </div>
-                </div>
+            </div>
 
-                <div id="downloadSection" style="display: none;">
-                    <hr>
-                    <h6><i class="fas fa-download me-2"></i><span data-i18n="monitor.download.title">下载结果文件</span></h6>
-                    <div class="d-flex flex-wrap gap-2 mb-3">
-                        <div class="btn-group" role="group">
-                            <a href="#" id="downloadAllBtn" class="btn btn-success"><i
-                                    class="fas fa-archive me-2"></i><span data-i18n="monitor.dl.all">全部下载
-                                    (ZIP)</span></a>
-                            <button type="button" class="btn btn-outline-secondary dropdown-toggle"
-                                data-bs-toggle="dropdown"><span data-i18n="monitor.dl.single">单独下载</span></button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" id="dlVideo"><i
-                                            class="fas fa-video me-2 text-primary"></i><span
-                                            data-i18n="monitor.dl.video">分析视频</span></a></li>
-                                <li><a class="dropdown-item" href="#" id="dlCsv"><i
-                                            class="fas fa-table me-2 text-info"></i><span
-                                            data-i18n="monitor.dl.csv">详细日志 CSV</span></a></li>
-                                <li><a class="dropdown-item" href="#" id="dlImmCsv"><i
-                                            class="fas fa-chart-bar me-2 text-success"></i><span
-                                            data-i18n="monitor.dl.immcsv">统计数据 CSV</span></a></li>
-                                <li><a class="dropdown-item" href="#" id="dlReport"><i
-                                            class="fas fa-file-alt me-2 text-warning"></i><span
-                                            data-i18n="monitor.dl.report">报告 TXT</span></a></li>
-                            </ul>
-                        </div>
-                        <button class="btn btn-info" onclick="openResultFolder()">
-                            <i class="fas fa-folder-open me-2"></i><span data-i18n="monitor.open.folder">打开结果文件夹</span>
-                        </button>
-                    </div>
-                    <div id="resultPathInfo" class="alert alert-secondary mt-2" style="display:none;">
-                        <i class="fas fa-folder me-2"></i>
-                        <strong data-i18n="monitor.path.label">结果保存位置：</strong>
-                        <code id="resultPathText" class="ms-1"></code>
-                    </div>
-                    <div class="alert alert-info mt-2">
-                        <small><strong>文件说明:</strong> ZIP包含分析视频、帧数据CSV、不动时间CSV和文字报告。<br>
-                            <i class="fas fa-lightbulb me-1 text-warning"></i>桌面端可直接点击"打开结果文件夹"在文件管理器中查看。</small>
-                    </div>
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-page-i18n="table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-page-i18n="table.subtitle">显示每个 ROI 当前行为状态与光流强度。</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-page-i18n="table.state">当前状态</th>
+                                <th data-page-i18n="table.flow">光流</th>
+                                <th data-page-i18n="table.note">说明</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody"><tr><td colspan="4" class="text-secondary" data-page-i18n="table.waiting">等待结果...</td></tr></tbody>
+                    </table>
                 </div>
             </div>
-        </div>
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="cyber-text mb-0"><i class="fas fa-tachometer-alt me-2"
-                        style="color:var(--primary-color);"></i><span data-i18n="monitor.perf.title">性能指标</span></h5>
-            </div>
-            <div class="card-body">
-                <div class="data-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-film"></i></div>
-                        <div class="stat-value" id="processedFrames">0</div>
-                        <div class="stat-label">已处理帧</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-stopwatch"></i></div>
-                        <div class="stat-value" id="elapsedTime">0s</div>
-                        <div class="stat-label">运行时间</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-rocket"></i></div>
-                        <div class="stat-value" id="processingSpeed">0</div>
-                        <div class="stat-label">处理速度 (fps)</div>
-                    </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-page-i18n="download.title">结果下载</h5>
+                <div class="download-grid">
+                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-page-i18n="download.video">标注视频</a>
+                    <a href="#" id="dlCsv" class="btn btn-outline-primary" data-page-i18n="download.csv">详细日志 CSV</a>
+                    <a href="#" id="dlImmCsv" class="btn btn-outline-primary" data-page-i18n="download.summary">统计 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-page-i18n="download.report">TXT 报告</a>
+                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-page-i18n="download.folder">打开结果目录</button>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="cyber-text mb-0"><i class="fas fa-satellite-dish me-2"
-                        style="color:var(--primary-color);"></i>实时数据</h6>
-            </div>
-            <div class="card-body">
-                <div id="realtimeData">
-                    <div class="tech-panel text-center">
-                        <div class="tech-spinner mb-3"></div>
-                        <p class="text-muted">等待分析数据...</p>
-                    </div>
-                </div>
+                <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;"><span data-page-i18n="download.path">保存位置:</span> <code id="resultPathText"></code></div>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <h6 class="cyber-text mb-0"><i class="fas fa-terminal me-2" style="color:var(--primary-color);"></i>系统日志
-                </h6>
-            </div>
-            <div class="card-body p-0">
-                <div id="logContainer" class="terminal-log">
-                    <div class="terminal-header">
-                        <div class="terminal-controls">
-                            <span class="terminal-btn terminal-close"></span>
-                            <span class="terminal-btn terminal-minimize"></span>
-                            <span class="terminal-btn terminal-maximize"></span>
-                        </div>
-                        <span class="terminal-title">analysis.log</span>
-                    </div>
-                    <div class="terminal-content">
-                        <p class="text-success mb-0"><span class="text-warning">$</span> 等待日志输出...</p>
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="live.title">实时 ROI 流</h5>
+                <div id="realtimeData" class="live-stream">
+                    <div class="live-card">
+                        <div class="live-meta" data-page-i18n="live.waiting">等待分析数据...</div>
                     </div>
                 </div>
+            </div>
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="log.title">日志</h5>
+                <div id="logBox" class="log-box">$ <span data-page-i18n="log.waiting">等待日志输出...</span></div>
             </div>
         </div>
     </div>
@@ -166,131 +132,293 @@
 
 {% block scripts %}
 <script>
-    const sessionId = '{{ session_id }}';
-    let updateInterval;
+const sessionId = '{{ session_id }}';
+let updateInterval = null;
+const PAGE_I18N = {
+    zh: {
+        'header.title': '悬尾实验实时监控',
+        'header.subtitle': '实时显示多 ROI 的挣扎/静止状态、光流强度与分析进度。',
+        'btn.stop': '停止分析',
+        'btn.refresh': '刷新',
+        'processing.title': '处理状态',
+        'processing.waiting': '等待引擎响应...',
+        'processing.status': '状态',
+        'processing.progress': '完成进度',
+        'overview.title': '会话概览',
+        'overview.frames': '已处理帧',
+        'overview.elapsed': '运行时间',
+        'overview.speed': '处理速度',
+        'overview.rois': 'ROI 数量',
+        'overview.struggling': '挣扎中 ROI',
+        'table.title': 'ROI 实时结果',
+        'table.subtitle': '显示每个 ROI 当前行为状态与光流强度。',
+        'table.state': '当前状态',
+        'table.flow': '光流',
+        'table.note': '说明',
+        'table.waiting': '等待结果...',
+        'table.note.struggling': '持续挣扎',
+        'table.note.immobile': '当前判定为静止',
+        'download.title': '结果下载',
+        'download.all': '全部下载',
+        'download.video': '标注视频',
+        'download.csv': '详细日志 CSV',
+        'download.summary': '统计 CSV',
+        'download.report': 'TXT 报告',
+        'download.folder': '打开结果目录',
+        'download.path': '保存位置:',
+        'live.title': '实时 ROI 流',
+        'live.waiting': '等待分析数据...',
+        'live.flow': '光流',
+        'log.title': '日志',
+        'log.waiting': '等待日志输出...',
+        'status.waiting': '等待中',
+        'status.preprocessing': '预处理',
+        'status.analyzing': '分析中',
+        'status.completed': '已完成',
+        'status.error': '错误',
+        'status.stopped': '已停止',
+        'status.invalid': '会话失效',
+        'status.expired': '分析会话不存在或已过期',
+        'state.struggling': '挣扎',
+        'state.immobile': '静止',
+        'alert.stop_sent': '已发送停止命令',
+        'alert.folder_failed': '打开结果目录失败'
+    },
+    en: {
+        'header.title': 'Tail Suspension Test Monitor',
+        'header.subtitle': 'Live struggle/immobility state, flow strength, and session progress for each ROI.',
+        'btn.stop': 'Stop Analysis',
+        'btn.refresh': 'Refresh',
+        'processing.title': 'Processing Status',
+        'processing.waiting': 'Waiting for engine response...',
+        'processing.status': 'Status',
+        'processing.progress': 'Progress',
+        'overview.title': 'Session Overview',
+        'overview.frames': 'Processed Frames',
+        'overview.elapsed': 'Elapsed Time',
+        'overview.speed': 'Processing Speed',
+        'overview.rois': 'ROI Count',
+        'overview.struggling': 'Struggling ROIs',
+        'table.title': 'Live ROI Results',
+        'table.subtitle': 'Current state and flow strength for each ROI.',
+        'table.state': 'State',
+        'table.flow': 'Flow',
+        'table.note': 'Note',
+        'table.waiting': 'Waiting for results...',
+        'table.note.struggling': 'Currently struggling',
+        'table.note.immobile': 'Currently immobile',
+        'download.title': 'Downloads',
+        'download.all': 'Download All',
+        'download.video': 'Annotated Video',
+        'download.csv': 'Detailed CSV',
+        'download.summary': 'Summary CSV',
+        'download.report': 'TXT Report',
+        'download.folder': 'Open Result Folder',
+        'download.path': 'Saved to:',
+        'live.title': 'Live ROI Stream',
+        'live.waiting': 'Waiting for analysis data...',
+        'live.flow': 'Flow',
+        'log.title': 'Log',
+        'log.waiting': 'Waiting for log output...',
+        'status.waiting': 'Waiting',
+        'status.preprocessing': 'Preprocessing',
+        'status.analyzing': 'Analyzing',
+        'status.completed': 'Completed',
+        'status.error': 'Error',
+        'status.stopped': 'Stopped',
+        'status.invalid': 'Session Invalid',
+        'status.expired': 'Analysis session not found or expired',
+        'state.struggling': 'Struggling',
+        'state.immobile': 'Immobile',
+        'alert.stop_sent': 'Stop command sent',
+        'alert.folder_failed': 'Failed to open result folder'
+    }
+};
 
-    function updateStatus() {
-        fetch(`/api/status/${sessionId}`)
-            .then(r => {
-                if (!r.ok) {
-                    clearInterval(updateInterval);
-                    document.getElementById('statusText').textContent = '会话已失效';
-                    document.getElementById('statusIndicator').className = 'status-indicator status-error';
-                    document.getElementById('messageText').textContent =
-                        '分析会话不存在或已过期，5秒后自动返回首页...';
-                    document.getElementById('stopBtn').style.display = 'none';
-                    setTimeout(() => { window.location.href = '/'; }, 5000);
-                    return null;
-                }
-                return r.json();
-            })
-            .then(data => {
-                if (!data || data.error) return;
+function pageTr(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    return (PAGE_I18N[lang] && PAGE_I18N[lang][key] !== undefined) ? PAGE_I18N[lang][key] : fallback;
+}
 
-                document.getElementById('statusText').textContent = getStatusText(data.status);
-                document.getElementById('statusIndicator').className = `status-indicator status-${data.status}`;
+function applyPageLang() {
+    document.querySelectorAll('[data-page-i18n]').forEach(el => {
+        const val = pageTr(el.getAttribute('data-page-i18n'), null);
+        if (val !== null) el.textContent = val;
+    });
+}
 
-                const bar = document.getElementById('progressBar');
-                bar.style.width = data.progress + '%';
-                bar.textContent = data.progress + '%';
-                document.getElementById('progressText').textContent = data.progress + '%';
-                document.getElementById('messageText').textContent = data.message || '-';
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
 
-                if (data.stats) {
-                    document.getElementById('processedFrames').textContent = data.stats.processed_frames || 0;
-                    document.getElementById('elapsedTime').textContent = (data.stats.elapsed_time || 0).toFixed(1) + 's';
-                    document.getElementById('processingSpeed').textContent = (data.stats.fps || 0).toFixed(1) + ' fps';
-                }
+function getStatusText(status) {
+    return {
+        waiting: pageTr('status.waiting', 'Waiting'),
+        preprocessing: pageTr('status.preprocessing', 'Preprocessing'),
+        analyzing: pageTr('status.analyzing', 'Analyzing'),
+        completed: pageTr('status.completed', 'Completed'),
+        error: pageTr('status.error', 'Error'),
+        stopped: pageTr('status.stopped', 'Stopped')
+    }[status] || status;
+}
 
-                if (data.logs && data.logs.length > 0) {
-                    logContainer.innerHTML = data.logs.map(log => {
-                        let cls = 'text-success';
-                        if (log.includes('错误') || log.includes('Error') || log.includes('❌')) cls = 'text-danger';
-                        else if (log.includes('警告') || log.includes('Warning')) cls = 'text-warning';
-                        else if (log.includes('完成') || log.includes('✓') || log.includes('✅')) cls = 'text-info';
-                        return `<div class="${cls}"><span class="text-warning">$</span> ${log}</div>`;
-                    }).join('');
-                    logContainer.scrollTop = logContainer.scrollHeight;
-                }
+function stateClass(item) {
+    if (item && item.is_struggling === true) return 'struggling';
+    if (item && item.is_struggling === false) return 'immobile';
+    return 'unknown';
+}
 
-                const realtimeData = document.getElementById('realtimeData');
-                if (data.realtime_data && data.realtime_data.length > 0) {
-                    realtimeData.innerHTML = data.realtime_data.map(item => `
-<div class="data-stream-item ${item.is_struggling ? 'struggling' : 'immobile'}"
-    style="padding:10px; margin:5px 0; border-radius:8px; background:rgba(255,255,255,0.05);">
-    <div class="d-flex justify-content-between align-items-center">
-        <div>
-            <h6 class="mb-1 cyber-text">${item.roi_name || 'ROI ' + item.roi_id}</h6>
-            <span class="badge ${item.is_struggling ? 'bg-danger' : 'bg-success'}">
-                <i class="fas fa-${item.is_struggling ? 'exclamation' : 'check'} me-1"></i>
-                ${item.is_struggling ? '挣扎' : '静止'}
-            </span>
+function stateText(item) {
+    return item && item.is_struggling
+        ? pageTr('state.struggling', 'Struggling')
+        : pageTr('state.immobile', 'Immobile');
+}
+
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="4" class="text-secondary">${pageTr('table.waiting', 'Waiting for results...')}</td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(row => `
+        <tr>
+            <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+            <td><span class="state-pill ${stateClass(row)}">${stateText(row)}</span></td>
+            <td>${Number(row.flow_value || 0).toFixed(1)}</td>
+            <td>${row.is_struggling ? pageTr('table.note.struggling', 'Currently struggling') : pageTr('table.note.immobile', 'Currently immobile')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderRealtime(rows) {
+    const box = document.getElementById('realtimeData');
+    if (!rows.length) {
+        box.innerHTML = `<div class="live-card"><div class="live-meta">${pageTr('live.waiting', 'Waiting for analysis data...')}</div></div>`;
+        return;
+    }
+    box.innerHTML = rows.map(row => `
+        <div class="live-card">
+            <div class="live-card-head">
+                <div class="live-name">${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</div>
+                <span class="state-pill ${stateClass(row)}">${stateText(row)}</span>
+            </div>
+            <div class="live-meta">${pageTr('live.flow', 'Flow')}: ${Number(row.flow_value || 0).toFixed(1)}</div>
         </div>
-        <div class="text-end">
-            <small class="text-muted d-block">光流: ${(item.flow_value || 0).toFixed(1)}</small>
-        </div>
-    </div>
-</div>`).join('');
-                }
+    `).join('');
+}
 
-                if (data.status === 'completed') {
-                    document.getElementById('downloadSection').style.display = 'block';
-                    document.getElementById('stopBtn').style.display = 'none';
-                    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
-                    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
-                    document.getElementById('dlCsv').href = `/api/download/${sessionId}/csv`;
-                    document.getElementById('dlImmCsv').href = `/api/download/${sessionId}/immobility_csv`;
-                    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
-                    clearInterval(updateInterval);
-                    fetchResultDir();
-                }
-                if (data.status === 'error' || data.status === 'stopped') {
-                    clearInterval(updateInterval);
-                    document.getElementById('stopBtn').style.display = 'none';
-                }
-            })
-            .catch(e => console.error('状态更新失败:', e));
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    if (!logs.length) {
+        box.textContent = `$ ${pageTr('log.waiting', 'Waiting for log output...')}`;
+        return;
     }
+    box.innerHTML = logs.map(log => {
+        let cls = 'text-success';
+        if (log.includes('错误') || log.includes('Error') || log.includes('❌')) cls = 'text-danger';
+        else if (log.includes('警告') || log.includes('Warning')) cls = 'text-warning';
+        else if (log.includes('完成') || log.includes('✓') || log.includes('✅')) cls = 'text-info';
+        return `<div class="${cls}"><span class="text-warning">$</span> ${escapeHtml(log)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+}
 
-    function getStatusText(s) {
-        return {
-            'waiting': '等待中', 'preprocessing': '预处理', 'analyzing': '分析中', 'completed': '已完成', 'error': '出错', 'stopped':
-                '已停止'
-        }[s] || s;
-    }
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
+    document.getElementById('dlCsv').href = `/api/download/${sessionId}/csv`;
+    document.getElementById('dlImmCsv').href = `/api/download/${sessionId}/immobility_csv`;
+    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
+}
 
-    function stopAnalysis() {
-        fetch(`/api/stop/${sessionId}`, { method: 'POST' }).then(r => r.json()).then(d => alert(d.message || '已发送停止命令'));
-    }
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`)
+        .then(r => {
+            if (!r.ok) throw new Error('session');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('statusText').textContent = getStatusText(data.status);
+            document.getElementById('messageText').textContent = data.message || '-';
+            document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+            document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+            document.getElementById('progressText').textContent = `${data.progress || 0}%`;
 
-    function openResultFolder() {
-        fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                } else {
-                    alert('打开文件夹失败，结果保存在：\n' + (data.path || '未知路径'));
-                }
-            })
-            .catch(e => {
-                console.error('打开文件夹失败:', e);
-            });
-    }
+            const stats = data.stats || {};
+            const rows = data.realtime_data || [];
+            document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+            document.getElementById('elapsedTime').textContent = `${(stats.elapsed_time || 0).toFixed(1)}s`;
+            document.getElementById('processingSpeed').textContent = (stats.fps || 0).toFixed(1);
+            document.getElementById('roiCount').textContent = rows.length;
+            document.getElementById('strugglingCount').textContent = rows.filter(row => row.is_struggling).length;
 
-    function fetchResultDir() {
-        fetch(`/api/result_dir/${sessionId}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.path) {
-                    document.getElementById('resultPathInfo').style.display = 'block';
-                    document.getElementById('resultPathText').textContent = data.path;
-                }
-            })
-            .catch(e => console.error('获取结果路径失败:', e));
-    }
+            renderTable(rows);
+            renderRealtime(rows);
+            renderLogs(data.logs || []);
 
+            if (data.status === 'completed') {
+                showDownloads();
+                fetchResultDir();
+                document.getElementById('stopBtn').style.display = 'none';
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            if (data.status === 'error' || data.status === 'stopped') {
+                document.getElementById('stopBtn').style.display = 'none';
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+        })
+        .catch(() => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            document.getElementById('statusText').textContent = pageTr('status.invalid', 'Session Invalid');
+            document.getElementById('messageText').textContent = pageTr('status.expired', 'Analysis session not found or expired');
+            document.getElementById('stopBtn').style.display = 'none';
+        });
+}
+
+function stopAnalysis() {
+    fetch(`/api/stop/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert(data.message || pageTr('alert.stop_sent', 'Stop command sent')));
+}
+
+function openResultFolder() {
+    fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(`${pageTr('alert.folder_failed', 'Failed to open result folder')}\n${data.path || ''}`.trim());
+            }
+        });
+}
+
+function fetchResultDir() {
+    fetch(`/api/result_dir/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('resultPathInfo').style.display = 'block';
+                document.getElementById('resultPathText').textContent = data.path;
+            }
+        });
+}
+
+applyPageLang();
+document.addEventListener('mousescope:langchange', function () {
+    applyPageLang();
     updateStatus();
-    updateInterval = setInterval(updateStatus, 2000);
+});
+updateStatus();
+updateInterval = setInterval(updateStatus, 2000);
 </script>
-
 {% endblock %}

@@ -39,6 +39,7 @@ desktop.ini
 *.tmp
 *.bak
 backup/
+backups/
 result/
 
 # Video files (use GIF for demos)

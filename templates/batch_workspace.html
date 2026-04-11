@@ -1,0 +1,686 @@
+{% extends "base.html" %}
+{% block title %}批次页面 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.batch-shell { max-width: 1440px; margin: 0 auto; }
+.batch-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
+    gap: 1rem;
+    align-items: stretch;
+    margin-bottom: 1.4rem;
+}
+.hero-panel, .hero-aside, .summary-panel, .card-panel, .side-panel {
+    background: rgba(255, 250, 245, 0.92);
+    border: 1px solid rgba(173, 123, 90, 0.18);
+    border-radius: 28px;
+    box-shadow: 0 18px 40px rgba(104, 72, 44, 0.08);
+}
+.hero-panel {
+    padding: 1.7rem 1.8rem;
+    background:
+        radial-gradient(circle at top left, rgba(228, 191, 162, 0.28), transparent 38%),
+        linear-gradient(135deg, rgba(255, 247, 240, 0.98), rgba(250, 239, 229, 0.96));
+}
+.hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.42rem 0.78rem;
+    border-radius: 999px;
+    background: rgba(145, 97, 62, 0.1);
+    color: #8b5a3c;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.hero-title {
+    margin: 0.9rem 0 0.55rem;
+    font-size: clamp(2rem, 3vw, 3rem);
+    line-height: 1.05;
+    color: #3f2c1e;
+    font-family: "Georgia", "Times New Roman", serif;
+}
+.hero-copy {
+    margin: 0;
+    color: #735540;
+    font-size: 1rem;
+    line-height: 1.7;
+    max-width: 54rem;
+}
+.hero-actions {
+    margin-top: 1.3rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+}
+.hero-aside {
+    padding: 1.35rem;
+    display: grid;
+    gap: 0.9rem;
+}
+.summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.summary-panel {
+    padding: 1.1rem 1.2rem;
+}
+.summary-label {
+    color: #8b6e59;
+    font-size: 0.84rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.summary-value {
+    margin-top: 0.25rem;
+    color: #342214;
+    font-size: 1.45rem;
+    font-weight: 800;
+}
+.summary-note {
+    margin-top: 0.42rem;
+    color: #8d6f5a;
+    font-size: 0.9rem;
+}
+.workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+    gap: 1rem;
+    align-items: start;
+}
+.card-panel {
+    padding: 1.15rem;
+}
+.panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+.panel-title {
+    margin: 0;
+    color: #3f2c1e;
+    font-size: 1.15rem;
+    font-weight: 800;
+}
+.panel-subtitle {
+    color: #866754;
+    font-size: 0.95rem;
+}
+.video-card-list {
+    display: grid;
+    gap: 0.85rem;
+}
+.video-card {
+    border: 1px solid rgba(173, 123, 90, 0.18);
+    border-radius: 22px;
+    padding: 1rem 1.05rem;
+    background: rgba(255, 255, 255, 0.68);
+}
+.video-card.ready {
+    border-color: rgba(57, 137, 92, 0.3);
+    background: linear-gradient(180deg, rgba(245, 255, 249, 0.92), rgba(255, 255, 255, 0.76));
+}
+.video-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+}
+.video-name {
+    color: #352214;
+    font-weight: 800;
+    font-size: 1rem;
+    word-break: break-word;
+}
+.video-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+.meta-pill, .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.34rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.83rem;
+    font-weight: 700;
+}
+.meta-pill {
+    background: rgba(104, 72, 44, 0.08);
+    color: #6e513c;
+}
+.status-pill.ready {
+    background: rgba(50, 138, 87, 0.13);
+    color: #1f6b43;
+}
+.status-pill.pending {
+    background: rgba(204, 118, 52, 0.13);
+    color: #975018;
+}
+.missing-list {
+    margin: 0.35rem 0 0;
+    color: #8b5e3c;
+    font-size: 0.9rem;
+    line-height: 1.65;
+}
+.card-actions {
+    margin-top: 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+.side-panel {
+    padding: 1.1rem;
+    display: grid;
+    gap: 0.95rem;
+}
+.side-card {
+    border-radius: 20px;
+    border: 1px solid rgba(173, 123, 90, 0.16);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 1rem;
+}
+.side-card h3 {
+    margin: 0 0 0.55rem;
+    color: #3f2c1e;
+    font-size: 1rem;
+    font-weight: 800;
+}
+.side-card p, .side-card li {
+    color: #7a5d49;
+    line-height: 1.7;
+    font-size: 0.92rem;
+}
+.side-card ul {
+    margin: 0;
+    padding-left: 1rem;
+}
+.workspace-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #8a6a55;
+}
+@media (max-width: 1180px) {
+    .batch-hero, .workspace-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 780px) {
+    .summary-row { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="batch-shell" data-session-id="{{ session_id }}">
+    <section class="batch-hero">
+        <div class="hero-panel">
+            <div class="hero-kicker" id="workspaceKicker">
+                <i class="fas fa-layer-group"></i>
+                <span>Batch Overview</span>
+            </div>
+            <h1 class="hero-title" id="workspaceTitle">{{ experiment_spec.label }}</h1>
+            <p class="hero-copy" id="workspaceCopy">
+                多视频模式下，先在这里检查整批视频的完成度，再逐条进入对应视频完成 ROI 与参数设置。全部就绪后，再统一开始分析。
+            </p>
+            <div class="hero-actions">
+                <button class="btn btn-primary btn-lg" id="startBatchBtn" onclick="startBatchAnalysis()">
+                    <i class="fas fa-play me-2"></i><span id="startBatchText">开始整批分析</span>
+                </button>
+                <button class="btn btn-outline-primary" onclick="copyFirstReadyToPending()">
+                    <i class="fas fa-copy me-2"></i><span id="copyPendingText">复制首个已完成配置到未完成视频</span>
+                </button>
+                <button class="btn btn-outline-secondary" onclick="refreshBatchState()">
+                    <i class="fas fa-arrows-rotate me-2"></i><span id="refreshText">刷新状态</span>
+                </button>
+            </div>
+        </div>
+        <aside class="hero-aside">
+            <div class="side-card">
+                <h3 id="batchInfoTitle">批次信息</h3>
+                <p><strong id="batchOutputLabel">输出目录:</strong> <span class="font-monospace">{{ output_dir or 'data/results/' }}</span></p>
+                <p><strong id="batchWindowLabel">全局时间窗:</strong> <span>{{ start_seconds or '0' }}s ~ {{ end_seconds or '视频结束' }}</span></p>
+                <p><strong id="batchFpsLabel">FPS 覆盖:</strong> <span>{{ fps_override or '自动检测' }}</span></p>
+            </div>
+            <div class="side-card">
+                <h3 id="batchRuleTitle">使用规则</h3>
+                <ul>
+                    <li id="ruleOne">每张卡片对应一个视频，点进去只编辑该视频。</li>
+                    <li id="ruleTwo">当前设置会自动保存，重新打开后可以继续编辑。</li>
+                    <li id="ruleThree">只有全部视频满足必填项后，才允许开始整批分析。</li>
+                </ul>
+            </div>
+        </aside>
+    </section>
+
+    <div class="summary-row">
+        <div class="summary-panel">
+            <div class="summary-label" id="summaryVideosLabel">视频总数</div>
+            <div class="summary-value" id="totalVideosValue">{{ total_videos }}</div>
+            <div class="summary-note" id="summaryVideosNote">当前批次中的待处理视频数量</div>
+        </div>
+        <div class="summary-panel">
+            <div class="summary-label" id="summaryCompletedLabel">已完成配置</div>
+            <div class="summary-value" id="completedVideosValue">{{ complete_count }}</div>
+            <div class="summary-note" id="summaryCompletedNote">完成 ROI、时间窗与关键参数设置的视频数</div>
+        </div>
+        <div class="summary-panel">
+            <div class="summary-label" id="summaryDraftLabel">最近一次保存</div>
+            <div class="summary-value" id="draftUpdatedValue">{{ '已保存' if draft_updated_at else '尚未保存' }}</div>
+            <div class="summary-note" id="summaryDraftNote">{{ draft_updated_at or '进入视频设置页保存后会在这里更新' }}</div>
+        </div>
+    </div>
+
+    <section class="workspace-grid">
+        <div class="card-panel">
+            <div class="panel-head">
+                <div>
+                    <h2 class="panel-title" id="videoPanelTitle">视频卡片</h2>
+                    <div class="panel-subtitle" id="videoPanelSubtitle">状态清晰、入口固定、支持逐条配置与快速复制</div>
+                </div>
+            </div>
+            <div class="video-card-list" id="videoCardList">
+                {% for card in cards %}
+                <article class="video-card {{ 'ready' if card.complete else '' }}" data-video-index="{{ card.index }}">
+                    <div class="video-head">
+                        <div>
+                            <div class="video-name">{{ loop.index }}. {{ card.name }}</div>
+                            <div class="video-meta mt-2">
+                                <span class="meta-pill"><i class="fas fa-film"></i>{{ card.video_info.width }} × {{ card.video_info.height }}</span>
+                                <span class="meta-pill"><i class="fas fa-gauge-high"></i>{{ '%.2f'|format(card.video_info.fps or 0) }} FPS</span>
+                                <span class="meta-pill"><i class="fas fa-clapperboard"></i>{{ card.video_info.total_frames or 0 }} 帧</span>
+                            </div>
+                        </div>
+                        <span class="status-pill {{ 'ready' if card.complete else 'pending' }}">
+                            <i class="fas {{ 'fa-circle-check' if card.complete else 'fa-hourglass-half' }}"></i>
+                            {{ '已完成' if card.complete else '待配置' }}
+                        </span>
+                    </div>
+                    <div class="missing-list">
+                        {% if card.complete %}
+                        该视频的必填配置已完成，可以直接参与批量分析。
+                        {% else %}
+                        {{ '；'.join(card.missing_items) if card.missing_items else '还没有完成必要配置。' }}
+                        {% endif %}
+                    </div>
+                    <div class="card-actions">
+                        <a class="btn btn-primary" href="{{ url_for('calibrate_video', session_id=session_id, video_idx=card.index) }}">
+                            <i class="fas fa-pen-ruler me-2"></i>{{ '继续编辑' if card.complete else '进入配置' }}
+                        </a>
+                        {% if card.index > 0 %}
+                        <button class="btn btn-outline-secondary" onclick="copyPreviousConfig({{ card.index }})">
+                            <i class="fas fa-copy me-2"></i>复制上一条
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-outline-danger" onclick="resetVideoConfig({{ card.index }})">
+                            <i class="fas fa-rotate-left me-2"></i>重置本视频
+                        </button>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+
+        <aside class="side-panel">
+            <div class="side-card">
+                <h3 id="statusGuideTitle">开始前检查</h3>
+                <ul>
+                    <li id="statusGuideOne">确认所有卡片都显示为“已完成”。</li>
+                    <li id="statusGuideTwo">随机抽查 1 到 2 个视频的 ROI 与时间窗是否正确。</li>
+                    <li id="statusGuideThree">如拍摄条件相似，可先复制已完成配置，再回到各视频微调。</li>
+                </ul>
+            </div>
+            <div class="side-card">
+                <h3 id="manualGuideTitle">手册与说明</h3>
+                <p id="manualGuideText">如果需要回看实验逻辑、ROI 规则或结果指标，建议从这里打开对应模块手册，再返回继续配置。</p>
+                <a class="btn btn-outline-primary w-100" href="{{ url_for('manual', module=experiment_spec.manual_module) }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-book-open me-2"></i><span id="manualButtonText">打开当前模块手册</span>
+                </a>
+            </div>
+        </aside>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = {{ session_id|tojson }};
+const batchStateUrl = {{ batch_state_url|tojson }};
+let latestBatchState = {
+    cards: {{ cards|tojson }},
+    complete_count: {{ complete_count|tojson }},
+    total_videos: {{ total_videos|tojson }},
+    can_start: {{ (complete_count == total_videos and total_videos > 0)|tojson }},
+    draft_updated_at: {{ draft_updated_at|tojson }},
+};
+
+const BATCH_I18N = {
+    zh: {
+        kicker: '批次总览',
+        titleCopy: '多视频模式下，先在这里检查整批视频的完成度，再逐条进入对应视频完成 ROI 与参数设置。全部就绪后，再统一开始分析。',
+        start: '开始整批分析',
+        copyPending: '复制首个已完成配置到未完成视频',
+        refresh: '刷新状态',
+        batchInfo: '批次信息',
+        output: '输出目录:',
+        window: '全局时间窗:',
+        fps: 'FPS 覆盖:',
+        rules: '使用规则',
+        ruleOne: '每张卡片对应一个视频，点进去只编辑该视频。',
+        ruleTwo: '当前设置会自动保存，重新打开后可以继续编辑。',
+        ruleThree: '只有全部视频满足必填项后，才允许开始整批分析。',
+        videos: '视频总数',
+        videosNote: '当前批次中的待处理视频数量',
+        done: '已完成配置',
+        doneNote: '完成 ROI、时间窗与关键参数设置的视频数',
+        draft: '最近一次保存',
+        draftNone: '尚未保存',
+        draftSaved: '已保存',
+        draftHint: '进入视频设置页保存后会在这里更新',
+        panelTitle: '视频卡片',
+        panelSubtitle: '状态清晰、入口固定、支持逐条配置与快速复制',
+        statusReady: '已完成',
+        statusPending: '待配置',
+        readyHint: '该视频的必填配置已完成，可以直接参与批量分析。',
+        pendingHint: '还没有完成必要配置。',
+        edit: '进入配置',
+        editContinue: '继续编辑',
+        copyPrev: '复制上一条',
+        reset: '重置本视频',
+        checks: '开始前检查',
+        checkOne: '确认所有卡片都显示为“已完成”。',
+        checkTwo: '随机抽查 1 到 2 个视频的 ROI 与时间窗是否正确。',
+        checkThree: '如拍摄条件相似，可先复制已完成配置，再回到各视频微调。',
+        manualTitle: '手册与说明',
+        manualText: '如果需要回看实验逻辑、ROI 规则或结果指标，建议从这里打开对应模块手册，再返回继续配置。',
+        manualBtn: '打开当前模块手册',
+        startBlocked: '还有视频未完成配置，暂时不能开始整批分析。',
+        startFailed: '启动批量分析失败',
+        copyFailed: '复制配置失败',
+        resetFailed: '重置配置失败',
+        noReadySource: '当前没有可复制的已完成配置。',
+        confirmReset: '确认要清空这个视频当前保存的设置吗？',
+        frames: '帧',
+    },
+    en: {
+        kicker: 'Batch Overview',
+        titleCopy: 'Review the whole batch here first, then open each video to finish ROI and parameter setup. Start analysis only after every card is ready.',
+        start: 'Start Batch Analysis',
+        copyPending: 'Copy First Ready Config to Pending Videos',
+        refresh: 'Refresh State',
+        batchInfo: 'Batch Info',
+        output: 'Output Folder:',
+        window: 'Global Time Window:',
+        fps: 'FPS Override:',
+        rules: 'Usage Rules',
+        ruleOne: 'Each card represents one video and opens a dedicated editor for that video.',
+        ruleTwo: 'Current settings are saved automatically so you can come back and continue editing.',
+        ruleThree: 'Batch analysis only starts after every video satisfies the required fields.',
+        videos: 'Total Videos',
+        videosNote: 'Number of videos in the current batch',
+        done: 'Configured',
+        doneNote: 'Videos with ROI, time-window, and key-parameter setup completed',
+        draft: 'Latest Save',
+        draftNone: 'Not Saved Yet',
+        draftSaved: 'Saved',
+        draftHint: 'This will update after you save from any video setup page',
+        panelTitle: 'Video Cards',
+        panelSubtitle: 'Clear status, fixed entry points, and quick-copy support',
+        statusReady: 'Ready',
+        statusPending: 'Pending',
+        readyHint: 'This video already satisfies the required setup and can join batch analysis.',
+        pendingHint: 'Required setup is still incomplete.',
+        edit: 'Open Setup',
+        editContinue: 'Continue Editing',
+        copyPrev: 'Copy Previous',
+        reset: 'Reset Video',
+        checks: 'Preflight Checklist',
+        checkOne: 'Make sure every card is marked as ready.',
+        checkTwo: 'Spot-check one or two videos for ROI and time-window correctness.',
+        checkThree: 'If acquisition conditions are similar, copy a finished setup first and then fine-tune per video.',
+        manualTitle: 'Manuals & Notes',
+        manualText: 'Open the assay manual here whenever you need to revisit protocol logic, ROI rules, or exported metrics.',
+        manualBtn: 'Open Manual for This Assay',
+        startBlocked: 'Some videos are still incomplete, so batch analysis cannot start yet.',
+        startFailed: 'Failed to start batch analysis',
+        copyFailed: 'Failed to copy configuration',
+        resetFailed: 'Failed to reset configuration',
+        noReadySource: 'No completed configuration is available to copy.',
+        confirmReset: 'Are you sure you want to clear the saved setup for this video?',
+        frames: 'frames',
+    }
+};
+
+function pageLang() {
+    return (typeof getLang === 'function' ? getLang() : 'zh') === 'en' ? 'en' : 'zh';
+}
+
+function t(key) {
+    const lang = pageLang();
+    return (BATCH_I18N[lang] && BATCH_I18N[lang][key]) || BATCH_I18N.zh[key] || key;
+}
+
+function formatDraftUpdated(value) {
+    if (!value) return { value: t('draftNone'), note: t('draftHint') };
+    const date = new Date(Number(value) * 1000);
+    if (Number.isNaN(date.getTime())) return { value: t('draftSaved'), note: String(value) };
+    return {
+        value: t('draftSaved'),
+        note: date.toLocaleString(pageLang() === 'en' ? 'en-US' : 'zh-CN'),
+    };
+}
+
+function cardDurationText(info) {
+    const fps = Number(info && info.fps) || 0;
+    const frames = Number(info && info.total_frames) || 0;
+    if (!fps || !frames) return `${frames} ${t('frames')}`;
+    const seconds = frames / fps;
+    return `${frames} ${t('frames')} · ${seconds.toFixed(1)}s`;
+}
+
+function applyStaticText() {
+    document.getElementById('workspaceKicker').lastElementChild.textContent = t('kicker');
+    document.getElementById('workspaceCopy').textContent = t('titleCopy');
+    document.getElementById('startBatchText').textContent = t('start');
+    document.getElementById('copyPendingText').textContent = t('copyPending');
+    document.getElementById('refreshText').textContent = t('refresh');
+    document.getElementById('batchInfoTitle').textContent = t('batchInfo');
+    document.getElementById('batchOutputLabel').textContent = t('output');
+    document.getElementById('batchWindowLabel').textContent = t('window');
+    document.getElementById('batchFpsLabel').textContent = t('fps');
+    document.getElementById('batchRuleTitle').textContent = t('rules');
+    document.getElementById('ruleOne').textContent = t('ruleOne');
+    document.getElementById('ruleTwo').textContent = t('ruleTwo');
+    document.getElementById('ruleThree').textContent = t('ruleThree');
+    document.getElementById('summaryVideosLabel').textContent = t('videos');
+    document.getElementById('summaryVideosNote').textContent = t('videosNote');
+    document.getElementById('summaryCompletedLabel').textContent = t('done');
+    document.getElementById('summaryCompletedNote').textContent = t('doneNote');
+    document.getElementById('summaryDraftLabel').textContent = t('draft');
+    document.getElementById('videoPanelTitle').textContent = t('panelTitle');
+    document.getElementById('videoPanelSubtitle').textContent = t('panelSubtitle');
+    document.getElementById('statusGuideTitle').textContent = t('checks');
+    document.getElementById('statusGuideOne').textContent = t('checkOne');
+    document.getElementById('statusGuideTwo').textContent = t('checkTwo');
+    document.getElementById('statusGuideThree').textContent = t('checkThree');
+    document.getElementById('manualGuideTitle').textContent = t('manualTitle');
+    document.getElementById('manualGuideText').textContent = t('manualText');
+    document.getElementById('manualButtonText').textContent = t('manualBtn');
+}
+
+function renderSummary(state) {
+    document.getElementById('totalVideosValue').textContent = String(state.total_videos || 0);
+    document.getElementById('completedVideosValue').textContent = String(state.complete_count || 0);
+    const draftInfo = formatDraftUpdated(state.draft_updated_at);
+    document.getElementById('draftUpdatedValue').textContent = draftInfo.value;
+    document.getElementById('summaryDraftNote').textContent = draftInfo.note;
+    document.getElementById('startBatchBtn').disabled = !state.can_start;
+}
+
+function renderCards(cards) {
+    const container = document.getElementById('videoCardList');
+    if (!cards || !cards.length) {
+        container.innerHTML = `<div class="workspace-empty">No videos in this batch.</div>`;
+        return;
+    }
+    container.innerHTML = cards.map(card => {
+        const statusText = card.complete ? t('statusReady') : t('statusPending');
+        const statusIcon = card.complete ? 'fa-circle-check' : 'fa-hourglass-half';
+        const missingText = card.complete
+            ? t('readyHint')
+            : ((card.missing_items && card.missing_items.length) ? card.missing_items.join('；') : t('pendingHint'));
+        return `
+            <article class="video-card ${card.complete ? 'ready' : ''}" data-video-index="${card.index}">
+                <div class="video-head">
+                    <div>
+                        <div class="video-name">${card.index + 1}. ${escapeHtml(card.name || `Video ${card.index + 1}`)}</div>
+                        <div class="video-meta mt-2">
+                            <span class="meta-pill"><i class="fas fa-film"></i>${Number(card.video_info?.width || 0)} × ${Number(card.video_info?.height || 0)}</span>
+                            <span class="meta-pill"><i class="fas fa-gauge-high"></i>${Number(card.video_info?.fps || 0).toFixed(2)} FPS</span>
+                            <span class="meta-pill"><i class="fas fa-clapperboard"></i>${escapeHtml(cardDurationText(card.video_info || {}))}</span>
+                        </div>
+                    </div>
+                    <span class="status-pill ${card.complete ? 'ready' : 'pending'}">
+                        <i class="fas ${statusIcon}"></i>${statusText}
+                    </span>
+                </div>
+                <div class="missing-list">${escapeHtml(missingText)}</div>
+                <div class="card-actions">
+                    <a class="btn btn-primary" href="/calibrate/${encodeURIComponent(sessionId)}/video/${card.index}">
+                        <i class="fas fa-pen-ruler me-2"></i>${card.complete ? t('editContinue') : t('edit')}
+                    </a>
+                    ${card.index > 0 ? `<button class="btn btn-outline-secondary" onclick="copyPreviousConfig(${card.index})"><i class="fas fa-copy me-2"></i>${t('copyPrev')}</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="resetVideoConfig(${card.index})"><i class="fas fa-rotate-left me-2"></i>${t('reset')}</button>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function refreshUI() {
+    applyStaticText();
+    renderSummary(latestBatchState);
+    renderCards(latestBatchState.cards || []);
+}
+
+async function refreshBatchState() {
+    const response = await fetch(batchStateUrl);
+    const data = await response.json();
+    if (!response.ok || data.error) {
+        throw new Error(data.error || 'Failed to load batch state');
+    }
+    latestBatchState = data;
+    refreshUI();
+    return data;
+}
+
+async function startBatchAnalysis() {
+    try {
+        const state = await refreshBatchState();
+        if (!state.can_start) {
+            alert(t('startBlocked'));
+            return;
+        }
+        const response = await fetch(`/api/start_analysis/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ use_saved_draft: true }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || t('startFailed'));
+        }
+        window.location.href = `/monitor/${sessionId}`;
+    } catch (error) {
+        alert(error.message || t('startFailed'));
+    }
+}
+
+async function copyPreviousConfig(index) {
+    try {
+        const response = await fetch(`/api/draft_action/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'copy', source_index: index - 1, target_indices: [index] }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || t('copyFailed'));
+        }
+        latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
+        latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
+        latestBatchState.can_start = latestBatchState.complete_count === data.cards.length;
+        refreshUI();
+    } catch (error) {
+        alert(error.message || t('copyFailed'));
+    }
+}
+
+async function copyFirstReadyToPending() {
+    const state = await refreshBatchState();
+    const source = (state.cards || []).find(card => card.complete);
+    const targets = (state.cards || []).filter(card => !card.complete).map(card => card.index);
+    if (!source || !targets.length) {
+        alert(t('noReadySource'));
+        return;
+    }
+    try {
+        const response = await fetch(`/api/draft_action/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'copy', source_index: source.index, target_indices: targets }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || t('copyFailed'));
+        }
+        latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
+        latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
+        latestBatchState.can_start = latestBatchState.complete_count === data.cards.length;
+        refreshUI();
+    } catch (error) {
+        alert(error.message || t('copyFailed'));
+    }
+}
+
+async function resetVideoConfig(index) {
+    if (!window.confirm(t('confirmReset'))) return;
+    try {
+        const response = await fetch(`/api/draft_action/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'reset', target_index: index }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || t('resetFailed'));
+        }
+        latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
+        latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
+        latestBatchState.can_start = latestBatchState.complete_count === data.cards.length;
+        refreshUI();
+    } catch (error) {
+        alert(error.message || t('resetFailed'));
+    }
+}
+
+document.addEventListener('DOMContentLoaded', refreshUI);
+document.addEventListener('mousescope:langchange', refreshUI);
+</script>
+{% endblock %}

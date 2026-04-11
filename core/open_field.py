@@ -17,6 +17,22 @@ import cv2
 import numpy as np
 
 from file_utils import ascii_slug, read_image_unicode, write_image_unicode
+from spatial_render import (
+    CLASSIC_BG,
+    CLASSIC_BORDER,
+    CLASSIC_END,
+    CLASSIC_GUIDE_FILL,
+    CLASSIC_GUIDE_OUTLINE,
+    CLASSIC_HEAT_OUTLINE,
+    CLASSIC_TRACK,
+    classic_border_thickness,
+    classic_guide_thickness,
+    classic_heatmap,
+    classic_marker_radius,
+    classic_path_thickness,
+    draw_start_end_markers,
+    fill_rect_alpha,
+)
 
 
 def _order_quad(points: Sequence[Sequence[float]]) -> np.ndarray:
@@ -36,7 +52,7 @@ def _order_quad(points: Sequence[Sequence[float]]) -> np.ndarray:
     return ordered
 
 
-def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: int = 4) -> Optional[np.ndarray]:
+def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: int = 3) -> Optional[np.ndarray]:
     if points is None:
         return None
 
@@ -576,45 +592,20 @@ def draw_open_field_results(
     return output
 
 
-_PAPER_BG = (255, 255, 255)
-_PAPER_BORDER = (18, 18, 18)
-_PAPER_GUIDE = (110, 110, 110)
-_PAPER_TRAJECTORY = (58, 58, 58)
-_PAPER_HEAT_STOPS = np.array([0.0, 0.12, 0.35, 0.62, 1.0], dtype=np.float32)
-_PAPER_HEAT_COLORS = np.array(
-    [
-        (255, 255, 255),
-        (208, 240, 255),
-        (145, 217, 253),
-        (84, 160, 253),
-        (38, 44, 196),
-    ],
-    dtype=np.float32,
-)
-
-
 def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
-    flat = np.clip(norm, 0.0, 1.0).reshape(-1)
-    scaled = np.power(flat, 0.82)
-    scaled = np.where(scaled > 0.02, scaled, 0.0)
-    channels = [
-        np.interp(scaled, _PAPER_HEAT_STOPS, _PAPER_HEAT_COLORS[:, channel])
-        for channel in range(3)
-    ]
-    heat = np.stack(channels, axis=1)
-    return heat.reshape(norm.shape[0], norm.shape[1], 3).astype(np.uint8)
+    return classic_heatmap(norm)
 
 
 def _paper_border_thickness(pixels_per_cm: int) -> int:
-    return max(2, int(round(pixels_per_cm / 6.0)))
+    return classic_border_thickness(pixels_per_cm)
 
 
 def _paper_guide_thickness(pixels_per_cm: int) -> int:
-    return max(1, _paper_border_thickness(pixels_per_cm) - 1)
+    return classic_guide_thickness(pixels_per_cm)
 
 
 def _paper_path_thickness(pixels_per_cm: int) -> int:
-    return max(1, int(round(pixels_per_cm / 10.0)))
+    return classic_path_thickness(pixels_per_cm)
 
 
 def _paper_dash_length(pixels_per_cm: int) -> int:
@@ -700,20 +691,17 @@ def render_open_field_heatmap(
     color = _paper_blend_heatmap(norm)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
-    dash_length = _paper_dash_length(pixels_per_cm)
-    gap_length = _paper_gap_length(pixels_per_cm)
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
-    _paper_draw_dashed_rect(
+    cv2.rectangle(
         color,
         (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
         (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        _PAPER_GUIDE,
+        CLASSIC_HEAT_OUTLINE,
         guide_thickness,
-        dash_length,
-        gap_length,
+        cv2.LINE_AA,
     )
-    cv2.rectangle(color, (0, 0), (width - 1, height - 1), _PAPER_BORDER, border_thickness, cv2.LINE_AA)
+    cv2.rectangle(color, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
 
     if write_image_unicode(output_path, color):
         return output_path
@@ -731,24 +719,18 @@ def render_open_field_trackmap(
 
     width = max(160, int(round(tracker.arena_width_cm * pixels_per_cm)))
     height = max(160, int(round(tracker.arena_height_cm * pixels_per_cm)))
-    canvas = np.full((height, width, 3), _PAPER_BG, dtype=np.uint8)
+    canvas = np.full((height, width, 3), CLASSIC_BG, dtype=np.uint8)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
     path_thickness = _paper_path_thickness(pixels_per_cm)
-    dash_length = _paper_dash_length(pixels_per_cm)
-    gap_length = _paper_gap_length(pixels_per_cm)
+    marker_radius = classic_marker_radius(pixels_per_cm)
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
-    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), _PAPER_BORDER, border_thickness, cv2.LINE_AA)
-    _paper_draw_dashed_rect(
-        canvas,
-        (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
-        (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        _PAPER_GUIDE,
-        guide_thickness,
-        dash_length,
-        gap_length,
-    )
+    center_top_left = (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm))
+    center_bottom_right = (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm))
+    fill_rect_alpha(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_FILL, alpha=0.92)
+    cv2.rectangle(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_OUTLINE, guide_thickness, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
 
     points = []
     for x_cm, y_cm in points_cm:
@@ -757,7 +739,8 @@ def render_open_field_trackmap(
         points.append((px, py))
 
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], _PAPER_TRAJECTORY, path_thickness, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius)
 
     if write_image_unicode(output_path, canvas):
         return output_path
@@ -799,9 +782,9 @@ def render_open_field_image_grid(
         y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
-        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), _PAPER_BORDER, 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), CLASSIC_BORDER, 1, cv2.LINE_AA)
 
-    cv2.rectangle(canvas, (0, 0), (canvas_w - 1, canvas_h - 1), _PAPER_BORDER, 1, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (canvas_w - 1, canvas_h - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path
