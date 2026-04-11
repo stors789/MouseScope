@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use MouseScope, please cite it as below."
+message: "If you use MouseScope in your work, please cite it as follows."
 type: software
 title: "MouseScope: Mouse Behavioral Video Analysis Platform"
 version: 2.0.0
@@ -10,13 +10,13 @@ license: GPL-3.0-or-later
 authors:
   - family-names: "Fu"
     given-names: "Jiacheng"
-    name-particle: "付家丞"
     email: "2583348593@qq.com"
     affiliation: "Neuroscience Research"
 keywords:
   - mouse
   - behavioral analysis
   - computer vision
+  - tail suspension test
   - open field
   - novel object recognition
   - elevated plus maze
@@ -24,7 +24,7 @@ keywords:
   - neuroscience
 abstract: >
   MouseScope is a modular desktop platform for practical mouse behavioral
-  video analysis. The v2.0.0 release supports Tail Suspension Test (TST),
-  Open Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze
-  (EPM), and Y-Maze inside one unified workflow with calibration, batch
+  video analysis. Version 2.0.0 supports Tail Suspension Test (TST), Open
+  Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze
+  (EPM), and Y-Maze in one unified workflow with visual setup, batch
   workspace, result export, and bilingual reporting.

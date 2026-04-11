@@ -22,13 +22,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fujiacheng3/MouseScope/releases">下载 Windows 版</a>
+  <strong><a href="https://github.com/fujiacheng3/MouseScope/releases">下载 Windows 版</a></strong>
   ·
-  <a href="#workflow-demo">查看演示</a>
+  <strong><a href="docs/assets/workflow_v2.gif">查看工作流演示</a></strong>
   ·
-  <a href="docs/releases/v2.0.0.md">v2.0.0 Release Notes</a>
+  <strong><a href="docs/releases/v2.0.0.md">v2.0.0 Release Notes</a></strong>
   ·
-  <a href="docs/system_design.md">系统设计文档</a>
+  <strong><a href="docs/system_design.md">系统设计文档</a></strong>
 </p>
 
 <p align="center">
@@ -46,19 +46,19 @@ MouseScope is designed as a practical desktop workbench rather than a collection
 
 ## 平台特点 | Highlights
 
-- 一个入口支持多种常见小鼠行为学实验，减少在不同脚本和表格之间来回切换。
+- 一个桌面工作台覆盖 `TST / OFT / NOR / EPM / Y-Maze` 五类实验。
 - 支持单视频分析，也支持按视频独立配置的批量工作流。
-- ROI、迷宫区域、目标物、时间窗和检测遮掩框都可视化配置。
-- 输出核心行为学指标、结果视频、热图和轨迹图，便于复核与汇报。
-- 面向实验室实际使用场景设计，尽量降低非程序用户的上手门槛。
+- ROI、迷宫区域、目标物、时间窗和检测遮掩框均可视化设置。
+- 可输出核心行为学指标、结果视频、热图和轨迹图。
+- 提供中英双语界面、手册与 TXT 报告字段。
 
 ## 为什么用 MouseScope | Why MouseScope
 
-- 一个入口覆盖多种常见小鼠行为学实验，不需要在不同脚本和表格之间来回切换。
-- 支持单视频与多视频工作流，适合真实实验室里常见的批量处理场景。
-- 重要配置都可视化，包括 ROI、迷宫分区、目标物、时间窗、检测遮掩框与参数预览。
-- 结果不仅便于导出，也便于复核，适合做日常分析、组会汇报和论文前检查。
-- 保留桌面软件体验，尽量降低对编程环境的依赖，方便非程序背景同学直接上手。
+- 减少手工整理、脚本切换和重复配置带来的时间成本。
+- 更容易把分析流程交接给实验室里的不同同学，而不依赖个人脚本习惯。
+- 结果更适合做日常复核、组会汇报和论文前检查。
+- 对真实批量实验场景更友好，尤其适合多视频和多 ROI 任务。
+- 保留桌面软件的使用方式，降低非程序用户的上手门槛。
 
 <a id="workflow-demo"></a>
 
