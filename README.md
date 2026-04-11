@@ -23,21 +23,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fujiacheng3/MouseScope/releases">
-    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E6%89%93%E5%8C%85%E7%89%88-Download%20Package-c96442?style=for-the-badge" alt="Download Package"/>
-  </a>
-  <a href="#workflow-demo">
-    <img src="https://img.shields.io/badge/%E5%B7%A5%E4%BD%9C%E6%B5%81%E6%BC%94%E7%A4%BA-Workflow%20Demo-2563eb?style=for-the-badge" alt="Workflow Demo"/>
-  </a>
-  <a href="docs/releases/v2.0.0.md">
-    <img src="https://img.shields.io/badge/Release%20Notes-v2.0.0-7a5136?style=for-the-badge" alt="Release Notes"/>
-  </a>
-  <a href="docs/system_design.md">
-    <img src="https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1-System%20Design-0f766e?style=for-the-badge" alt="System Design"/>
-  </a>
-</p>
-
-<p align="center">
   <img src="static/img/ui_home.png" alt="MouseScope v2.0.0 home page" width="960"/>
   <br/>
   <sub>MouseScope v2.0.0 当前首页界面 · Current home interface</sub>
