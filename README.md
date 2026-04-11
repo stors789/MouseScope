@@ -44,15 +44,13 @@ MouseScope 是一套面向实验室日常工作的桌面分析平台，用来把
 
 MouseScope is designed as a practical desktop workbench rather than a collection of one-off scripts.
 
-## v2.0.0 核心升级 | Major Update
+## 平台特点 | Highlights
 
-- 新增 **高架十字迷宫 EPM** 与 **Y 迷宫 Y-Maze** 两个实验模块。
-- 批量模式重构为 **上传 -> 批量工作台 -> 单视频独立配置 -> 统一启动分析**。
-- 统一了多模块的 **ROI / 时间窗 / 检测遮掩框 / 参数预览** 逻辑。
-- EPM 改为 **5 区全手动画区**，Y 迷宫改为 **三角形中心区 + 三条臂** 的真实实验几何。
-- 迷宫模块的热图和轨迹图改为 **标准模板坐标系** 输出，不再跟随手画区域外形变形。
-- 使用手册、TXT 报告字段和界面文案进一步补齐为 **中英双语**。
-- 补充了 **系统设计文档** 与基础 smoke tests，方便后续继续维护与扩展。
+- 一个入口支持多种常见小鼠行为学实验，减少在不同脚本和表格之间来回切换。
+- 支持单视频分析，也支持按视频独立配置的批量工作流。
+- ROI、迷宫区域、目标物、时间窗和检测遮掩框都可视化配置。
+- 输出核心行为学指标、结果视频、热图和轨迹图，便于复核与汇报。
+- 面向实验室实际使用场景设计，尽量降低非程序用户的上手门槛。
 
 ## 为什么用 MouseScope | Why MouseScope
 
@@ -141,41 +139,37 @@ NOR 模块用于量化小鼠对熟悉物体和新奇物体的探索差异，支�
 <table>
   <tr>
     <td align="center">
-      <img src="docs/assets/nor_preview.png" alt="NOR preview" width="300"/>
-      <br/>
-      <sub>场地与物体配置预览</sub>
-    </td>
-    <td align="center">
-      <img src="docs/assets/nor_heatmaps.png" alt="NOR heatmaps" width="300"/>
+      <img src="docs/assets/nor_heatmaps.png" alt="NOR heatmaps" width="430"/>
       <br/>
       <sub>NOR 热图（Heatmaps）</sub>
     </td>
     <td align="center">
-      <img src="docs/assets/nor_trackmaps.png" alt="NOR trackmaps" width="300"/>
+      <img src="docs/assets/nor_trackmaps.png" alt="NOR trackmaps" width="430"/>
       <br/>
       <sub>NOR 轨迹图（Trackmaps）</sub>
     </td>
   </tr>
 </table>
 
-### 4. 新增迷宫模块：EPM 与 Y-Maze
+### 4. 高架十字迷宫 EPM
 
-v2.0.0 新增了两类迷宫实验模块，并把轨迹图与热图统一到标准迷宫模板坐标系，便于不同视频之间直观比较。
+EPM 模块用于量化开放臂、封闭臂与中心区的停留和进入情况，适合观察开放空间探索偏好与相关焦虑样行为指标。
 
-<table>
-  <tr>
-    <td align="center">
-      <img src="docs/assets/epm_trackmap.png" alt="EPM trackmap" width="430"/>
-      <br/>
-      <sub>高架十字迷宫 EPM 轨迹图</sub>
-    </td>
-    <td align="center">
-      <img src="docs/assets/ymaze_trackmap.png" alt="Y-Maze trackmap" width="430"/>
-      <br/>
-      <sub>Y 迷宫 Y-Maze 轨迹图</sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/assets/epm_trackmap.png" alt="EPM trackmap" width="700"/>
+  <br/>
+  <sub>高架十字迷宫 EPM 轨迹图</sub>
+</p>
+
+### 5. Y 迷宫 Y-Maze
+
+Y 迷宫模块用于量化各臂停留、入臂序列和自发交替情况，适合快速查看探索模式与交替率。
+
+<p align="center">
+  <img src="docs/assets/ymaze_trackmap.png" alt="Y-Maze trackmap" width="700"/>
+  <br/>
+  <sub>Y 迷宫 Y-Maze 轨迹图</sub>
+</p>
 
 ## 可以得到什么结果 | What You Get
 
