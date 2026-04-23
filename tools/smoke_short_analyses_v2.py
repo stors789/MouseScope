@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Short end-to-end analysis smoke test for MouseScope v2.0.0."""
+"""Short end-to-end analysis smoke test for MouseScope v2.1.0."""
 
 from __future__ import annotations
 
@@ -243,7 +243,7 @@ def main() -> int:
 
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    print("v2.0.0 short analysis smoke test passed")
+    print("v2.1.0 short analysis smoke test passed")
     return 0
 
 

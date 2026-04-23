@@ -424,10 +424,10 @@
                     <span data-i18n="manual.switch.nor">NOR 手册</span>
                 </a>
                 <a href="{{ url_for('manual', module='epm', return_to=manual_return_to) if manual_return_to else url_for('manual', module='epm') }}" class="manual-switch-btn {% if manual_type == 'epm' %}active{% endif %}">
-                    <span>EPM 手册</span>
+                    <span data-i18n="manual.switch.epm">EPM 手册</span>
                 </a>
                 <a href="{{ url_for('manual', module='ymaze', return_to=manual_return_to) if manual_return_to else url_for('manual', module='ymaze') }}" class="manual-switch-btn {% if manual_type == 'ymaze' %}active{% endif %}">
-                    <span>Y 迷宫手册</span>
+                    <span data-i18n="manual.switch.ymaze">Y 迷宫手册</span>
                 </a>
             </div>
         </div>

@@ -9,7 +9,7 @@
             heroSubtitle: '本手册覆盖多 arena 标定、检测遮罩、每个参数的作用、全部结果字段含义，以及批量模式下每个视频应该如何独立配置。',
             heroChips: ['4 角点标定', '透视校正到厘米坐标', '每视频独立批量', 'track / summary / bins', '热图 + 轨迹图'],
             heroCards: [
-                ['fas fa-border-all', '模块真正输出的是什么', 'OFT 不只是“有无进中心区”。系统会在透视校正后的厘米坐标里统计距离、速度、中心区、壁区、移动 / 静止时间，并导出逐帧轨迹、分箱结果和图像。'],
+                ['fas fa-border-all', '模块真正输出的是什么', 'OFT 不只是“有无进中心区”。系统会在透视校正后的厘米坐标里统计总距离、中心区距离、外周区距离、速度、中心区、壁区、移动 / 静止时间，并导出逐帧轨迹、分箱结果和图像。'],
                 ['fas fa-clone', '批量模式的使用规则', '每个视频都会独立保存 arena、遮罩、时间窗和调参参数；但在同一个视频内部，多 arena 仍共享这一视频的检测与统计参数。'],
                 ['fas fa-compass-drafting', '为什么 arena 角点这么重要', 'arena 四角不只是画个框。它决定透视矫正、厘米坐标、中心区位置、距离统计和热图坐标系，角点一旦偏，后面所有空间指标都会跟着偏。'],
             ],
@@ -27,14 +27,14 @@
             sections: {
                 overview: {
                     title: '总览',
-                    lead: 'OFT 模块适合分析旷场实验中的总距离、速度、中心区活动和壁区偏好。它会把每个 arena 透视校正到标准厘米坐标，然后在这个标准化空间里做统计。',
+                    lead: 'OFT 模块适合分析旷场实验中的总距离、中心区 / 外周区距离、速度、中心区活动和壁区偏好。它会把每个 arena 透视校正到标准厘米坐标，然后在这个标准化空间里做统计。',
                     points: [
                         '每个 ROI 在 OFT 里代表一个完整 arena，不是任意多边形活动区。',
                         '如果同一视频里有多个 arena，系统会并行处理它们，但所有 arena 会共享这一视频的一套检测参数和统计参数。',
                         '导出的轨迹、热图和 CSV 都基于透视矫正后的坐标，而不是原始像素。'
                     ],
                     callouts: [
-                        ['warning', '最容易被误读的一点', '<code>outer_time_s</code> / <code>outer_percent</code> 表示“非中心区时间”，其中已经包含壁区；它不是“去掉壁区之后剩余的中间环带”。']
+                        ['warning', '最容易被误读的一点', '<code>outer_time_s</code> / <code>outer_percent</code> / <code>outer_distance_cm</code> 表示“非中心区”统计，其中已经包含壁区；它不是“去掉壁区之后剩余的中间环带”。']
                     ]
                 },
                 recording: {
@@ -147,8 +147,8 @@
                         headers: ['参数', '作用', '结果影响'],
                         rows: [
                             ['<code>arena_side_cm</code>', '定义 arena 的真实边长，建立像素到厘米的空间映射。', '影响距离、速度、热图、轨迹图和中心区尺寸。'],
-                            ['<code>center_ratio_x</code>', '中心区在宽度方向占 arena 的比例。', '影响 <code>center_time_s</code>、<code>center_entries</code> 和中心潜伏期。'],
-                            ['<code>center_ratio_y</code>', '中心区在高度方向占 arena 的比例。', '和 <code>center_ratio_x</code> 一起决定中心区矩形。'],
+                            ['<code>center_ratio_x</code>', '中心区在宽度方向占 arena 的比例。', '影响 <code>center_time_s</code>、<code>center_entries</code>、<code>center_latency_s</code>、<code>center_distance_cm</code> 和 <code>outer_distance_cm</code>。'],
+                            ['<code>center_ratio_y</code>', '中心区在高度方向占 arena 的比例。', '和 <code>center_ratio_x</code> 一起决定中心区矩形，因此同样会影响中心 / 外周距离与停留统计。'],
                             ['<code>wall_margin_cm</code>', '从 arena 边界向内定义壁区厚度。', '影响 <code>wall_time_s</code> 和 <code>wall_percent</code>。'],
                             ['<code>movement_threshold_cm_s</code>', '速度高于这个值时记为移动，否则记为静止。', '影响 <code>moving_time_s</code>、<code>immobility_time_s</code> 和分箱统计。'],
                             ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每一行覆盖多长时间。'],
@@ -183,6 +183,8 @@
                             ['<code>x_cm</code> / <code>y_cm</code>', '透视校正后的厘米坐标。', '不是像素坐标，可直接用于空间分析。'],
                             ['<code>speed_cm_s</code>', '当前帧速度，单位 cm/s。', '由厘米坐标差分得到。'],
                             ['<code>step_distance_cm</code>', '这一帧相对于上一统计帧的位移。', '用于累计总距离。'],
+                            ['<code>step_center_distance_cm</code>', '这一帧步进中落在中心区内的距离。', '跨越中心边界时，系统会按线段在中心矩形内的实际长度分配。'],
+                            ['<code>step_outer_distance_cm</code>', '这一帧步进中落在非中心区内的距离。', '包含壁区对应的那部分距离。'],
                             ['<code>cumulative_distance_cm</code>', '截至当前统计帧的累计总距离。', '只在统计窗口内增长。'],
                             ['<code>in_center</code>', '是否位于中心区。', '和中心区时间、进入次数对应。'],
                             ['<code>in_outer</code>', '是否位于非中心区。', '注意它包含壁区。'],
@@ -201,6 +203,8 @@
                             ['<code>detected_frames</code>', '窗口内检测到鼠体的帧数。', '越低越应警惕轨迹可靠性。'],
                             ['<code>detected_rate_percent</code>', '窗口内检测成功率。', '非常实用的质控字段。'],
                             ['<code>total_distance_cm</code>', '总移动距离，单位 cm。', '基于透视校正后的厘米轨迹。'],
+                            ['<code>center_distance_cm</code>', '中心区内累计移动距离，单位 cm。', '适合和中心区时间一起看“进入中心后走了多少”。'],
+                            ['<code>outer_distance_cm</code>', '非中心区内累计移动距离，单位 cm。', '包含壁区，不是排除壁区后的剩余环带。'],
                             ['<code>mean_speed_cm_s</code>', '平均速度。', '等于总距离除以总时长。'],
                             ['<code>max_speed_cm_s</code>', '窗口内最大瞬时速度。', '对突发跑动敏感。'],
                             ['<code>center_time_s</code> / <code>center_percent</code>', '中心区停留时长和比例。', '常用于焦虑样行为分析。'],
@@ -224,6 +228,8 @@
                             ['<code>start_s</code> / <code>end_s</code>', '该时间箱的起止秒数。', '相对于窗口内时间轴。'],
                             ['<code>duration_s</code>', '这个箱实际覆盖的时长。', '最后一个箱可能短于设定箱长。'],
                             ['<code>distance_cm</code>', '该时间箱内累计距离。', '适合观察活动随时间衰减。'],
+                            ['<code>center_distance_cm</code>', '该时间箱内落在中心区的累计距离。', '适合观察中心探索是否随时间变化。'],
+                            ['<code>outer_distance_cm</code>', '该时间箱内落在非中心区的累计距离。', '包含壁区对应的距离。'],
                             ['<code>mean_speed_cm_s</code>', '该时间箱内平均速度。', '等于该箱距离除以箱时长。'],
                             ['<code>center_time_s</code>', '该时间箱内中心区停留时长。', '用于做中心区时间时间序列。'],
                             ['<code>wall_time_s</code>', '该时间箱内壁区停留时长。', '用于做壁区时间时间序列。'],
@@ -231,7 +237,7 @@
                         ]
                     },
                     callouts: [
-                        ['warning', '关于 outer 和 wall 的关系', '<code>outer_time_s</code> 是所有“非中心区”时间，壁区本来就在 outer 里面。所以不要把 <code>outer_time_s + wall_time_s</code> 当成两块可直接相加的独立区域。']
+                        ['warning', '关于 outer 和 wall 的关系', '<code>outer_time_s</code> 和 <code>outer_distance_cm</code> 都表示所有“非中心区”统计，壁区本来就在 outer 里面。所以不要把它们和 wall 指标当成可直接相加的独立区域。']
                     ]
                 },
                 batch: {
@@ -274,7 +280,7 @@
             heroSubtitle: 'This manual explains multi-arena calibration, detection masks, every exposed parameter, every exported result field, and the correct per-video batch workflow.',
             heroChips: ['4-corner calibration', 'Perspective-corrected cm space', 'Per-video batch configs', 'track / summary / bins', 'Heatmap + trackmap'],
             heroCards: [
-                ['fas fa-border-all', 'What the module really outputs', 'OFT is not only “time in center.” The system measures distance, speed, center occupancy, wall occupancy, movement and immobility time inside perspective-corrected centimeter coordinates, then exports frame-level tracks, time bins, and figures.'],
+                ['fas fa-border-all', 'What the module really outputs', 'OFT is not only “time in center.” The system measures total distance, center distance, outer distance, speed, center occupancy, wall occupancy, movement and immobility time inside perspective-corrected centimeter coordinates, then exports frame-level tracks, time bins, and figures.'],
                 ['fas fa-clone', 'Batch workflow rule', 'Arena layout, masks, time windows, and tuning are stored per video. However, arenas inside the same video still share one detection-and-statistics parameter set.'],
                 ['fas fa-compass-drafting', 'Why arena corners matter so much', 'The four arena corners do not just draw a box. They define the perspective transform, centimeter coordinates, center-zone location, distance metrics, and the heatmap coordinate system. If the corners drift, all spatial outputs drift with them.'],
             ],
@@ -292,14 +298,14 @@
             sections: {
                 overview: {
                     title: 'Overview',
-                    lead: 'The OFT module quantifies total distance, speed, center occupancy, and wall preference in the open field test. Every arena is transformed into standardized centimeter coordinates before statistics are calculated.',
+                    lead: 'The OFT module quantifies total distance, center/outer distance, speed, center occupancy, and wall preference in the open field test. Every arena is transformed into standardized centimeter coordinates before statistics are calculated.',
                     points: [
                         'In OFT, each ROI represents one full arena, not an arbitrary polygonal activity patch.',
                         'If one video contains multiple arenas, they are processed in parallel, but those arenas still share one tuning set for that video.',
                         'The exported trajectories, heatmaps, and CSV files are based on perspective-corrected coordinates rather than raw pixels.'
                     ],
                     callouts: [
-                        ['warning', 'The most common misread', '<code>outer_time_s</code> / <code>outer_percent</code> means “all non-center time,” and therefore already includes wall time. It is not the middle ring after removing the wall zone.']
+                        ['warning', 'The most common misread', '<code>outer_time_s</code> / <code>outer_percent</code> / <code>outer_distance_cm</code> means “all non-center” statistics, and therefore already includes wall time and wall-path distance. It is not the middle ring after removing the wall zone.']
                     ]
                 },
                 recording: {
@@ -412,8 +418,8 @@
                         headers: ['Parameter', 'Role', 'What result fields it affects'],
                         rows: [
                             ['<code>arena_side_cm</code>', 'Defines the real arena side length and establishes the pixel-to-centimeter mapping.', 'Distance, speed, heatmap, trackmap, and center-zone size.'],
-                            ['<code>center_ratio_x</code>', 'Width proportion of the center zone within the arena.', 'Affects <code>center_time_s</code>, <code>center_entries</code>, and center latency.'],
-                            ['<code>center_ratio_y</code>', 'Height proportion of the center zone within the arena.', 'Together with <code>center_ratio_x</code> defines the center rectangle.'],
+                            ['<code>center_ratio_x</code>', 'Width proportion of the center zone within the arena.', 'Affects <code>center_time_s</code>, <code>center_entries</code>, <code>center_latency_s</code>, <code>center_distance_cm</code>, and <code>outer_distance_cm</code>.'],
+                            ['<code>center_ratio_y</code>', 'Height proportion of the center zone within the arena.', 'Together with <code>center_ratio_x</code> defines the center rectangle, so it also changes center/outer distance and occupancy metrics.'],
                             ['<code>wall_margin_cm</code>', 'Thickness of the wall zone measured inward from the arena edge.', 'Affects <code>wall_time_s</code> and <code>wall_percent</code>.'],
                             ['<code>movement_threshold_cm_s</code>', 'Speed threshold above which frames are counted as moving.', 'Affects <code>moving_time_s</code>, <code>immobility_time_s</code>, and time-bin movement values.'],
                             ['<code>bin_seconds</code>', 'Time-bin width used for temporal summaries.', 'Defines the duration of each row in <code>*_bins.csv</code>.'],
@@ -448,6 +454,8 @@
                             ['<code>x_cm</code> / <code>y_cm</code>', 'Perspective-corrected coordinates in centimeters.', 'These are not pixels and can be used directly for spatial analysis.'],
                             ['<code>speed_cm_s</code>', 'Instantaneous speed in cm/s.', 'Computed from successive centimeter coordinates.'],
                             ['<code>step_distance_cm</code>', 'Distance moved since the previous statistics frame.', 'Feeds the cumulative distance.'],
+                            ['<code>step_center_distance_cm</code>', 'Distance from that step that lies inside the center zone.', 'When a step crosses the center boundary, the path segment is split by its actual overlap with the center rectangle.'],
+                            ['<code>step_outer_distance_cm</code>', 'Distance from that step that lies outside the center zone.', 'This already includes the wall-zone part of the path.'],
                             ['<code>cumulative_distance_cm</code>', 'Total accumulated distance up to that frame.', 'Only increases inside the statistics window.'],
                             ['<code>in_center</code>', 'Whether the frame lies in the center zone.', 'Matches center-time and center-entry metrics.'],
                             ['<code>in_outer</code>', 'Whether the frame lies outside the center zone.', 'Note that this includes the wall zone.'],
@@ -466,6 +474,8 @@
                             ['<code>detected_frames</code>', 'Detected frames inside the time window.', 'Low values warn that trajectory quality may be poor.'],
                             ['<code>detected_rate_percent</code>', 'Detection success rate inside the window.', 'A very useful QC field.'],
                             ['<code>total_distance_cm</code>', 'Total path length in centimeters.', 'Based on perspective-corrected trajectories.'],
+                            ['<code>center_distance_cm</code>', 'Accumulated path length inside the center zone.', 'Useful alongside center occupancy to see how much movement occurred after entering center.'],
+                            ['<code>outer_distance_cm</code>', 'Accumulated path length outside the center zone.', 'Includes the wall-zone portion rather than excluding it.'],
                             ['<code>mean_speed_cm_s</code>', 'Average speed across the window.', 'Equals total distance divided by total time.'],
                             ['<code>max_speed_cm_s</code>', 'Maximum instantaneous speed observed in the window.', 'Sensitive to short bursts of running.'],
                             ['<code>center_time_s</code> / <code>center_percent</code>', 'Center-zone occupancy duration and proportion.', 'Often used for anxiety-like behavior interpretation.'],
@@ -489,6 +499,8 @@
                             ['<code>start_s</code> / <code>end_s</code>', 'Start and end seconds of that bin.', 'Relative to the analysis window.'],
                             ['<code>duration_s</code>', 'Actual duration covered by that row.', 'The last bin may be shorter than the requested bin length.'],
                             ['<code>distance_cm</code>', 'Distance accumulated inside that bin.', 'Good for habituation or decay plots over time.'],
+                            ['<code>center_distance_cm</code>', 'Distance accumulated inside the center zone during that bin.', 'Useful for time-series views of center exploration.'],
+                            ['<code>outer_distance_cm</code>', 'Distance accumulated outside the center zone during that bin.', 'Includes the wall-zone portion of the path.'],
                             ['<code>mean_speed_cm_s</code>', 'Average speed inside that bin.', 'Distance divided by bin duration.'],
                             ['<code>center_time_s</code>', 'Center occupancy within that bin.', 'For center-time time series.'],
                             ['<code>wall_time_s</code>', 'Wall occupancy within that bin.', 'For wall-time time series.'],
@@ -496,7 +508,7 @@
                         ]
                     },
                     callouts: [
-                        ['warning', 'Outer and wall are not independent sums', '<code>outer_time_s</code> is all non-center time, and wall time sits inside it. Do not treat <code>outer_time_s + wall_time_s</code> as two disjoint spatial regions that should be added together.']
+                        ['warning', 'Outer and wall are not independent sums', '<code>outer_time_s</code> and <code>outer_distance_cm</code> both mean all non-center statistics, and wall measurements sit inside them. Do not treat outer and wall metrics as disjoint spatial components that should be added together.']
                     ]
                 },
                 batch: {

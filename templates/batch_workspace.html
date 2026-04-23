@@ -246,8 +246,8 @@
             <div class="side-card">
                 <h3 id="batchInfoTitle">批次信息</h3>
                 <p><strong id="batchOutputLabel">输出目录:</strong> <span class="font-monospace">{{ output_dir or 'data/results/' }}</span></p>
-                <p><strong id="batchWindowLabel">全局时间窗:</strong> <span>{{ start_seconds or '0' }}s ~ {{ end_seconds or '视频结束' }}</span></p>
-                <p><strong id="batchFpsLabel">FPS 覆盖:</strong> <span>{{ fps_override or '自动检测' }}</span></p>
+                <p><strong id="batchWindowLabel">全局时间窗:</strong> <span id="batchWindowValue" data-start-seconds="{{ start_seconds if start_seconds is not none else '0' }}" data-end-seconds="{{ end_seconds if end_seconds is not none else '' }}">{{ start_seconds or '0' }}s ~ {{ end_seconds or '视频结束' }}</span></p>
+                <p><strong id="batchFpsLabel">FPS 覆盖:</strong> <span id="batchFpsValue" data-fps-override="{{ fps_override if fps_override is not none else '' }}">{{ fps_override or '自动检测' }}</span></p>
             </div>
             <div class="side-card">
                 <h3 id="batchRuleTitle">使用规则</h3>
@@ -467,6 +467,56 @@ function t(key) {
     return (BATCH_I18N[lang] && BATCH_I18N[lang][key]) || BATCH_I18N.zh[key] || key;
 }
 
+function uiText(zh, en) {
+    return pageLang() === 'en' ? en : zh;
+}
+
+function formatWindowValue() {
+    const node = document.getElementById('batchWindowValue');
+    if (!node) return;
+    const start = String(node.dataset.startSeconds || '0');
+    const end = String(node.dataset.endSeconds || '').trim();
+    const endLabel = end ? `${end}s` : uiText('视频结束', 'video end');
+    node.textContent = `${start}s ~ ${endLabel}`;
+}
+
+function formatFpsOverrideValue() {
+    const node = document.getElementById('batchFpsValue');
+    if (!node) return;
+    const raw = String(node.dataset.fpsOverride || '').trim();
+    node.textContent = raw || uiText('自动检测', 'Auto Detect');
+}
+
+function translateMissingItem(item) {
+    const value = String(item || '').trim();
+    if (!value || pageLang() !== 'en') {
+        return value;
+    }
+
+    let match = value.match(/^缺少 ROI 配置$/);
+    if (match) return 'Missing ROI setup';
+
+    match = value.match(/^缺少体长标定$/);
+    if (match) return 'Missing body-length calibration';
+
+    match = value.match(/^ROI\s*(\d+)\s*缺少多边形点$/);
+    if (match) return `ROI ${match[1]} is missing polygon points`;
+
+    match = value.match(/^ROI\s*(\d+)\s*缺少\s*4\s*个\s*arena\s*角点$/i);
+    if (match) return `ROI ${match[1]} is missing 4 arena corners`;
+
+    match = value.match(/^ROI\s*(\d+)\s*缺少\s*2\s*个物体点$/);
+    if (match) return `ROI ${match[1]} is missing 2 object points`;
+
+    match = value.match(/^ROI\s*(\d+)\s*缺少区域\s*([A-Za-z0-9_]+)（需要\s*(\d+)\s*个点）$/);
+    if (match) return `ROI ${match[1]} is missing zone "${match[2]}" (${match[3]} points required)`;
+
+    match = value.match(/^ROI\s*(\d+)\s*的(?:EPM|Y 迷宫)?检测遮罩少于\s*(\d+)\s*个点$/);
+    if (match) return `ROI ${match[1]} detection mask needs at least ${match[2]} points`;
+
+    return value;
+}
+
 function formatDraftUpdated(value) {
     if (!value) return { value: t('draftNone'), note: t('draftHint') };
     const date = new Date(Number(value) * 1000);
@@ -482,7 +532,7 @@ function cardDurationText(info) {
     const frames = Number(info && info.total_frames) || 0;
     if (!fps || !frames) return `${frames} ${t('frames')}`;
     const seconds = frames / fps;
-    return `${frames} ${t('frames')} · ${seconds.toFixed(1)}s`;
+    return `${frames} ${t('frames')} | ${seconds.toFixed(1)}s`;
 }
 
 function applyStaticText() {
@@ -494,7 +544,9 @@ function applyStaticText() {
     document.getElementById('batchInfoTitle').textContent = t('batchInfo');
     document.getElementById('batchOutputLabel').textContent = t('output');
     document.getElementById('batchWindowLabel').textContent = t('window');
+    formatWindowValue();
     document.getElementById('batchFpsLabel').textContent = t('fps');
+    formatFpsOverrideValue();
     document.getElementById('batchRuleTitle').textContent = t('rules');
     document.getElementById('ruleOne').textContent = t('ruleOne');
     document.getElementById('ruleTwo').textContent = t('ruleTwo');
@@ -527,7 +579,7 @@ function renderSummary(state) {
 function renderCards(cards) {
     const container = document.getElementById('videoCardList');
     if (!cards || !cards.length) {
-        container.innerHTML = `<div class="workspace-empty">No videos in this batch.</div>`;
+        container.innerHTML = `<div class="workspace-empty">${uiText('当前批次中没有视频。', 'No videos in this batch.')}</div>`;
         return;
     }
     container.innerHTML = cards.map(card => {
@@ -535,14 +587,14 @@ function renderCards(cards) {
         const statusIcon = card.complete ? 'fa-circle-check' : 'fa-hourglass-half';
         const missingText = card.complete
             ? t('readyHint')
-            : ((card.missing_items && card.missing_items.length) ? card.missing_items.join('；') : t('pendingHint'));
+            : ((card.missing_items && card.missing_items.length) ? card.missing_items.map(translateMissingItem).join('; ') : t('pendingHint'));
         return `
             <article class="video-card ${card.complete ? 'ready' : ''}" data-video-index="${card.index}">
                 <div class="video-head">
                     <div>
                         <div class="video-name">${card.index + 1}. ${escapeHtml(card.name || `Video ${card.index + 1}`)}</div>
                         <div class="video-meta mt-2">
-                            <span class="meta-pill"><i class="fas fa-film"></i>${Number(card.video_info?.width || 0)} × ${Number(card.video_info?.height || 0)}</span>
+                            <span class="meta-pill"><i class="fas fa-film"></i>${Number(card.video_info?.width || 0)} x ${Number(card.video_info?.height || 0)}</span>
                             <span class="meta-pill"><i class="fas fa-gauge-high"></i>${Number(card.video_info?.fps || 0).toFixed(2)} FPS</span>
                             <span class="meta-pill"><i class="fas fa-clapperboard"></i>${escapeHtml(cardDurationText(card.video_info || {}))}</span>
                         </div>

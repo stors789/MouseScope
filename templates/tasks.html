@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+{% block title %}MouseScope - 任务中心{% endblock %}
+
+{% block extra_css %}
+<style>
+.tasks-shell { max-width: 1440px; margin: 0 auto; }
+.tasks-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+    padding: 2rem;
+    border: 1px solid rgba(201, 100, 66, 0.16);
+    border-radius: 28px;
+    background: linear-gradient(135deg, rgba(250, 249, 245, 0.98), rgba(246, 238, 228, 0.94));
+    box-shadow: 0 18px 42px rgba(52, 34, 20, 0.07);
+}
+.tasks-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.72rem;
+    border-radius: 999px;
+    background: rgba(201, 100, 66, 0.1);
+    color: #8d5738;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.tasks-hero h1 { margin: 0.75rem 0 0.45rem; font-size: clamp(2.4rem, 4vw, 4rem); line-height: 1.05; }
+.tasks-hero p { max-width: 760px; margin: 0; color: var(--text-secondary); line-height: 1.75; }
+.tasks-actions { display: flex; gap: 0.65rem; flex-wrap: wrap; }
+.tasks-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(130px, 1fr));
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+}
+.summary-tile {
+    padding: 1rem;
+    border: 1px solid var(--border-card);
+    border-radius: 20px;
+    background: rgba(250, 249, 245, 0.88);
+    box-shadow: var(--shadow-card);
+}
+.summary-tile .value { font-size: 1.75rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
+.summary-tile .label { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.84rem; }
+.tasks-toolbar {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) 190px 210px auto;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border-card);
+    border-radius: 20px;
+    background: rgba(250, 249, 245, 0.86);
+}
+.search-wrap { position: relative; }
+.search-wrap i {
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+}
+.search-wrap .form-control { padding-left: 2.4rem !important; }
+.task-list { display: grid; gap: 0.85rem; }
+.task-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1.15rem;
+    border: 1px solid var(--border-card);
+    border-left: 5px solid var(--text-muted);
+    border-radius: 22px;
+    background: rgba(250, 249, 245, 0.94);
+    box-shadow: var(--shadow-card);
+}
+.task-card.status-analyzing,
+.task-card.status-waiting { border-left-color: var(--accent-cyan); }
+.task-card.status-completed { border-left-color: var(--success-color); }
+.task-card.status-error,
+.task-card.status-stopped { border-left-color: var(--danger-color); }
+.task-card.status-interrupted { border-left-color: var(--warning-color); }
+.task-topline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+}
+.task-title {
+    margin: 0;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 1.08rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+.task-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.45rem;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+}
+.task-message {
+    margin-top: 0.45rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+.task-output {
+    margin-top: 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+.task-output code {
+    display: inline-block;
+    max-width: min(760px, 100%);
+    padding: 0.2rem 0.45rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.68);
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+.task-progress { margin-top: 0.65rem; max-width: 620px; }
+.task-progress .progress { height: 7px; }
+.task-buttons { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; min-width: 280px; }
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    padding: 0.3rem 0.62rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.74);
+    border: 1px solid var(--border-card);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.status-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+.status-dot.analyzing,
+.status-dot.waiting { background: var(--accent-cyan); animation: statusPulse 2s ease-in-out infinite; }
+.status-dot.completed { background: var(--success-color); }
+.status-dot.error,
+.status-dot.stopped { background: var(--danger-color); }
+.status-dot.interrupted { background: var(--warning-color); }
+.empty-state {
+    display: none;
+    padding: 2rem;
+    text-align: center;
+    border: 1px dashed var(--border-card);
+    border-radius: 24px;
+    color: var(--text-secondary);
+    background: rgba(250, 249, 245, 0.72);
+}
+.empty-state i { color: var(--primary-color); font-size: 1.8rem; margin-bottom: 0.75rem; }
+@media (max-width: 1100px) {
+    .tasks-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tasks-toolbar { grid-template-columns: 1fr 1fr; }
+    .task-card { grid-template-columns: 1fr; }
+    .task-buttons { justify-content: flex-start; min-width: 0; }
+}
+@media (max-width: 640px) {
+    .tasks-hero { padding: 1.35rem; border-radius: 22px; }
+    .tasks-summary,
+    .tasks-toolbar { grid-template-columns: 1fr; }
+    .task-buttons .btn { width: 100%; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tasks-shell">
+    <section class="tasks-hero">
+        <div>
+            <div class="tasks-kicker"><i class="fas fa-list-check"></i><span data-i18n="tasks.kicker">Analysis Workspace</span></div>
+            <h1 data-i18n="tasks.title">任务中心</h1>
+            <p data-i18n="tasks.subtitle">集中查看正在运行的分析和本地历史记录；软件重启后，已完成、出错或中断的任务仍可搜索。</p>
+        </div>
+        <div class="tasks-actions">
+            <a href="{{ url_for('upload_page') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i><span data-i18n="tasks.action.new">新建分析</span>
+            </a>
+            <button type="button" class="btn btn-outline-primary" id="refreshTasksBtn" title="Refresh">
+                <i class="fas fa-rotate me-2"></i><span data-i18n="tasks.action.refresh">刷新</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="tasks-summary" aria-label="Task summary">
+        <div class="summary-tile"><div class="value" id="countAll">0</div><div class="label" data-i18n="tasks.count.all">全部任务</div></div>
+        <div class="summary-tile"><div class="value" id="countActive">0</div><div class="label" data-i18n="tasks.count.active">运行中</div></div>
+        <div class="summary-tile"><div class="value" id="countCompleted">0</div><div class="label" data-i18n="tasks.count.completed">已完成</div></div>
+        <div class="summary-tile"><div class="value" id="countInterrupted">0</div><div class="label" data-i18n="tasks.count.interrupted">已中断</div></div>
+        <div class="summary-tile"><div class="value" id="countError">0</div><div class="label" data-i18n="tasks.count.error">出错</div></div>
+    </section>
+
+    <section class="tasks-toolbar" aria-label="Task filters">
+        <div class="search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="search" class="form-control" id="taskSearch" data-i18n="tasks.search.placeholder" data-i18n-attr="placeholder" placeholder="搜索视频名、实验类型、输出目录">
+        </div>
+        <select class="form-select" id="statusFilter">
+            <option value="" data-i18n="tasks.filter.status_all">全部状态</option>
+            <option value="active" data-i18n="tasks.filter.active">运行中</option>
+            <option value="completed" data-i18n="tasks.status.completed">已完成</option>
+            <option value="error" data-i18n="tasks.status.error">出错</option>
+            <option value="stopped" data-i18n="tasks.status.stopped">已停止</option>
+            <option value="interrupted" data-i18n="tasks.status.interrupted">已中断</option>
+            <option value="configured" data-i18n="tasks.status.configured">已配置</option>
+            <option value="uploaded" data-i18n="tasks.status.uploaded">已上传</option>
+        </select>
+        <select class="form-select" id="experimentFilter">
+            <option value="" data-i18n="tasks.filter.exp_all">全部实验</option>
+            <option value="tst">TST</option>
+            <option value="open_field">OFT</option>
+            <option value="novel_object">NOR</option>
+            <option value="elevated_plus">EPM</option>
+            <option value="y_maze">Y-Maze</option>
+        </select>
+        <button type="button" class="btn btn-outline-secondary" id="clearFiltersBtn">
+            <i class="fas fa-xmark me-2"></i><span data-i18n="tasks.action.clear">清除</span>
+        </button>
+    </section>
+
+    <div id="taskList" class="task-list"></div>
+    <div id="emptyTasks" class="empty-state">
+        <i class="fas fa-folder-open"></i>
+        <div data-i18n="tasks.empty">没有匹配的分析任务。</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TASK_REFRESH_MS = 2500;
+let taskTimer = null;
+let taskAbort = null;
+
+function t(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    const dict = (window.I18N && I18N[lang]) || {};
+    return dict[key] || fallback;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function statusLabel(status) {
+    const labels = {
+        waiting: t('tasks.status.waiting', '等待中'),
+        analyzing: t('tasks.status.analyzing', '分析中'),
+        completed: t('tasks.status.completed', '已完成'),
+        error: t('tasks.status.error', '出错'),
+        stopped: t('tasks.status.stopped', '已停止'),
+        interrupted: t('tasks.status.interrupted', '已中断'),
+        configured: t('tasks.status.configured', '已配置'),
+        uploaded: t('tasks.status.uploaded', '已上传')
+    };
+    return labels[status] || status || t('tasks.status.unknown', '未知');
+}
+
+function formatTime(value) {
+    const n = Number(value || 0);
+    if (!n) return t('tasks.time.none', '未记录');
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    return new Date(n * 1000).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false });
+}
+
+function formatDuration(value) {
+    const total = Math.max(0, Math.round(Number(value || 0)));
+    if (!total) return t('tasks.time.none', '未记录');
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function actionButton(task, kind) {
+    if (kind === 'monitor' && task.monitor_url) {
+        return `<a class="btn btn-primary btn-sm" href="${task.monitor_url}" title="${t('tasks.action.monitor', '查看监控')}"><i class="fas fa-chart-line me-1"></i>${t('tasks.action.monitor', '查看监控')}</a>`;
+    }
+    if (kind === 'configure' && task.configure_url) {
+        return `<a class="btn btn-outline-primary btn-sm" href="${task.configure_url}" title="${t('tasks.action.configure', '继续配置')}"><i class="fas fa-sliders me-1"></i>${t('tasks.action.configure', '继续配置')}</a>`;
+    }
+    if (kind === 'stop' && task.stop_url) {
+        return `<button class="btn btn-danger btn-sm" data-stop-url="${task.stop_url}" title="${t('tasks.action.stop', '停止')}"><i class="fas fa-stop me-1"></i>${t('tasks.action.stop', '停止')}</button>`;
+    }
+    if (kind === 'download' && task.download_all_url) {
+        return `<a class="btn btn-success btn-sm" href="${task.download_all_url}" title="${t('tasks.action.download', '下载')}"><i class="fas fa-file-archive me-1"></i>${t('tasks.action.download', '下载')}</a>`;
+    }
+    if (kind === 'folder' && task.open_folder_url) {
+        return `<button class="btn btn-outline-secondary btn-sm" data-open-url="${task.open_folder_url}" title="${t('tasks.action.folder', '打开目录')}"><i class="fas fa-folder-open me-1"></i>${t('tasks.action.folder', '打开目录')}</button>`;
+    }
+    if (kind === 'delete' && task.delete_url) {
+        return `<button class="btn btn-outline-danger btn-sm" data-delete-url="${task.delete_url}" title="${t('tasks.action.delete', '删除记录')}"><i class="fas fa-trash-can me-1"></i>${t('tasks.action.delete', '删除记录')}</button>`;
+    }
+    return '';
+}
+
+function renderTask(task) {
+    const status = String(task.status || 'unknown').toLowerCase();
+    const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
+    const names = Array.isArray(task.video_names) ? task.video_names : [];
+    const moreCount = Math.max(0, names.length - 1);
+    const batchText = task.is_batch
+        ? t('tasks.meta.batch', '批量') + ` · ${task.video_count || names.length || 0}`
+        : t('tasks.meta.single', '单视频');
+    const message = task.message || task.error_message || '';
+    const outputDir = String(task.output_dir || '');
+    const outputState = outputDir && !task.has_output_dir
+        ? ` · ${t('tasks.meta.output_missing', '目录不存在或已移动')}`
+        : '';
+    const resultText = task.has_results
+        ? `${task.result_file_count || 0} ${t('tasks.meta.files', '个结果文件')}`
+        : t('tasks.meta.no_results', '暂无结果文件');
+    const actions = [
+        actionButton(task, 'monitor'),
+        actionButton(task, 'configure'),
+        actionButton(task, 'stop'),
+        actionButton(task, 'download'),
+        actionButton(task, 'folder'),
+        actionButton(task, 'delete')
+    ].filter(Boolean).join('');
+
+    return `
+        <article class="task-card status-${escapeHtml(status)}">
+            <div>
+                <div class="task-topline">
+                    <span class="status-pill"><span class="status-dot ${escapeHtml(status)}"></span>${escapeHtml(statusLabel(status))}</span>
+                    <span class="badge bg-light text-dark">${escapeHtml(task.experiment_short_label || task.experiment_type || '')}</span>
+                    <span class="badge bg-light text-dark">${escapeHtml(batchText)}</span>
+                    ${moreCount ? `<span class="badge bg-light text-dark">+${moreCount}</span>` : ''}
+                </div>
+                <h2 class="task-title">${escapeHtml(task.primary_video_name || task.run_id)}</h2>
+                <div class="task-meta">
+                    <span><i class="far fa-clock me-1"></i>${escapeHtml(t('tasks.meta.updated', '更新'))}: ${escapeHtml(formatTime(task.updated_at || task.created_at))}</span>
+                    <span><i class="fas fa-hourglass-half me-1"></i>${escapeHtml(t('tasks.meta.duration', '耗时'))}: ${escapeHtml(formatDuration(task.duration_seconds))}</span>
+                    <span><i class="fas fa-file-lines me-1"></i>${escapeHtml(resultText)}</span>
+                </div>
+                ${outputDir ? `<div class="task-output"><i class="fas fa-folder-tree"></i><span>${escapeHtml(t('tasks.meta.output_dir', '结果目录'))}${escapeHtml(outputState)}:</span><code>${escapeHtml(outputDir)}</code></div>` : ''}
+                ${message ? `<div class="task-message">${escapeHtml(message)}</div>` : ''}
+                <div class="task-progress">
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>${escapeHtml(t('tasks.meta.progress', '进度'))}</span>
+                        <span>${progress}%</span>
+                    </div>
+                    <div class="progress"><div class="progress-bar" style="width:${progress}%"></div></div>
+                </div>
+            </div>
+            <div class="task-buttons">${actions || `<span class="text-muted small">${escapeHtml(t('tasks.action.none', '暂无操作'))}</span>`}</div>
+        </article>
+    `;
+}
+
+function updateCounts(counts) {
+    document.getElementById('countAll').textContent = counts.all || 0;
+    document.getElementById('countActive').textContent = counts.active || 0;
+    document.getElementById('countCompleted').textContent = counts.completed || 0;
+    document.getElementById('countInterrupted').textContent = counts.interrupted || 0;
+    document.getElementById('countError').textContent = counts.error || 0;
+}
+
+function queryParams() {
+    const params = new URLSearchParams();
+    const q = document.getElementById('taskSearch').value.trim();
+    const status = document.getElementById('statusFilter').value;
+    const experiment = document.getElementById('experimentFilter').value;
+    if (q) params.set('q', q);
+    if (status) params.set('status', status);
+    if (experiment) params.set('experiment', experiment);
+    return params.toString();
+}
+
+function loadTasks() {
+    if (taskAbort) taskAbort.abort();
+    taskAbort = new AbortController();
+    const suffix = queryParams();
+    fetch(`/api/tasks${suffix ? '?' + suffix : ''}`, { signal: taskAbort.signal })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.error || 'failed');
+            updateCounts(data.counts || {});
+            const list = document.getElementById('taskList');
+            const empty = document.getElementById('emptyTasks');
+            const tasks = data.tasks || [];
+            list.innerHTML = tasks.map(renderTask).join('');
+            empty.style.display = tasks.length ? 'none' : 'block';
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            document.getElementById('taskList').innerHTML = '';
+            document.getElementById('emptyTasks').style.display = 'block';
+        });
+}
+
+function scheduleTasks() {
+    if (taskTimer) window.clearInterval(taskTimer);
+    taskTimer = window.setInterval(loadTasks, TASK_REFRESH_MS);
+}
+
+document.addEventListener('click', function(event) {
+    const stopBtn = event.target.closest('[data-stop-url]');
+    if (stopBtn) {
+        fetch(stopBtn.getAttribute('data-stop-url'), { method: 'POST' })
+            .then(() => loadTasks());
+        return;
+    }
+    const folderBtn = event.target.closest('[data-open-url]');
+    if (folderBtn) {
+        fetch(folderBtn.getAttribute('data-open-url'), { method: 'POST' })
+            .then(r => r.json())
+            .then(data => { if (!data.success) alert(data.error || t('tasks.alert.folder_failed', '打开目录失败')); });
+        return;
+    }
+    const deleteBtn = event.target.closest('[data-delete-url]');
+    if (deleteBtn) {
+        if (!window.confirm(t('tasks.confirm.delete', '只删除任务中心记录，不会删除结果文件。确定删除这条记录吗？'))) return;
+        fetch(deleteBtn.getAttribute('data-delete-url'), { method: 'DELETE' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || !data.success) throw new Error(data.error || t('tasks.alert.delete_failed', '删除记录失败'));
+                loadTasks();
+            })
+            .catch(err => alert(err.message || t('tasks.alert.delete_failed', '删除记录失败')));
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('refreshTasksBtn').addEventListener('click', loadTasks);
+    document.getElementById('clearFiltersBtn').addEventListener('click', function() {
+        document.getElementById('taskSearch').value = '';
+        document.getElementById('statusFilter').value = '';
+        document.getElementById('experimentFilter').value = '';
+        loadTasks();
+    });
+    ['taskSearch', 'statusFilter', 'experimentFilter'].forEach(id => {
+        document.getElementById(id).addEventListener(id === 'taskSearch' ? 'input' : 'change', function() {
+            window.clearTimeout(this._taskDelay);
+            this._taskDelay = window.setTimeout(loadTasks, 180);
+        });
+    });
+    document.addEventListener('mousescope:langchange', loadTasks);
+    loadTasks();
+    scheduleTasks();
+});
+</script>
+{% endblock %}

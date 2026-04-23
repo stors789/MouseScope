@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Route and inline-script smoke test for the v2.0.0 workbench flow."""
+"""Route and inline-script smoke test for the v2.1.0 workbench flow."""
 
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ def main() -> int:
                 if expected_status == 200 and response.content_type.startswith("text/html"):
                     _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
 
-    print("v2.0.0 route smoke test passed")
+    print("v2.1.0 route smoke test passed")
     return 0
 
 

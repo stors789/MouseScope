@@ -43,6 +43,12 @@ pyinstaller --name MouseScope \
     --hidden-import pandas \
     --hidden-import vision_tracker \
     --hidden-import performance_utils \
+    --hidden-import services.analysis_history \
+    --hidden-import services.analysis_sessions \
+    --hidden-import services.debug_preview \
+    --hidden-import services.payload_geometry \
+    --hidden-import routes.pages \
+    --hidden-import routes.api \
     --exclude-module tkinter \
     --exclude-module matplotlib \
     --exclude-module torch \

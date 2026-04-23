@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v2.0.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v2.1.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/UI-Desktop%20Workbench-f59e0b" alt="UI"/>
   <img src="https://img.shields.io/badge/Modules-5%20Assays-16a34a" alt="Modules"/>
@@ -23,9 +23,9 @@
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v2.0.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v2.1.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope v2.0.0 当前首页界面 · Current home interface</sub>
+  <sub>MouseScope v2.1.0 当前首页界面 · Current home interface</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
@@ -44,8 +44,10 @@ MouseScope is a desktop analysis platform built for everyday lab use. It turns m
   ROI, maze zones, objects, time windows, and detection masks can all be configured visually.
 - 输出核心行为学指标、结果视频、热图和轨迹图，便于复核与汇报。  
   Exports core behavioral metrics, annotated videos, heatmaps, and trackmaps for review and reporting.
-- 提供中英双语界面、手册与 TXT 报告字段。  
+- 提供中英双语界面、手册与 TXT 报告字段。
   Provides bilingual Chinese/English UI text, manuals, and TXT report labels.
+- 新增任务中心与本地历史记录，可搜索、恢复查看、打开结果目录并清理旧记录。
+  Adds a Task Center with local history, searchable run records, result-folder access, and record cleanup.
 
 ## 为什么用 MouseScope | Why MouseScope
 
@@ -259,6 +261,9 @@ python app.py
 ```text
 MouseScope/
 |- app.py
+|- routes/
+|  |- pages.py
+|  \- api.py
 |- core/
 |  |- vision_tracker.py
 |  |- open_field.py
@@ -270,6 +275,10 @@ MouseScope/
 |- services/
 |  |- experiment_registry.py
 |  |- analysis_builders.py
+|  |- analysis_history.py
+|  |- analysis_sessions.py
+|  |- debug_preview.py
+|  |- payload_geometry.py
 |  \- session_store.py
 |- templates/
 |- static/
@@ -293,13 +302,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {2.0.0}
+  version = {2.1.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 2.0.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 2.1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 

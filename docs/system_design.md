@@ -1,6 +1,6 @@
 # MouseScope 系统设计文档
 
-当前基线版本：`v2.0.0`
+当前基线版本：`v2.1.0`
 
 本文档是 MouseScope 后续演进的统一设计约束。以后新增实验、重构 UI、调整批量逻辑或拆分后端时，都应优先遵守这里的结构与原则，避免再次出现“功能逐步叠加后，各模块交互和代码组织越来越不一致”的问题。
 
@@ -77,9 +77,15 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
 
 - `app.py`
   - Flask 入口
-  - 路由
-  - 调试预览接口
-  - 分析启动接口
+  - 路由注册
+  - 许可拦截
+  - 运行时服务装配
+- `routes/pages.py`
+  - 页面路由
+  - 上传、批量工作台、标定页、监控页、任务中心
+- `routes/api.py`
+  - API 路由
+  - 分析启动、状态查询、下载、任务中心数据接口
 
 ### 3.2 核心分析层
 
@@ -112,6 +118,16 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
   - 会话内存态
   - 草稿磁盘快照
   - TTL 清理
+- `services/analysis_history.py`
+  - SQLite 分析历史索引
+  - 任务中心搜索、筛选、重启后历史展示
+  - 软件关闭时未完成任务标记为 `interrupted`
+- `services/analysis_sessions.py`
+  - TST / OFT / NOR / EPM / Y-Maze 分析会话类
+- `services/debug_preview.py`
+  - 各实验参数调试预览
+- `services/payload_geometry.py`
+  - ROI / zone / mask 几何 payload 归一化
 
 ### 3.4 模板层
 
@@ -218,6 +234,21 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
 - `analysis` 实例不写入 JSON
 - JSON 必须用 `utf-8`
 - JSON 写出时 `ensure_ascii=False`
+
+`AnalysisHistoryStore` 负责：
+
+- 将已经启动的分析写入 `data/history/analysis_history.sqlite`
+- 记录实验类型、视频名、输出目录、状态、进度、结果文件与错误信息
+- 任务中心必须展示当次分析的结果目录；旧记录缺少输出目录时，可从已有结果文件反推父目录
+- 任务完成、停止、出错时更新历史记录
+- 软件重新启动时，将仍处于 `waiting` / `analyzing` 的历史记录标记为 `interrupted`
+
+约束：
+
+- 历史库只负责“可搜索、可追溯、可下载”的任务索引
+- 不承诺断点续跑；软件关闭后后台线程已经终止，重启后只能显示中断状态
+- 任务中心删除记录默认只删除历史索引和非运行内存会话，不删除结果文件
+- 历史库属于用户数据，不能提交到版本库
 
 ## 6. 批量工作流设计
 

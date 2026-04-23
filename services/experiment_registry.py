@@ -17,7 +17,7 @@ def _mask_valid(roi: dict[str, Any] | None) -> bool:
     if not isinstance(roi, dict):
         return True
     mask_points = roi.get("detection_points") or []
-    return not mask_points or len(mask_points) >= 4
+    return not mask_points or len(mask_points) >= 3
 
 
 def _oft_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]:
@@ -28,7 +28,7 @@ def _oft_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]
         if not _roi_points_complete(roi):
             return False, [f"ROI {idx} 缺少 4 个 arena 角点"]
         if not _mask_valid(roi):
-            return False, [f"ROI {idx} 的检测遮罩少于 4 个点"]
+            return False, [f"ROI {idx} 的检测遮罩少于 3 个点"]
     return True, []
 
 
@@ -43,7 +43,7 @@ def _nor_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]
         if len(objects) != 2:
             return False, [f"ROI {idx} 缺少 2 个物体点"]
         if not _mask_valid(roi):
-            return False, [f"ROI {idx} 的检测遮罩少于 4 个点"]
+            return False, [f"ROI {idx} 的检测遮罩少于 3 个点"]
     return True, []
 
 
@@ -80,7 +80,7 @@ def _maze_video_complete(
             if not _maze_zone_complete(zones.get(key), expected_points):
                 return False, [f"ROI {idx} 缺少区域 {key}（需要 {expected_points} 个点）"]
         if not _mask_valid(roi):
-            return False, [f"ROI {idx} 的{label_prefix}检测遮罩少于 4 个点"]
+            return False, [f"ROI {idx} 的{label_prefix}检测遮罩少于 3 个点"]
     return True, []
 
 

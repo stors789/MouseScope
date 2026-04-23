@@ -7,6 +7,7 @@ build/
 dist/
 
 # User data (never commit experimental data)
+data/history/
 data/uploads/
 data/results/
 

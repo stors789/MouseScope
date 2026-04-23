@@ -140,6 +140,8 @@ class OpenFieldTracker:
         self.center_entries = 0
         self.center_latency_s: Optional[float] = None
         self.total_distance_cm = 0.0
+        self.center_distance_cm = 0.0
+        self.outer_distance_cm = 0.0
         self.max_speed_cm_s = 0.0
         self.last_speed_cm_s = 0.0
         self.last_zone_label = "Unknown"
@@ -204,6 +206,62 @@ class OpenFieldTracker:
         x_cm = float(np.clip(dst[0], 0.0, self.arena_width_cm))
         y_cm = float(np.clip(dst[1], 0.0, self.arena_height_cm))
         return (x_cm, y_cm)
+
+    @staticmethod
+    def _segment_length_in_rect(
+        start_xy_cm: Tuple[float, float],
+        end_xy_cm: Tuple[float, float],
+        rect_cm: Tuple[float, float, float, float],
+    ) -> float:
+        x0, y0 = (float(start_xy_cm[0]), float(start_xy_cm[1]))
+        x1, y1 = (float(end_xy_cm[0]), float(end_xy_cm[1]))
+        dx = x1 - x0
+        dy = y1 - y0
+        total = float(math.hypot(dx, dy))
+        if total <= 1e-6:
+            return 0.0
+
+        rx0, ry0, rx1, ry1 = rect_cm
+        t0 = 0.0
+        t1 = 1.0
+
+        for p, q in (
+            (-dx, x0 - rx0),
+            (dx, rx1 - x0),
+            (-dy, y0 - ry0),
+            (dy, ry1 - y0),
+        ):
+            if abs(p) <= 1e-12:
+                if q < 0:
+                    return 0.0
+                continue
+            r = q / p
+            if p < 0:
+                if r > t1:
+                    return 0.0
+                t0 = max(t0, r)
+            else:
+                if r < t0:
+                    return 0.0
+                t1 = min(t1, r)
+
+        if t1 <= t0:
+            return 0.0
+        return total * max(0.0, min(1.0, t1) - max(0.0, t0))
+
+    def _split_step_distance(
+        self,
+        start_xy_cm: Tuple[float, float],
+        end_xy_cm: Tuple[float, float],
+    ) -> Tuple[float, float]:
+        total = float(math.hypot(end_xy_cm[0] - start_xy_cm[0], end_xy_cm[1] - start_xy_cm[1]))
+        if total <= 1e-6:
+            return (0.0, 0.0)
+
+        center_distance_cm = self._segment_length_in_rect(start_xy_cm, end_xy_cm, self.get_center_rect_cm())
+        center_distance_cm = float(np.clip(center_distance_cm, 0.0, total))
+        outer_distance_cm = max(0.0, total - center_distance_cm)
+        return (center_distance_cm, outer_distance_cm)
 
     def _zone_flags(self, arena_xy_cm: Tuple[float, float]) -> Dict[str, bool]:
         x_cm, y_cm = arena_xy_cm
@@ -353,6 +411,8 @@ class OpenFieldTracker:
         self.last_speed_cm_s = speed_cm_s
         in_stats_window = self._is_in_stats_window(float(current_time))
         stats_step_distance_cm = 0.0
+        stats_center_distance_cm = 0.0
+        stats_outer_distance_cm = 0.0
         stats_cumulative_distance_cm = self.total_distance_cm
 
         if in_stats_window:
@@ -365,7 +425,13 @@ class OpenFieldTracker:
                     dx = arena_xy_cm[0] - self.prev_stats_arena_xy_cm[0]
                     dy = arena_xy_cm[1] - self.prev_stats_arena_xy_cm[1]
                     stats_step_distance_cm = float(math.hypot(dx, dy))
+                    stats_center_distance_cm, stats_outer_distance_cm = self._split_step_distance(
+                        self.prev_stats_arena_xy_cm,
+                        arena_xy_cm,
+                    )
                     self.total_distance_cm += stats_step_distance_cm
+                    self.center_distance_cm += stats_center_distance_cm
+                    self.outer_distance_cm += stats_outer_distance_cm
                 self.prev_stats_arena_xy_cm = arena_xy_cm
                 stats_cumulative_distance_cm = self.total_distance_cm
                 self.max_speed_cm_s = max(self.max_speed_cm_s, speed_cm_s)
@@ -412,6 +478,8 @@ class OpenFieldTracker:
             "y_cm": round(float(arena_xy_cm[1]), 3) if arena_xy_cm is not None else None,
             "speed_cm_s": round(float(speed_cm_s), 3),
             "step_distance_cm": round(float(stats_step_distance_cm), 3),
+            "step_center_distance_cm": round(float(stats_center_distance_cm), 3),
+            "step_outer_distance_cm": round(float(stats_outer_distance_cm), 3),
             "cumulative_distance_cm": round(float(stats_cumulative_distance_cm), 3),
             "in_center": bool(zone_flags["in_center"]) if in_stats_window else False,
             "in_outer": bool(zone_flags["in_outer"]) if in_stats_window else False,
@@ -460,6 +528,8 @@ class OpenFieldTracker:
             "detected_frames": int(self.detected_frames_in_window),
             "detected_rate_percent": round(detection_rate, 2),
             "total_distance_cm": round(self.total_distance_cm, 3),
+            "center_distance_cm": round(self.center_distance_cm, 3),
+            "outer_distance_cm": round(self.outer_distance_cm, 3),
             "mean_speed_cm_s": round(mean_speed_cm_s, 3),
             "max_speed_cm_s": round(self.max_speed_cm_s, 3),
             "center_time_s": round(center_time_s, 3),
@@ -502,6 +572,8 @@ class OpenFieldTracker:
                     "end_s": (idx + 1) * bin_seconds,
                     "frames": 0,
                     "distance_cm": 0.0,
+                    "center_distance_cm": 0.0,
+                    "outer_distance_cm": 0.0,
                     "center_frames": 0,
                     "wall_frames": 0,
                     "moving_frames": 0,
@@ -509,6 +581,8 @@ class OpenFieldTracker:
             )
             bucket["frames"] += 1
             bucket["distance_cm"] += float(row.get("step_distance_cm") or 0.0)
+            bucket["center_distance_cm"] += float(row.get("step_center_distance_cm") or 0.0)
+            bucket["outer_distance_cm"] += float(row.get("step_outer_distance_cm") or 0.0)
             bucket["center_frames"] += int(bool(row.get("in_center")))
             bucket["wall_frames"] += int(bool(row.get("in_wall")))
             bucket["moving_frames"] += int(float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s)
@@ -527,6 +601,8 @@ class OpenFieldTracker:
                     "end_s": round(bucket["end_s"], 2),
                     "duration_s": round(duration_s, 3),
                     "distance_cm": round(bucket["distance_cm"], 3),
+                    "center_distance_cm": round(bucket["center_distance_cm"], 3),
+                    "outer_distance_cm": round(bucket["outer_distance_cm"], 3),
                     "mean_speed_cm_s": round(bucket["distance_cm"] / max(duration_s, 1e-6), 3),
                     "center_time_s": round(bucket["center_frames"] / self.fps, 3),
                     "wall_time_s": round(bucket["wall_frames"] / self.fps, 3),
