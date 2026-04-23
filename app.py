@@ -481,8 +481,7 @@ def _cleanup_expired_runtime_state():
             expired_session_ids.append(session_id)
 
     for session_id in expired_session_ids:
-        analysis_sessions.pop(session_id, None)
-        _cleanup_session_artifacts(session_id)
+        analysis_sessions.delete(session_id)
 
     cleanup_debug_preview_cache(now, DEBUG_STATIC_BG_CACHE_TTL_SECONDS, DEBUG_STATIC_BG_CACHE_MAX_ITEMS)
 

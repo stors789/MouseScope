@@ -172,7 +172,7 @@ def register_api_routes(app, ctx) -> None:
                 is_running = bool(getattr(analysis, 'is_running', False)) or status in {'waiting', 'analyzing'}
                 if is_running:
                     return jsonify({'success': False, 'error': '任务仍在运行，请先停止分析。'}), 400
-            analysis_sessions.pop(session_id, None)
+            analysis_sessions.delete(session_id)
             removed_runtime = True
 
         deleted_history = analysis_history.delete_record(run_id)
