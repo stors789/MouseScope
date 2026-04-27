@@ -1,6 +1,6 @@
 # MouseScope 系统设计文档
 
-当前基线版本：`v2.1.0`
+当前基线版本：`v2.2.0`
 
 本文档是 MouseScope 后续演进的统一设计约束。以后新增实验、重构 UI、调整批量逻辑或拆分后端时，都应优先遵守这里的结构与原则，避免再次出现“功能逐步叠加后，各模块交互和代码组织越来越不一致”的问题。
 
@@ -9,6 +9,7 @@
 MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当前支持：
 
 - `TST` 悬尾实验
+- `FST` 强迫游泳
 - `OFT` 旷场实验
 - `NOR` 新奇物体识别
 - `EPM` 高架十字迷宫
@@ -67,7 +68,7 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
 - `检测遮罩` 决定前景检测实际参与的图像范围
 - 如果用户未单独绘制检测遮罩，则默认回退到统计区域或其并集
 
-这条规则已经适用于 `OFT / NOR`，也必须适用于 `EPM / Y-Maze`。
+这条规则已经适用于 `FST / OFT / NOR / EPM / Y-Maze`。
 
 ## 3. 当前目录结构
 
@@ -91,6 +92,8 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
 
 - `core/vision_tracker.py`
   - TST 分析底层
+- `core/forced_swim.py`
+  - FST 分析底层
 - `core/open_field.py`
   - OFT 分析底层
 - `core/novel_object.py`
@@ -123,7 +126,7 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
   - 任务中心搜索、筛选、重启后历史展示
   - 软件关闭时未完成任务标记为 `interrupted`
 - `services/analysis_sessions.py`
-  - TST / OFT / NOR / EPM / Y-Maze 分析会话类
+  - TST / FST / OFT / NOR / EPM / Y-Maze 分析会话类
 - `services/debug_preview.py`
   - 各实验参数调试预览
 - `services/payload_geometry.py`
@@ -154,7 +157,7 @@ MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当
 - `tools/smoke_routes_v2.py`
   - 页面渲染、批量路由、inline JS 语法的最小回归检查
 - `tools/smoke_short_analyses_v2.py`
-  - 使用样例视频对 5 个实验模块做短程端到端分析
+  - 使用样例视频对 6 个实验模块做短程端到端分析
   - 用于发现“页面能打开，但真实分析配置已失效”的问题
 
 ## 4. 实验注册表设计

@@ -332,6 +332,89 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
     }
 
 
+def build_forced_swim_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    default_bg_method = data.get("bg_method", "threshold")
+    default_bg_type = data.get("bg_type", "light")
+    default_gray_threshold = int(data.get("gray_threshold", 127))
+    default_erosion_kernel = int(data.get("erosion_kernel", 3))
+    default_erosion_iter = int(data.get("erosion_iter", 1))
+    default_dilation_kernel = int(data.get("dilation_kernel", 5))
+    default_dilation_iter = int(data.get("dilation_iter", 2))
+    default_min_area = int(data.get("min_area", 80))
+    default_max_area = int(data.get("max_area", 50000))
+    default_cylinder_diameter_cm = float(data.get("cylinder_diameter_cm", 10.0))
+    default_auto_threshold = bool(data.get("auto_threshold", True))
+    default_immobility_threshold = data.get("immobility_threshold")
+    default_immobility_high_threshold = data.get("immobility_high_threshold")
+    default_threshold_sensitivity = float(data.get("threshold_sensitivity", 0.0))
+    default_smoothing_window_s = float(data.get("smoothing_window_s", 0.5))
+    default_min_immobility_duration_s = float(data.get("min_immobility_duration_s", 1.0))
+    default_min_active_duration_s = float(data.get("min_active_duration_s", 0.3))
+    default_gap_merge_s = float(data.get("gap_merge_s", 0.5))
+    default_bin_seconds = float(data.get("bin_seconds", 60.0))
+
+    def _float_or_none(value):
+        if value in ("", None):
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    per_video_configs = _iter_video_configs(
+        sess,
+        data,
+        lambda raw_cfg: {
+            "bg_method": raw_cfg.get("bg_method", default_bg_method),
+            "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
+            "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
+            "erosion_kernel": int(raw_cfg.get("erosion_kernel", default_erosion_kernel)),
+            "erosion_iter": int(raw_cfg.get("erosion_iter", default_erosion_iter)),
+            "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
+            "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
+            "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "max_area": int(raw_cfg.get("max_area", default_max_area)),
+            "cylinder_diameter_cm": float(raw_cfg.get("cylinder_diameter_cm", default_cylinder_diameter_cm)),
+            "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
+            "auto_threshold": bool(raw_cfg.get("auto_threshold", default_auto_threshold)),
+            "immobility_threshold": _float_or_none(raw_cfg.get("immobility_threshold", default_immobility_threshold)),
+            "immobility_high_threshold": _float_or_none(raw_cfg.get("immobility_high_threshold", default_immobility_high_threshold)),
+            "threshold_sensitivity": float(raw_cfg.get("threshold_sensitivity", default_threshold_sensitivity)),
+            "smoothing_window_s": float(raw_cfg.get("smoothing_window_s", default_smoothing_window_s)),
+            "min_immobility_duration_s": float(raw_cfg.get("min_immobility_duration_s", default_min_immobility_duration_s)),
+            "min_active_duration_s": float(raw_cfg.get("min_active_duration_s", default_min_active_duration_s)),
+            "gap_merge_s": float(raw_cfg.get("gap_merge_s", default_gap_merge_s)),
+            "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
+        },
+    )
+
+    return {
+        "bg_method": default_bg_method,
+        "gray_threshold": default_gray_threshold,
+        "invert": str(default_bg_type).lower() == "dark",
+        "erosion_kernel": default_erosion_kernel,
+        "erosion_iter": default_erosion_iter,
+        "dilation_kernel": default_dilation_kernel,
+        "dilation_iter": default_dilation_iter,
+        "min_area": default_min_area,
+        "max_area": default_max_area,
+        "cylinder_diameter_cm": default_cylinder_diameter_cm,
+        "rois": data.get("rois", []),
+        "per_video_configs": per_video_configs,
+        "auto_threshold": default_auto_threshold,
+        "immobility_threshold": _float_or_none(default_immobility_threshold),
+        "immobility_high_threshold": _float_or_none(default_immobility_high_threshold),
+        "threshold_sensitivity": default_threshold_sensitivity,
+        "smoothing_window_s": default_smoothing_window_s,
+        "min_immobility_duration_s": default_min_immobility_duration_s,
+        "min_active_duration_s": default_min_active_duration_s,
+        "gap_merge_s": default_gap_merge_s,
+        "bin_seconds": default_bin_seconds,
+        "generate_video": data.get("generate_video", True),
+        **_base_session_fields(sess),
+    }
+
+
 def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     exp = str(experiment_type or "").strip().lower()
     if exp == "open_field":
@@ -342,4 +425,6 @@ def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], dat
         return build_elevated_plus_config(sess, data)
     if exp == "y_maze":
         return build_y_maze_config(sess, data)
+    if exp == "forced_swim":
+        return build_forced_swim_config(sess, data)
     return build_tst_config(sess, data)

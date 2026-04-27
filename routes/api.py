@@ -15,6 +15,7 @@ from flask import jsonify, request, send_file, url_for
 from services.analysis_builders import build_analysis_config
 from services.analysis_sessions import (
     ElevatedPlusMultiArenaAnalysisSession,
+    ForcedSwimMultiCylinderAnalysisSession,
     NovelObjectMultiArenaAnalysisSession,
     OpenFieldMultiArenaAnalysisSession,
     VisionAnalysisSession,
@@ -417,6 +418,7 @@ def register_api_routes(app, ctx) -> None:
             'novel_object': NovelObjectMultiArenaAnalysisSession,
             'elevated_plus': ElevatedPlusMultiArenaAnalysisSession,
             'y_maze': YMazeMultiArenaAnalysisSession,
+            'forced_swim': ForcedSwimMultiCylinderAnalysisSession,
         }
         analysis_class = analysis_class_map.get(experiment_type, VisionAnalysisSession)
         analysis = analysis_class(

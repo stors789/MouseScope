@@ -14,6 +14,7 @@ from open_field import OpenFieldTracker, draw_open_field_results
 from novel_object import NovelObjectTracker, draw_novel_object_results
 from elevated_plus import ElevatedPlusTracker, draw_elevated_plus_results
 from y_maze import YMazeTracker, draw_y_maze_results
+from forced_swim import ForcedSwimTracker, draw_forced_swim_results
 from services.payload_geometry import (
     coerce_point_list as _coerce_point_list,
     coerce_zone_polygons as _coerce_zone_polygons,
@@ -375,6 +376,92 @@ def _y_maze_debug_preview(frame, data, video_path):
         'roi_count': len(tracker_results),
     })
 
+def _forced_swim_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    bg_type = data.get('bg_type', 'light')
+    invert = (bg_type == 'dark')
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 80))
+    max_area = int(data.get('max_area', 50000))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'FST preview requires at least one cylinder ROI.'}), 400
+
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+
+    morph = MorphologyProcessor(
+        erosion_kernel=erosion_kernel,
+        erosion_iterations=erosion_iter,
+        dilation_kernel=dilation_kernel,
+        dilation_iterations=dilation_iter
+    )
+    det = MouseDetector(min_area=min_area, max_area=max_area)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    tracker_results = []
+    detected_count = 0
+    default_diameter_cm = float(data.get('cylinder_diameter_cm', 10.0))
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'FST ROI {idx + 1} must be an object.'}), 400
+        points = roi.get('points') or []
+        if len(points) < 3:
+            return jsonify({'error': f'FST ROI {idx + 1} needs at least 3 polygon points.'}), 400
+        diameter_points = roi.get('diameter_points') or []
+        if len(diameter_points) != 2:
+            return jsonify({'error': f'FST ROI {idx + 1} needs a cylinder diameter line.'}), 400
+        detection_points = None
+        if roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'FST ROI {idx + 1}: detection mask {exc}'}), 400
+
+        try:
+            tracker = ForcedSwimTracker(
+                roi_points=[[p['x'], p['y']] if isinstance(p, dict) else p for p in points],
+                diameter_points=[[p['x'], p['y']] if isinstance(p, dict) else p for p in diameter_points],
+                cylinder_diameter_cm=float(roi.get('cylinder_diameter_cm') or default_diameter_cm),
+                detection_points=detection_points,
+                waterline_points=([[p['x'], p['y']] if isinstance(p, dict) else p for p in roi.get('waterline_points', [])] if roi.get('waterline_points') else None),
+                fps=30.0,
+                roi_id=idx + 1,
+                roi_name=roi.get('name') or f'Cylinder {idx + 1}',
+                time_config=roi.get('time_config'),
+                auto_threshold=bool(data.get('auto_threshold', True)),
+                immobility_threshold=data.get('immobility_threshold'),
+                threshold_sensitivity=float(data.get('threshold_sensitivity', 0.0)),
+                smoothing_window_s=float(data.get('smoothing_window_s', 0.5)),
+                min_immobility_duration_s=float(data.get('min_immobility_duration_s', 1.0)),
+                min_active_duration_s=float(data.get('min_active_duration_s', 0.3)),
+                gap_merge_s=float(data.get('gap_merge_s', 0.5)),
+            )
+        except Exception as exc:
+            return jsonify({'error': f'FST ROI {idx + 1}: {exc}'}), 400
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+
+    result_frame = draw_forced_swim_results(frame, tracker_results, preview_detection=True)
+
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
 def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: dict[str, Any]):
     frame_idx = int(data.get('frame', 0))
     video_idx = int(data.get('video', 0))
@@ -397,6 +484,8 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         return _elevated_plus_debug_preview(frame, data, video_path)
     if experiment_type == 'y_maze':
         return _y_maze_debug_preview(frame, data, video_path)
+    if experiment_type == 'forced_swim':
+        return _forced_swim_debug_preview(frame, data, video_path)
 
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Short end-to-end analysis smoke test for MouseScope v2.1.0."""
+"""Short end-to-end analysis smoke test for MouseScope v2.2.0."""
 
 from __future__ import annotations
 
@@ -163,6 +163,35 @@ def _payload_for(experiment_type: str) -> dict:
                 "rois": [{"points": RECT, "name": "Arena 1", "time_config": {"mode": "global", "start": 0, "end": 0}}],
             }],
         }
+    if experiment_type == "forced_swim":
+        return {
+            "generate_video": False,
+            "per_video_configs": [{
+                "cylinder_diameter_cm": 10.0,
+                "bg_method": "threshold",
+                "bg_type": "light",
+                "gray_threshold": 127,
+                "erosion_kernel": 3,
+                "erosion_iter": 1,
+                "dilation_kernel": 5,
+                "dilation_iter": 2,
+                "min_area": 80,
+                "auto_threshold": False,
+                "immobility_threshold": 0.08,
+                "threshold_sensitivity": 0,
+                "smoothing_window_s": 0.5,
+                "min_immobility_duration_s": 0.2,
+                "gap_merge_s": 0.1,
+                "bin_seconds": 30,
+                "rois": [{
+                    "points": RECT,
+                    "name": "Cylinder 1",
+                    "cylinder_diameter_cm": 10.0,
+                    "diameter_points": [{"x": 100, "y": 250}, {"x": 300, "y": 250}],
+                    "time_config": {"mode": "global", "start": 0, "end": 0},
+                }],
+            }],
+        }
     if experiment_type == "novel_object":
         return {
             "generate_video": False,
@@ -214,7 +243,7 @@ def main() -> int:
     if not SAMPLE_VIDEO.exists():
         raise FileNotFoundError(f"Missing sample video for smoke test: {SAMPLE_VIDEO}")
 
-    experiments = ("tst", "open_field", "novel_object", "elevated_plus", "y_maze")
+    experiments = ("tst", "forced_swim", "open_field", "novel_object", "elevated_plus", "y_maze")
     with tempfile.TemporaryDirectory(prefix="mousescope_v2_smoke_") as temp_dir:
         with app.test_client() as client:
             with client.session_transaction() as sess:
@@ -243,7 +272,7 @@ def main() -> int:
 
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    print("v2.1.0 short analysis smoke test passed")
+    print("v2.2.0 short analysis smoke test passed")
     return 0
 
 

@@ -45,7 +45,7 @@ def register_page_routes(app, ctx) -> None:
     def manual():
         """使用手册"""
         manual_type = request.args.get('module', 'tst').strip().lower()
-        if manual_type not in {'tst', 'oft', 'nor', 'epm', 'ymaze'}:
+        if manual_type not in {'tst', 'fst', 'oft', 'nor', 'epm', 'ymaze'}:
             manual_type = 'tst'
         return render_template('manual.html', manual_type=manual_type)
 

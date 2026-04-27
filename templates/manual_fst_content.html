@@ -1,0 +1,740 @@
+<div id="fst-manual-root"></div>
+
+<script>
+(function () {
+    const FST_MANUAL = {
+        zh: {
+            heroEyebrow: 'Forced Swim Test / FST',
+            heroTitle: '强迫游泳实验完整操作手册',
+            heroSubtitle: '本手册覆盖侧视视频采集、多圆筒 ROI、圆筒直径线标定、三种时间窗、自动与手动不动阈值、ethogram / 活动曲线复核，以及批量模式下每个视频的独立配置方式。',
+            heroChips: ['侧视多圆筒', '圆筒直径归一化', 'active / immobile', '三种时间窗', 'ethogram + 活动曲线'],
+            heroCards: [
+                ['fas fa-water', '模块实际在判什么', 'FST 模块默认使用 <code>active / immobile</code> 二分类。明显游动、挣扎、踩水和攀爬样动作都会合并为 active；系统不会强行区分 swimming 和 climbing。'],
+                ['fas fa-ruler-horizontal', '为什么用圆筒直径标定', '侧视 FST 中鼠体会部分入水、姿态变化大，体长线不稳定。圆筒内径是更固定的物理尺度，系统用它把光流、质心速度和轮廓形变归一化。'],
+                ['fas fa-chart-line', '为什么一定要看图复核', 'FST 的关键不是只拿一个 summary 数值。ethogram 能看状态切换，活动曲线能看运动评分和阈值关系，是判断阈值是否合理的优先复核材料。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', '圆筒 ROI 标定', '阈值与预览', '正式分析监控', '结果复核'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['calibration', '圆筒 ROI / 直径线 / 时间窗'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: 'FST 模块适合分析侧视强迫游泳实验视频，尤其是一个画面中包含一个或多个圆筒的场景。每个圆筒配置为一个 ROI，系统在各 ROI 内独立检测鼠体、计算运动评分、判定 active / immobile，并输出逐帧、汇总、分箱和图像质控结果。',
+                    points: [
+                        '每个 ROI 对应一个圆筒。一个视频里有多个圆筒时，逐个圆筒单独统计，但同一视频共享同一套基础检测参数。',
+                        '自动阈值会在正式分析前按 ROI 采样运动评分分布，然后为每个圆筒估计自己的不动阈值。',
+                        '运动评分不是单一像素差。它综合光流强度、质心速度和轮廓形变，并按圆筒直径归一化。',
+                        '结果中的 <code>uncertain</code> 代表统计窗口内没有稳定检测到鼠体，不能简单等同为 immobile。'
+                    ],
+                    callouts: [
+                        ['warning', '最容易误解的一点', '本模块默认不区分 swimming 和 climbing。对常规 FST 统计，最终更关注不动时间、不动比例、潜伏期和不动片段，而不是把每一种主动行为再拆成更多类别。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: 'FST 的上限很大程度由视频决定。水面反光、圆筒边缘、相邻圆筒干扰和鼠体对比度都会直接影响检测与阈值估计。',
+                    blocks: [
+                        {
+                            title: '机位与构图',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '优先使用固定侧视机位，整个实验过程中不要移动相机、变焦或自动重对焦。',
+                                '每个圆筒内鼠体可能出现的区域要完整可见，包括水面附近头部、前肢和贴壁运动。',
+                                '同一画面多个圆筒时，圆筒之间尽量留出空隙，避免相邻圆筒边缘或鼠体进入彼此 ROI。',
+                                '画面中可以看到水面高度更方便人工复核，但尺度标定仍应使用圆筒直径，而不是水深。'
+                            ]
+                        },
+                        {
+                            title: '背景、光照与水面',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                '让鼠体和背景有明显对比。深色鼠配浅背景通常选择 <code>light</code> 背景类型，浅色鼠配深背景选择 <code>dark</code>。',
+                                '尽量减少水面高光、玻璃壁反光、标签纸反光和气泡造成的闪烁。',
+                                '如果某些固定反光不可避免，优先用检测遮罩排除它们，而不是把 ROI 缩得过小。',
+                                '避免人手、计时器闪烁、线缆晃动或其他移动物体进入圆筒 ROI。'
+                            ]
+                        },
+                        {
+                            title: '实验一致性',
+                            icon: 'fas fa-flask',
+                            items: [
+                                '同一批视频尽量使用相同内径的圆筒；如果内径不同，需要在每个 ROI 里填写对应真实直径。',
+                                '水位可以不同，但 ROI 和水线参考要让你能判断鼠体是否被完整覆盖。',
+                                '如果源视频 FPS 元数据不可靠，上传页要手动覆盖 FPS，因为时长、潜伏期和片段合并都依赖 FPS。',
+                                '正式统计前建议先用 1 到 2 条代表性视频做完整试跑，确认阈值和输出图像符合人工观察。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', '水线的作用', '水线在当前实现中主要作为可视化参考，帮助你和复核者理解圆筒内水面位置。它不参与物理尺度计算，也不会替代 ROI 或直径线。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页负责定义本次分析读取哪些视频、默认统计哪一段、是否覆盖 FPS、结果输出到哪里。后续每个圆筒 ROI 仍可以继续设置自己的时间模式。',
+                    points: [
+                        '实验类型选择 <code>强迫游泳 Forced Swim Test</code> 后进入 FST 专用标定页。',
+                        '上传页的全局开始时间 / 结束时间是默认统计窗口；ROI 如果选择 <code>global</code>，就直接沿用这里的时间。',
+                        '如果只想分析正式测试阶段，例如第 60 秒到第 360 秒，可以先在上传页设置全局窗口，再让大多数 ROI 跟随全局。',
+                        '批量模式下建议把采集条件相近的视频放在同一批次。虽然每个视频都能独立配置，但这样更容易复核和调参。',
+                        '自定义输出目录会作为批量结果总目录，每个视频会在其中生成自己的结果子文件夹。'
+                    ],
+                    callouts: [
+                        ['success', '什么时候需要 FPS 覆盖', '如果视频来自手机、采集卡或剪辑软件，FPS 元数据有时不稳定。只要你要比较潜伏期、最短不动片段或分箱动态，就应确认 FPS 是否正确。']
+                    ]
+                },
+                calibration: {
+                    title: '圆筒 ROI、直径线、水线与时间窗',
+                    lead: 'FST 标定的核心是“一个圆筒一个 ROI + 一条圆筒内径线”。ROI 决定检测范围，直径线决定运动评分的物理归一化，时间窗决定最终统计哪一段。',
+                    blocks: [
+                        {
+                            title: '圆筒 ROI 怎么框',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                '每个 ROI 只对应一个圆筒，至少 3 个点，建议沿圆筒内小鼠可能出现的有效活动包络绘制。',
+                                '不要只框水下部分。漂浮和轻微划水常发生在水面附近，头部和前肢被裁掉会影响不动判定。',
+                                '也不要把整块画面都框进去。相邻圆筒、标签、强反光、背景空白和器材边缘会增加误检。',
+                                '理想 ROI 应包含鼠体完整轮廓可能出现的位置，并适当覆盖贴壁运动，但尽量排除圆筒外部干扰。'
+                            ]
+                        },
+                        {
+                            title: '圆筒直径线怎么画',
+                            icon: 'fas fa-ruler-horizontal',
+                            items: [
+                                '点击“直径线”后，在该圆筒左右内壁之间画一条线段，并填写圆筒真实内径，单位 cm。',
+                                '直径线不是水位线，也不是鼠体长度线。水接多少、鼠体姿态如何变化，都不应该改变这个尺度标定。',
+                                '尽量落在圆筒可辨认的内壁边界上，避免把玻璃厚度、外壁边缘或透视外扩也算进去。',
+                                '多个圆筒如果拍摄透视差异明显，建议每个圆筒都单独画自己的直径线，不要直接复制第一个圆筒的像素长度。'
+                            ]
+                        },
+                        {
+                            title: '水线与检测遮罩',
+                            icon: 'fas fa-mask',
+                            items: [
+                                '水线是可选项，用于结果视频中的视觉参考，帮助复核者判断水面位置和 ROI 是否合理。',
+                                '检测遮罩也是可选项，只限制前景检测允许出现的区域，不改变 ROI 名称、时间窗和直径标定。',
+                                '当圆筒外有固定标签、高光、黑边或边缘畸变时，建议画检测遮罩来排除这些干扰。',
+                                '检测遮罩不要裁掉鼠体可能出现的头部、尾部或贴壁动作，否则检测率会下降。'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['模式', '含义', '推荐使用场景'],
+                        rows: [
+                            ['<code>global</code>', '跟随上传页的全局开始 / 结束时间。', '所有圆筒投放时间一致，整批统计同一段视频时。'],
+                            ['<code>relative</code>', '从该 ROI 首次稳定检测到鼠体开始计时，再加上 ROI 起止偏移。', '同一画面多个圆筒投放时间略有先后，想按“检测到鼠体后第 N 秒”统计时。'],
+                            ['<code>precise</code>', '直接按视频绝对时间指定该 ROI 的开始 / 结束秒数。', '某个圆筒需要单独统计固定视频片段时。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'ROI 和直径线缺一不可', 'ROI 只告诉系统在哪里找鼠体；直径线告诉系统“这些像素运动在真实圆筒里相当于多大”。没有正确直径线，自动阈值和跨视频比较都会更不稳定。']
+                    ]
+                },
+                params: {
+                    title: '参数字典',
+                    lead: 'FST 参数分成两组：一组负责把鼠体从背景中稳定分割出来，另一组负责把运动评分转成 active / immobile 状态。建议先把检测轮廓调稳，再讨论阈值。',
+                    detectTable: {
+                        headers: ['参数', '位置', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '调参页', '检测方式。<code>threshold</code> 用灰度阈值分割，<code>static</code> 用静态背景减除。', '背景稳定且水面反光少时两者都可试；阈值法更直观，静态背景法更适合固定背景差分。'],
+                            ['<code>bg_type</code>', '调参页', '指示背景偏浅还是偏深，决定阈值分割方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '调参页', '灰度阈值法下的分割阈值。', '误检水面或背景噪点多时调严格；鼠体被吃掉、断裂或漏检时调宽松。'],
+                            ['<code>min_area</code>', '调参页', '过滤小于该面积的轮廓。', '小反光点或气泡被识别为鼠体时增大；鼠体较小或被水面分割得很碎时减小。'],
+                            ['<code>erosion_kernel</code> / <code>erosion_iter</code>', '调参页', '腐蚀用于去掉小噪点和轮廓毛边。', '噪点多时增大；鼠体轮廓被削得太小或断裂时减小。'],
+                            ['<code>dilation_kernel</code> / <code>dilation_iter</code>', '调参页', '膨胀用于补回断裂轮廓和小空洞。', '轮廓破碎时增大；反光或圆筒边缘被粘进鼠体时减小。'],
+                            ['<code>generate_video</code>', '开始分析前', '是否导出带叠加标注的复核视频。', '关闭可提速，但会失去最直观的人工复核材料。正式结果建议至少保留代表样本视频。']
+                        ]
+                    },
+                    scoringTable: {
+                        headers: ['参数', '作用', '结果影响'],
+                        rows: [
+                            ['<code>auto_threshold</code>', '正式分析前先采样运动评分分布，并为每个 ROI 自动估计不动阈值。', '推荐默认开启，尤其是多圆筒或不同视频亮度略有差异时。'],
+                            ['<code>threshold_sensitivity</code>', '在自动阈值基础上做整体偏移。正值更容易判为 immobile，负值更容易判为 active。', '如果活动曲线中漂浮片段略高于阈值，可适当调高；如果轻微活动被算不动，可调低。'],
+                            ['<code>immobility_threshold</code>', '手动不动阈值，关闭自动阈值后生效。低于该值更容易进入 immobile。', '只有在你已经通过活动曲线确认合适阈值时再手动填写。'],
+                            ['<code>smoothing_window_s</code>', '对运动评分做时间平滑，减少单帧噪声导致的状态抖动。', '噪声多可略增大；过大可能抹掉很短的真实活动。'],
+                            ['<code>min_immobility_duration_s</code>', '低运动评分必须持续至少这么久，才保留为不动片段。', '减少偶发低分造成的假不动；设置过大可能漏掉短不动。'],
+                            ['<code>gap_merge_s</code>', '两个不动片段之间很短的 active 间隙会被合并。', '适合处理漂浮时少量划水造成的短暂高分；过大可能吞掉真实活动。'],
+                            ['<code>min_active_duration_s</code>', '内部固定的最短活动片段规则，当前前端默认 0.3 秒。', '用于减少极短 active 抖动，通常无需手动关心。'],
+                            ['<code>bin_seconds</code>', '分箱结果每一行覆盖的时间长度。', '常用 60 秒观察不动比例随时间变化，也可以按实验设计改成更短或更长。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '推荐调参顺序', '先看预览图里轮廓是否稳定，再跑一条完整样本，最后用 ethogram 和活动曲线判断阈值。不要在轮廓明显错误时急着调不动阈值。'],
+                        ['warning', '阈值不是越高越好', '阈值调高会让更多低到中等运动被算作不动；这可能提高不动时间，也可能把真实游动误判为 immobile。最终应以结果视频和活动曲线共同复核。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: 'FST 会导出结果视频、逐帧 track CSV、summary CSV、bins CSV、TXT 报告、ethogram 和活动曲线。批量模式下，每个视频的这些文件会放在该视频自己的结果子文件夹里。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '叠加 ROI、直径线、水线、鼠体轮廓、状态文本和 motion score 的复核视频。'],
+                        ['<code>*_track.csv</code>', '逐帧记录检测状态、运动评分、状态、速度、光流、轮廓形变和统计窗口标记。'],
+                        ['<code>*_summary.csv</code>', '每个圆筒一行的核心统计结果，包括不动时间、不动比例、片段数、潜伏期、阈值和检测率。'],
+                        ['<code>*_bins.csv</code>', '按固定时间箱汇总 active / immobile / uncertain 动态，适合看实验过程中的时间趋势。'],
+                        ['<code>*_report.txt</code>', '基于 summary 的中英双语文本报告，便于快速查看和归档。'],
+                        ['<code>*_ethogram.png</code>', '每个圆筒一条状态带，显示 active、immobile、uncertain 和窗外状态随时间的变化。'],
+                        ['<code>*_activity_curve.png</code>', '显示 motion score 随时间变化，并叠加不动阈值，是调阈值时最重要的图。']
+                    ],
+                    trackTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量汇总或回溯来源时使用。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', '圆筒编号与名称。', '对应标定页中的 ROI 顺序和命名。'],
+                            ['<code>time_s</code>', '视频绝对时间，单位秒。', '用于回定位到结果视频。'],
+                            ['<code>window_time_s</code>', '统计窗口内相对时间，窗口外为空。', '分箱和窗口内曲线主要使用它。'],
+                            ['<code>in_stats_window</code>', '这一帧是否落在该 ROI 的统计窗口内。', 'summary 和 bins 只统计窗口内帧。'],
+                            ['<code>detected</code>', '这一帧是否检测到鼠体。', '检测率低时，先检查 ROI、遮罩、阈值和水面反光。'],
+                            ['<code>state</code>', '状态标签：<code>active</code>、<code>immobile</code>、<code>uncertain</code> 或 <code>outside</code>。', '<code>uncertain</code> 多通常说明检测不稳，不应简单当作不动。'],
+                            ['<code>motion_score</code>', '当前帧综合运动评分。', '越低越接近不动，越高越接近活动；需要结合阈值看。'],
+                            ['<code>smoothed_motion_score</code>', '最终状态判定使用的平滑后运动评分。', '只在最终状态整理后写入部分帧。'],
+                            ['<code>threshold_low</code> / <code>threshold_high</code>', '低阈值与高阈值。', '系统用两个阈值形成滞后来减少 active / immobile 抖动。'],
+                            ['<code>centroid_x</code> / <code>centroid_y</code>', '鼠体轮廓质心的像素坐标。', '用于观察检测是否跳到反光或圆筒边缘。'],
+                            ['<code>speed_cm_s</code>', '质心速度，单位 cm/s。', '已经通过圆筒直径换算到厘米尺度。'],
+                            ['<code>flow_p90_cm_s</code> / <code>flow_mean_cm_s</code>', 'ROI 内光流强度，单位 cm/s。', '对四肢划水、身体局部运动比较敏感。'],
+                            ['<code>shape_change_rate</code>', '轮廓面积变化速率。', '用于补充识别身体形变和姿态变化。'],
+                            ['<code>area_px</code>', '检测到的鼠体轮廓面积。', '突然异常变大或变小通常提示误检或漏检。'],
+                            ['<code>bbox_x</code> / <code>bbox_y</code> / <code>bbox_w</code> / <code>bbox_h</code>', '鼠体轮廓外接框。', '用于定位检测框是否落在正确鼠体上。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量结果回溯来源时使用。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', '圆筒编号和名称。', '每个圆筒一行。'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', '该圆筒使用的时间模式与起止设置。', '用于确认 summary 统计的到底是哪一段。'],
+                            ['<code>analysis_window_start_s</code>', '该统计窗口的实际起点。', 'relative 模式下尤其有用。'],
+                            ['<code>total_time_s</code>', '参与统计的总时长。', '只统计该 ROI 自己的时间窗。'],
+                            ['<code>detected_frames</code> / <code>total_frames</code>', '检测到鼠体的帧数与窗口内总帧数。', '可用于判断检测质量。'],
+                            ['<code>detected_rate_percent</code>', '窗口内检测成功率。', '低检测率会直接降低结果可信度。'],
+                            ['<code>detected_time_s</code>', '检测到鼠体的累计时长。', '和 total_time_s 对比可看漏检程度。'],
+                            ['<code>immobility_time_s</code> / <code>active_time_s</code> / <code>uncertain_time_s</code>', '不动、活动和不确定时长。', 'uncertain 高时优先排查检测，而不是直接解释行为。'],
+                            ['<code>immobility_percent</code> / <code>active_percent</code> / <code>uncertain_percent</code>', '三种状态占统计总时长的比例。', '正式统计最常用的是 immobility_percent。'],
+                            ['<code>immobility_percent_detected</code>', '只在检测到鼠体的时间内计算不动比例。', '当有少量漏检时，可辅助判断是否受 uncertain 影响。'],
+                            ['<code>immobility_bouts</code>', '进入不动状态的片段数。', '可反映状态切换频率。'],
+                            ['<code>longest_immobility_bout_s</code>', '最长连续不动片段时长。', '对持续漂浮片段敏感。'],
+                            ['<code>latency_to_immobility_s</code>', '首次进入不动状态的潜伏期。', '如果一直未进入不动，会为空值。'],
+                            ['<code>mean_motion_score</code> / <code>max_motion_score</code>', '窗口内平均和最大运动评分。', '用于比较整体活动水平，也便于阈值复核。'],
+                            ['<code>immobility_threshold</code> / <code>active_threshold</code>', '最终使用的不动阈值和活动阈值。', '自动阈值开启时，每个 ROI 可不同。'],
+                            ['<code>auto_threshold</code> / <code>threshold_sensitivity</code>', '阈值来源和灵敏度设置。', '便于追溯当时是否自动估计。'],
+                            ['<code>cylinder_diameter_cm</code> / <code>diameter_px</code> / <code>cm_per_px</code>', '圆筒真实直径、像素直径和厘米换算比例。', '跨视频比较时非常重要。'],
+                            ['<code>has_custom_detection_mask</code>', '是否使用了自定义检测遮罩。', '帮助解释检测率和误检差异。']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>bin_index</code>', '时间箱编号。', '从 0 开始。'],
+                            ['<code>start_s</code> / <code>end_s</code>', '该时间箱在统计窗口内的起止秒数。', '不是视频绝对时间，而是窗口内相对时间。'],
+                            ['<code>duration_s</code>', '该箱实际覆盖时长。', '最后一个箱可能短于设置的 bin_seconds。'],
+                            ['<code>detected_rate_percent</code>', '该时间箱内检测率。', '可定位某一段是否追踪不稳。'],
+                            ['<code>immobility_time_s</code> / <code>active_time_s</code> / <code>uncertain_time_s</code>', '该时间箱内三种状态时长。', '适合看不动是否随时间逐渐升高。'],
+                            ['<code>immobility_percent</code>', '该时间箱内不动比例。', '适合画时间趋势或分段统计。'],
+                            ['<code>mean_motion_score</code>', '该时间箱内平均运动评分。', '和 activity curve 可以互相核对。']
+                        ]
+                    },
+                    callouts: [
+                        ['success', '最推荐的复核顺序', '先看 <code>*_activity_curve.png</code> 判断阈值线是否合理，再看 <code>*_ethogram.png</code> 判断状态切换是否符合肉眼观察，最后抽查 <code>*_analyzed.mp4</code> 确认轮廓和 ROI 没有系统性错误。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: 'FST 批量模式的正确姿势是：每个视频单独配置圆筒 ROI、直径线、水线 / 遮罩和时间窗；全部视频配置完成后，再统一启动批量分析。',
+                    steps: [
+                        '在上传页选择 FST，导入多个视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '进入标定页后，使用视频切换器逐个视频检查画面和默认圆筒直径。',
+                        '对当前视频逐个添加圆筒 ROI，完成多边形后为每个圆筒填写名称。',
+                        '为每个圆筒画直径线，输入真实内径；如果需要，补充水线和检测遮罩。',
+                        '为每个圆筒选择 <code>global</code>、<code>relative</code> 或 <code>precise</code> 时间模式，并填写对应起止时间。',
+                        '进入调参步骤，调整检测参数并刷新预览，确认每个圆筒里都能稳定检测到鼠体。',
+                        '继续切换下一个视频重复配置，直到所有视频都完成。',
+                        '启动批量分析。系统会按视频顺序运行，并在每个视频子文件夹中写入 CSV、报告、ethogram、活动曲线和可选结果视频。'
+                    ],
+                    rules: [
+                        '批量模式下，<strong>每个视频</strong>拥有独立的 ROI、直径线、时间窗、检测遮罩和调参参数。',
+                        '同一个视频内部的多个圆筒共享基础检测参数，但自动阈值会按 ROI 独立估计。',
+                        '如果某个圆筒缺少 ROI 或直径线，系统会在开始前拦截，不会带着不完整配置直接分析。',
+                        '批量 ZIP 下载会保留每个视频的子文件夹结构，方便按原始视频回溯结果。'
+                    ],
+                    callouts: [
+                        ['info', '多圆筒的一致性建议', '如果同一画面左右两侧亮度差别明显，先用检测遮罩和曝光改善来解决。因为基础检测参数仍按视频共享，单靠每个 ROI 的自动阈值不能修复严重的分割不一致。']
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: '如果 FST 能跑完但结果和人工观察不一致，建议按“检测轮廓 → ROI / 直径线 → 阈值图 → 时间窗”的顺序排查。',
+                    items: [
+                        '检测不到鼠体或检测率低：检查背景类型、灰度阈值、ROI 是否裁掉鼠体、水面反光是否过强，以及检测遮罩是否过窄。',
+                        '经常把反光或圆筒边缘当成鼠体：先缩小 ROI 到圆筒有效区域，或用检测遮罩排除固定反光和标签，再调高 min_area 或调整形态学参数。',
+                        '明显漂浮却被判为 active：查看活动曲线，如果漂浮段 motion score 长期高于阈值，可适当提高 threshold_sensitivity 或手动提高不动阈值；同时检查是否有水面噪声导致光流虚高。',
+                        '明显游动却被判为 immobile：降低 threshold_sensitivity 或手动降低阈值，并检查 smoothing_window_s、gap_merge_s 是否过大。',
+                        '状态频繁抖动：适当增大 smoothing_window_s、min_immobility_duration_s 或 gap_merge_s，但每次只改一个参数并重新查看 ethogram。',
+                        '某个圆筒和其他圆筒差别很大：检查该圆筒直径线是否画在内壁、ROI 是否包含相邻圆筒、局部照明是否不同。',
+                        'relative 时间窗起点不对：确认视频开头是否已有稳定检测；如果开头漏检，relative 模式的起点会顺延到首次稳定检测时。',
+                        'summary 数值看起来正常但图像很怪：优先相信图像复核。检查 activity curve、ethogram 和结果视频后再决定是否接受这批结果。'
+                    ],
+                    callouts: [
+                        ['danger', '正式统计前必须做的质控', '用于论文、报告或正式统计前，至少应复核代表样本和异常样本的 <code>*_activity_curve.png</code>、<code>*_ethogram.png</code> 与 <code>*_analyzed.mp4</code>。自动阈值提供初始判断，但不能替代研究者对原始视频和关键样本的确认。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Forced Swim Test / FST',
+            heroTitle: 'Forced Swim Test Complete Manual',
+            heroSubtitle: 'This manual covers side-view acquisition, multi-cylinder ROI setup, cylinder-diameter calibration, three time modes, automatic and manual immobility thresholds, ethogram / activity-curve review, and per-video batch configuration.',
+            heroChips: ['Side-view cylinders', 'Diameter normalization', 'active / immobile', 'Three time modes', 'ethogram + activity curve'],
+            heroCards: [
+                ['fas fa-water', 'What the module scores', 'The FST module uses <code>active / immobile</code> scoring by default. Clear swimming, struggling, treading, and climbing-like motion are all merged into active. The module does not force swimming and climbing into separate classes.'],
+                ['fas fa-ruler-horizontal', 'Why cylinder diameter is used', 'In side-view FST videos, body posture changes and the animal is partly submerged, so body-length calibration is unstable. Cylinder inner diameter is a fixed physical scale for normalizing optical flow, centroid speed, and contour change.'],
+                ['fas fa-chart-line', 'Why figures matter', 'FST review should not stop at one summary number. The ethogram shows state switching, and the activity curve shows motion score against the threshold. These are the first QC artifacts to inspect.'],
+            ],
+            flow: ['Video acquisition', 'Upload and time range', 'Cylinder ROI setup', 'Threshold and preview', 'Live monitoring', 'Result review'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Acquisition'],
+                ['upload', 'Upload and time range'],
+                ['calibration', 'Cylinder ROI / diameter / timing'],
+                ['params', 'Parameter dictionary'],
+                ['outputs', 'Result dictionary'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Troubleshooting'],
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The FST module analyzes side-view forced swim videos, especially videos containing one or more cylinders in the same frame. Each cylinder is configured as one ROI. The system detects the animal, computes a motion score, labels active / immobile states, and exports frame-level, summary, binned, and visual QC results.',
+                    points: [
+                        'Each ROI represents one cylinder. Multiple cylinders in one video are scored separately, while basic detection parameters are shared within that video.',
+                        'When automatic thresholding is enabled, the system samples the motion-score distribution and estimates an immobility threshold independently for each cylinder.',
+                        'The motion score is not a single pixel-difference value. It combines optical-flow strength, centroid speed, and contour-shape change, normalized by cylinder diameter.',
+                        '<code>uncertain</code> means the animal was not stably detected inside the statistics window. It should not be treated as immobility by default.'
+                    ],
+                    callouts: [
+                        ['warning', 'Common misunderstanding', 'This module does not separate swimming and climbing by default. For standard FST scoring, the primary readouts are immobility time, immobility percent, latency, and immobility bouts.']
+                    ]
+                },
+                recording: {
+                    title: 'Video Acquisition Requirements',
+                    lead: 'FST quality depends heavily on the video. Water-surface highlights, cylinder edges, neighboring cylinders, and animal-background contrast directly affect detection and threshold estimation.',
+                    blocks: [
+                        {
+                            title: 'Camera and framing',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Use a fixed side-view camera whenever possible. Do not move, zoom, or refocus the camera during recording.',
+                                'The full region where the animal may appear should be visible, including head-above-water motion, forelimb motion, and wall-adjacent motion near the surface.',
+                                'When several cylinders are recorded in the same frame, leave enough space between cylinders so that one cylinder does not intrude into the ROI of another.',
+                                'Seeing the water surface helps manual review, but the physical scale should still be the cylinder diameter, not water depth.'
+                            ]
+                        },
+                        {
+                            title: 'Background, light, and water surface',
+                            icon: 'fas fa-lightbulb',
+                            items: [
+                                'Keep strong contrast between animal and background. Dark animals on light backgrounds usually use <code>light</code>; light animals on dark backgrounds usually use <code>dark</code>.',
+                                'Minimize water highlights, cylinder-wall reflections, label reflections, and flickering bubbles.',
+                                'If fixed reflections cannot be removed, use a detection mask to exclude them instead of shrinking the ROI too aggressively.',
+                                'Keep hands, timer flicker, moving cables, and other moving objects outside the cylinder ROI.'
+                            ]
+                        },
+                        {
+                            title: 'Experimental consistency',
+                            icon: 'fas fa-flask',
+                            items: [
+                                'Use cylinders with the same inner diameter within one batch when possible. If diameters differ, enter the correct real diameter for each ROI.',
+                                'Water level may vary, but the ROI and optional waterline should still allow full animal review.',
+                                'If video FPS metadata is unreliable, override FPS on the upload page because durations, latency, and bout merging all depend on FPS.',
+                                'Before formal statistics, run one or two representative videos end to end and check thresholds and figures against manual observation.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Waterline role', 'The optional waterline is a visual reference in the current implementation. It helps reviewers understand the water surface position. It does not replace ROI drawing or diameter calibration.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and Time Range',
+                    lead: 'The upload page defines which videos are analyzed, the default statistics window, optional FPS override, and the output folder. Each cylinder ROI can still use its own time mode later.',
+                    points: [
+                        'Choose <code>Forced Swim Test</code> as the experiment type to enter the dedicated FST calibration page.',
+                        'The global start / end time on the upload page is the default statistics window. ROIs using <code>global</code> follow this window.',
+                        'If you only want to analyze the formal test period, for example 60 s to 360 s, define that global window first and keep most ROIs in global mode.',
+                        'For batch analysis, group videos with similar acquisition conditions whenever possible. Each video can be configured independently, but similar videos are easier to review and tune.',
+                        'A custom output folder becomes the batch root. Each video receives its own result subfolder.'
+                    ],
+                    callouts: [
+                        ['success', 'When to override FPS', 'If videos come from phones, capture cards, or editing software, FPS metadata can be unreliable. Confirm FPS whenever latency, minimum-bout duration, or temporal bins matter.']
+                    ]
+                },
+                calibration: {
+                    title: 'Cylinder ROI, Diameter Line, Waterline, and Time Window',
+                    lead: 'FST setup is built around one cylinder ROI plus one cylinder inner-diameter line. The ROI defines where detection is allowed, the diameter line defines physical motion normalization, and the time mode defines which segment is summarized.',
+                    blocks: [
+                        {
+                            title: 'How to draw cylinder ROI',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                'Each ROI corresponds to one cylinder and needs at least three points. Draw around the effective activity envelope where the animal may appear.',
+                                'Do not draw only the underwater region. Floating and weak paddling often occur near the water surface, and cropping the head or forelimbs can distort immobility scoring.',
+                                'Do not include the whole frame. Neighboring cylinders, labels, strong highlights, blank background, and device edges increase false detections.',
+                                'A good ROI includes the full possible body contour and wall-adjacent motion while excluding external clutter as much as possible.'
+                            ]
+                        },
+                        {
+                            title: 'How to draw the diameter line',
+                            icon: 'fas fa-ruler-horizontal',
+                            items: [
+                                'Select diameter-line mode, draw a segment between the left and right inner cylinder walls, and enter the real inner diameter in cm.',
+                                'The diameter line is not the waterline and not the animal body length. Water level and body posture should not change this calibration.',
+                                'Place the line on visible inner-wall boundaries when possible. Avoid including glass thickness, outer wall edges, or perspective-expanded borders.',
+                                'If perspective differs across cylinders, draw each cylinder diameter independently instead of copying the first pixel length.'
+                            ]
+                        },
+                        {
+                            title: 'Waterline and detection mask',
+                            icon: 'fas fa-mask',
+                            items: [
+                                'The waterline is optional and is used as a visual reference in annotated videos.',
+                                'The detection mask is also optional. It restricts allowed foreground detection but does not change ROI name, timing, or diameter calibration.',
+                                'Use a detection mask when fixed labels, highlights, black borders, or lens distortion cause false detections.',
+                                'Do not let the mask crop possible head, tail, or wall-adjacent movements, or detection rate will drop.'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['Mode', 'Meaning', 'Recommended use'],
+                        rows: [
+                            ['<code>global</code>', 'Follows the global start / end time on the upload page.', 'All cylinders share the same test duration.'],
+                            ['<code>relative</code>', 'Starts timing from the first stable detection in that ROI, plus ROI-specific offsets.', 'Cylinders are introduced at slightly different moments and should be aligned to first detection.'],
+                            ['<code>precise</code>', 'Uses absolute video time for this ROI.', 'One cylinder needs a fixed video segment different from the rest.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'ROI and diameter are both required', 'The ROI tells the system where to look. The diameter line tells it what a pixel movement means physically. Without a correct diameter line, automatic thresholding and cross-video comparison become less stable.']
+                    ]
+                },
+                params: {
+                    title: 'Parameter Dictionary',
+                    lead: 'FST parameters fall into two groups: detection parameters that stabilize the animal contour, and scoring parameters that convert motion scores into active / immobile states. Stabilize detection before tuning the immobility threshold.',
+                    detectTable: {
+                        headers: ['Parameter', 'Location', 'Role', 'Typical adjustment'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Tuning page', 'Detection method. <code>threshold</code> uses grayscale thresholding; <code>static</code> uses static background subtraction.', 'Both can work with stable backgrounds and low reflection. Thresholding is more direct; static background is useful for fixed-background subtraction.'],
+                            ['<code>bg_type</code>', 'Tuning page', 'Defines whether the background is light or dark and therefore the threshold direction.', 'Dark animal on light background: <code>light</code>. Light animal on dark background: <code>dark</code>.'],
+                            ['<code>gray_threshold</code>', 'Tuning page', 'Segmentation threshold for grayscale thresholding.', 'Make stricter when water or background noise is detected; loosen when the animal is broken or missed.'],
+                            ['<code>min_area</code>', 'Tuning page', 'Rejects contours smaller than this area.', 'Increase when small highlights or bubbles are detected; decrease when small or fragmented animals are filtered out.'],
+                            ['<code>erosion_kernel</code> / <code>erosion_iter</code>', 'Tuning page', 'Erosion removes small noise and rough contour edges.', 'Increase when noise survives; decrease when the animal contour shrinks or breaks.'],
+                            ['<code>dilation_kernel</code> / <code>dilation_iter</code>', 'Tuning page', 'Dilation repairs fragmented contours and small holes.', 'Increase when contours are broken; decrease when reflections or cylinder edges merge into the animal.'],
+                            ['<code>generate_video</code>', 'Before analysis starts', 'Whether to export annotated review video.', 'Turning it off speeds up processing but removes the most direct QC artifact. Keep it for at least representative samples.']
+                        ]
+                    },
+                    scoringTable: {
+                        headers: ['Parameter', 'Role', 'Result impact'],
+                        rows: [
+                            ['<code>auto_threshold</code>', 'Samples motion-score distribution before full analysis and estimates an immobility threshold for each ROI.', 'Recommended by default, especially for multi-cylinder videos or videos with small lighting differences.'],
+                            ['<code>threshold_sensitivity</code>', 'Shifts the automatic threshold. Positive values make immobility easier to call; negative values make active easier to call.', 'Increase if true floating segments sit slightly above the threshold; decrease if weak activity is counted as immobile.'],
+                            ['<code>immobility_threshold</code>', 'Manual threshold used when automatic thresholding is disabled. Scores below it are more likely immobile.', 'Use only after inspecting the activity curve and confirming a suitable value.'],
+                            ['<code>smoothing_window_s</code>', 'Smooths motion score over time to reduce single-frame noise.', 'Increase for noisy curves; too large can erase short real movements.'],
+                            ['<code>min_immobility_duration_s</code>', 'A low-score period must last at least this long to remain an immobility bout.', 'Reduces false immobility from brief dips; too large can miss short immobility.'],
+                            ['<code>gap_merge_s</code>', 'Very short active gaps between two immobility bouts are merged.', 'Useful for tiny paddling bursts during floating; too large can swallow real activity.'],
+                            ['<code>min_active_duration_s</code>', 'Internal minimum active-bout rule, currently set by the UI to 0.3 s.', 'Usually does not need manual attention.'],
+                            ['<code>bin_seconds</code>', 'Temporal bin width for binned outputs.', 'Use 60 s to inspect minute-by-minute dynamics, or adjust to your experimental design.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'Recommended tuning order', 'First make the preview contour stable, then run one full sample, then evaluate the threshold with the ethogram and activity curve. Do not tune immobility threshold while contour detection is clearly wrong.'],
+                        ['warning', 'Higher threshold is not always better', 'A higher threshold labels more low-to-moderate movement as immobile. This may increase immobility time but may also mislabel true activity. Review both video and activity curve.']
+                    ]
+                },
+                outputs: {
+                    title: 'Result Dictionary',
+                    lead: 'FST exports annotated video, frame-level track CSV, summary CSV, bins CSV, TXT report, ethogram, and activity curve. In batch mode, each video stores these files in its own result subfolder.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated review video with ROI, diameter line, waterline, animal contour, state label, and motion score.'],
+                        ['<code>*_track.csv</code>', 'Frame-level detection state, motion score, behavioral state, speed, optical flow, contour change, and window flags.'],
+                        ['<code>*_summary.csv</code>', 'One row per cylinder with immobility time, immobility percent, bouts, latency, threshold, and detection rate.'],
+                        ['<code>*_bins.csv</code>', 'Fixed-width temporal bins for active / immobile / uncertain dynamics.'],
+                        ['<code>*_report.txt</code>', 'Readable bilingual text report generated from summary values.'],
+                        ['<code>*_ethogram.png</code>', 'One state strip per cylinder showing active, immobile, uncertain, and outside states over time.'],
+                        ['<code>*_activity_curve.png</code>', 'Motion score over time with immobility threshold overlay. This is the most important threshold-review figure.']
+                    ],
+                    trackTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Useful for tracing batch results back to source videos.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'Cylinder index and name.', 'Matches ROI order and labels on the calibration page.'],
+                            ['<code>time_s</code>', 'Absolute video time in seconds.', 'Use it to locate the frame in the annotated video.'],
+                            ['<code>window_time_s</code>', 'Relative time inside the statistics window; empty outside the window.', 'Used by bins and within-window curves.'],
+                            ['<code>in_stats_window</code>', 'Whether this frame is inside this ROI statistics window.', 'Summary and bins only use frames inside the window.'],
+                            ['<code>detected</code>', 'Whether the animal was detected in this frame.', 'Low detection rate points to ROI, mask, threshold, or reflection issues.'],
+                            ['<code>state</code>', 'Behavior state: <code>active</code>, <code>immobile</code>, <code>uncertain</code>, or <code>outside</code>.', 'Frequent <code>uncertain</code> usually means unstable detection, not true immobility.'],
+                            ['<code>motion_score</code>', 'Composite motion score for the current frame.', 'Lower is closer to immobile, higher is closer to active; interpret with thresholds.'],
+                            ['<code>smoothed_motion_score</code>', 'Smoothed motion score used for final state labeling.', 'Written after final state cleanup for valid frames.'],
+                            ['<code>threshold_low</code> / <code>threshold_high</code>', 'Low and high thresholds.', 'The two thresholds form hysteresis to reduce active / immobile flicker.'],
+                            ['<code>centroid_x</code> / <code>centroid_y</code>', 'Pixel centroid of the detected animal contour.', 'Use it to identify jumps to reflections or cylinder edges.'],
+                            ['<code>speed_cm_s</code>', 'Centroid speed in cm/s.', 'Converted using cylinder-diameter calibration.'],
+                            ['<code>flow_p90_cm_s</code> / <code>flow_mean_cm_s</code>', 'Optical-flow strength in cm/s.', 'Sensitive to limb paddling and local body movement.'],
+                            ['<code>shape_change_rate</code>', 'Contour area change rate.', 'Complements body deformation and posture changes.'],
+                            ['<code>area_px</code>', 'Detected animal contour area.', 'Sudden abnormal changes suggest false detection or missed detection.'],
+                            ['<code>bbox_x</code> / <code>bbox_y</code> / <code>bbox_w</code> / <code>bbox_h</code>', 'Bounding box of the detected contour.', 'Helps confirm that detection is on the animal.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Useful for tracing batch outputs.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'Cylinder index and name.', 'One row per cylinder.'],
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'Timing mode and configured bounds for this cylinder.', 'Confirms which segment was summarized.'],
+                            ['<code>analysis_window_start_s</code>', 'Actual start of the statistics window.', 'Especially useful in relative mode.'],
+                            ['<code>total_time_s</code>', 'Total duration included in statistics.', 'Only this ROI own time window is counted.'],
+                            ['<code>detected_frames</code> / <code>total_frames</code>', 'Detected frames and total frames in the window.', 'Basic tracking-quality check.'],
+                            ['<code>detected_rate_percent</code>', 'Detection success rate inside the window.', 'Low values reduce result reliability.'],
+                            ['<code>detected_time_s</code>', 'Total duration with successful detection.', 'Compare with total_time_s to estimate missed tracking.'],
+                            ['<code>immobility_time_s</code> / <code>active_time_s</code> / <code>uncertain_time_s</code>', 'Duration of immobile, active, and uncertain states.', 'High uncertain time should trigger detection QC.'],
+                            ['<code>immobility_percent</code> / <code>active_percent</code> / <code>uncertain_percent</code>', 'State percentages over total analyzed duration.', 'The most common formal readout is immobility_percent.'],
+                            ['<code>immobility_percent_detected</code>', 'Immobility percent calculated only over detected time.', 'Helpful when missed detection is limited but nonzero.'],
+                            ['<code>immobility_bouts</code>', 'Number of entries into immobility.', 'Reflects state switching frequency.'],
+                            ['<code>longest_immobility_bout_s</code>', 'Longest continuous immobility bout.', 'Sensitive to sustained floating.'],
+                            ['<code>latency_to_immobility_s</code>', 'Latency to first immobility.', 'Empty if immobility never occurs.'],
+                            ['<code>mean_motion_score</code> / <code>max_motion_score</code>', 'Mean and maximum motion score inside the window.', 'Useful for overall activity comparison and threshold review.'],
+                            ['<code>immobility_threshold</code> / <code>active_threshold</code>', 'Final immobility and active thresholds.', 'With auto thresholding, each ROI may have a different value.'],
+                            ['<code>auto_threshold</code> / <code>threshold_sensitivity</code>', 'Threshold source and sensitivity setting.', 'Records whether the threshold was estimated automatically.'],
+                            ['<code>cylinder_diameter_cm</code> / <code>diameter_px</code> / <code>cm_per_px</code>', 'Real diameter, pixel diameter, and cm-per-pixel scale.', 'Very important for cross-video comparison.'],
+                            ['<code>has_custom_detection_mask</code>', 'Whether a custom detection mask was used.', 'Helps explain detection-rate and false-positive differences.']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>bin_index</code>', 'Temporal bin index.', 'Starts from 0.'],
+                            ['<code>start_s</code> / <code>end_s</code>', 'Start and end seconds within the statistics window.', 'These are window-relative times, not absolute video times.'],
+                            ['<code>duration_s</code>', 'Actual duration covered by this bin.', 'The final bin may be shorter than bin_seconds.'],
+                            ['<code>detected_rate_percent</code>', 'Detection rate in this bin.', 'Locates time periods with unstable tracking.'],
+                            ['<code>immobility_time_s</code> / <code>active_time_s</code> / <code>uncertain_time_s</code>', 'State durations in this bin.', 'Useful for checking whether immobility increases over time.'],
+                            ['<code>immobility_percent</code>', 'Immobility percent in this bin.', 'Useful for time-trend plots or segmented statistics.'],
+                            ['<code>mean_motion_score</code>', 'Mean motion score in this bin.', 'Can be cross-checked against the activity curve.']
+                        ]
+                    },
+                    callouts: [
+                        ['success', 'Recommended review order', 'Start with <code>*_activity_curve.png</code> to judge the threshold line, then inspect <code>*_ethogram.png</code> for state transitions, and finally sample <code>*_analyzed.mp4</code> to confirm contour and ROI quality.']
+                    ]
+                },
+                batch: {
+                    title: 'Batch Workflow',
+                    lead: 'The correct FST batch workflow is: configure each video separately, including cylinder ROIs, diameter lines, optional waterline / masks, and time windows; after all videos are complete, start the batch.',
+                    steps: [
+                        'Choose FST on the upload page, import multiple videos, and set global time range, FPS override, and output folder.',
+                        'On the calibration page, use the video selector to inspect each video and default cylinder diameter.',
+                        'Add cylinder ROIs for the current video and name each cylinder.',
+                        'Draw a diameter line for every cylinder and enter the real inner diameter. Add waterline and detection mask if useful.',
+                        'Select <code>global</code>, <code>relative</code>, or <code>precise</code> timing for each cylinder and fill in the corresponding bounds.',
+                        'Move to tuning, adjust detection parameters, refresh preview, and confirm stable detection in every cylinder.',
+                        'Repeat for the next video until all videos are configured.',
+                        'Start batch analysis. The system processes videos in order and writes CSV files, reports, ethogram, activity curve, and optional annotated video into each video result folder.'
+                    ],
+                    rules: [
+                        'In batch mode, <strong>each video</strong> has independent ROIs, diameter lines, time windows, detection masks, and tuning parameters.',
+                        'Multiple cylinders inside one video share basic detection parameters, while automatic thresholds are estimated independently per ROI.',
+                        'If any cylinder is missing ROI or diameter calibration, the system blocks analysis before start.',
+                        'Batch ZIP downloads preserve per-video folder structure for easier provenance.'
+                    ],
+                    callouts: [
+                        ['info', 'Multi-cylinder consistency', 'If left and right cylinders have very different lighting, solve segmentation with masking or acquisition improvements first. Per-ROI automatic thresholds cannot fix severe foreground-segmentation imbalance by themselves.']
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common Issues and Troubleshooting',
+                    lead: 'If FST finishes but does not match manual observation, troubleshoot in this order: contour detection, ROI / diameter, threshold figure, then time window.',
+                    items: [
+                        'Animal is missed or detection rate is low: check background type, grayscale threshold, whether ROI crops the animal, water-surface highlights, and whether the detection mask is too narrow.',
+                        'Reflections or cylinder edges are detected as animal: tighten the ROI to the cylinder effective region or use a detection mask to exclude fixed highlights and labels, then adjust min_area or morphology.',
+                        'Clear floating is labeled active: inspect the activity curve. If true floating sits above the threshold, increase threshold_sensitivity or use a higher manual threshold. Also check for water-surface noise inflating optical flow.',
+                        'Clear swimming is labeled immobile: reduce threshold_sensitivity or manual threshold, and check whether smoothing_window_s or gap_merge_s is too large.',
+                        'State flickers frequently: slightly increase smoothing_window_s, min_immobility_duration_s, or gap_merge_s, changing one parameter at a time and rechecking the ethogram.',
+                        'One cylinder differs strongly from others: check whether its diameter line is on the inner wall, whether ROI includes neighboring cylinders, and whether local lighting differs.',
+                        'Relative time starts later than expected: confirm that the animal is stably detected at the beginning. In relative mode, timing starts from first stable detection.',
+                        'Summary values look acceptable but figures look strange: trust the visual QC first. Check activity curve, ethogram, and annotated video before accepting the batch.'
+                    ],
+                    callouts: [
+                        ['danger', 'Required QC before formal statistics', 'Before using results in figures, reports, or formal statistics, review at least representative and abnormal samples with <code>*_activity_curve.png</code>, <code>*_ethogram.png</code>, and <code>*_analyzed.mp4</code>. Automatic thresholding is a starting point, not a replacement for researcher review.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function render(lang) {
+        const copy = FST_MANUAL[lang] || FST_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('fst-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow(copy.flow)}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        ${renderBlocks(s.calibration.blocks)}
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI time-window modes' : 'ROI 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                        ${renderCallouts(s.calibration.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-sliders-h" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-chart-area" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Scoring and threshold parameters' : '评分与阈值参数'}</span></div>
+                        ${window.manualRenderTable(s.params.scoringTable.headers, s.params.scoringTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.trackTable.headers, s.outputs.trackTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_bins.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.binsTable.headers, s.outputs.binsTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                        ${renderCallouts(s.batch.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

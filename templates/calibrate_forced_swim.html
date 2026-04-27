@@ -1,0 +1,1232 @@
+{% extends "base.html" %}
+{% block title %}强迫游泳实验配置 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.fst-shell { max-width: 1480px; margin: 0 auto; }
+.fst-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+.fst-steps { display:inline-flex; gap:0.5rem; padding:0.4rem; border:1px solid var(--border-card); background:var(--bg-card); border-radius:999px; }
+.fst-step { border:0; background:transparent; color:var(--text-muted); padding:0.55rem 1rem; border-radius:999px; font-weight:700; }
+.fst-step.active { background:rgba(201,100,66,0.12); color:var(--primary-color); }
+.fst-step.done { color:var(--success-color); }
+.fst-panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.25rem; margin-bottom:1rem; }
+.fst-row { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(340px,0.9fr); gap:1rem; align-items:start; }
+.fst-hint { color:var(--text-muted); font-size:0.92rem; line-height:1.7; margin-bottom:0.9rem; }
+.fst-canvas-wrap { background:#151311; border:1px solid rgba(255,255,255,0.08); border-radius:18px; padding:0.75rem; }
+.fst-canvas-wrap canvas { display:block; width:100%; max-width:100%; height:auto; background:#000; border-radius:14px; cursor:crosshair; }
+.fst-toolbar { display:flex; gap:0.7rem; flex-wrap:wrap; align-items:center; }
+.fst-preview { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.fst-preview canvas { height:320px; }
+.fst-card-list { display:grid; gap:0.8rem; }
+.fst-roi-card { border:1px solid var(--border-card); border-radius:16px; padding:0.9rem; background:var(--bg-page); }
+.fst-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.75rem; }
+.fst-card-title { font-weight:800; color:var(--text-primary); }
+.fst-card-meta { color:var(--text-muted); font-size:0.86rem; line-height:1.5; }
+.compact-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.85rem; }
+.param-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.step-pane { display:none; }
+.step-pane.active { display:block; }
+.range-line { display:flex; justify-content:space-between; font-size:0.82rem; color:var(--text-muted); }
+.mini-note { font-size:0.86rem; color:var(--text-muted); line-height:1.6; }
+.status-strip { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.85rem; }
+.status-pill { display:inline-flex; align-items:center; gap:0.35rem; padding:0.4rem 0.72rem; border-radius:999px; background:var(--bg-page); border:1px solid var(--border-card); color:var(--text-secondary); }
+.loading-overlay { position:fixed; inset:0; background:rgba(245,244,237,0.82); display:flex; justify-content:center; align-items:center; z-index:9999; }
+.spinner { width:48px; height:48px; border:3px solid var(--border-card); border-top-color:var(--primary-color); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (max-width: 1100px) {
+    .fst-row, .fst-preview, .param-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 640px) {
+    .compact-grid { grid-template-columns:1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
+
+<div class="fst-shell">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <strong data-fst-i18n="workspace.title">批量单视频编辑模式</strong>
+            <div class="small mt-1" data-fst-i18n="workspace.body">保存当前视频的圆筒 ROI、直径线和参数后返回批次页面，再统一启动整批分析。</div>
+        </div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
+            <i class="fas fa-layer-group me-2"></i><span data-fst-i18n="workspace.back">返回批次页面</span>
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="fst-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-fst-i18n="header.title">强迫游泳实验配置</h1>
+            <div class="text-secondary" data-fst-i18n="header.subtitle">侧视多圆筒 FST，使用圆筒直径线归一化运动评分，输出不动时间、ethogram 与活动曲线。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='fst') }}" target="_blank">
+                <i class="fas fa-book-open me-2"></i><span data-fst-i18n="header.manual">FST 使用手册</span>
+            </a>
+            <div class="fst-steps">
+                <button class="fst-step active" id="stepNav1" type="button" onclick="goToStep(1)" data-fst-i18n="step.roi">1. 圆筒与直径</button>
+                <button class="fst-step" id="stepNav2" type="button" onclick="goToStep(2)" data-fst-i18n="step.debug">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="fst-row">
+            <div class="fst-panel">
+                <div class="compact-grid mb-3">
+                    <div>
+                        <label class="form-label" data-fst-i18n="field.default_diameter">默认圆筒内径 (cm)</label>
+                        <input type="number" class="form-control" id="defaultDiameterCm" min="1" step="0.1" value="10" onchange="persistCurrentVideoState(); updateCylinderList(); drawFstCanvas();">
+                    </div>
+                    {% if is_batch and launch_mode != 'workspace' %}
+                    <div>
+                        <label class="form-label" data-fst-i18n="field.preview_video">预览视频</label>
+                        <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                            {% for video in video_list %}
+                            <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="fst-hint" data-fst-i18n="hint.roi">每个圆筒画一个 ROI，边界应覆盖这只鼠可能出现的完整有效区域：包含水面以上头部和贴壁动作，不要把相邻圆筒、大面积空白或强反光一起框进去。完成 ROI 后在右侧卡片里为该圆筒画一条横跨内壁的直径线。</div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-fst-i18n="field.frame">选择帧</label>
+                        <span id="frameLabelRoi" class="mini-note">Frame 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderRoi" min="0" max="0" value="0" oninput="onRoiFrameChange(this.value)">
+                </div>
+
+                <div class="fst-canvas-wrap">
+                    <canvas id="fstCanvas"></canvas>
+                </div>
+
+                <div class="fst-toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="startNewCylinder()">
+                        <i class="fas fa-plus me-2"></i><span data-fst-i18n="btn.add">新增圆筒 ROI</span>
+                    </button>
+                    <button class="btn btn-success" type="button" id="finishRoiBtn" onclick="finishCurrentCylinder()" disabled>
+                        <i class="fas fa-check me-2"></i><span data-fst-i18n="btn.finish">完成当前 ROI</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoCurrentPoint()">
+                        <i class="fas fa-undo me-2"></i><span data-fst-i18n="btn.undo">撤销一点</span>
+                    </button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAllCylinders()">
+                        <i class="fas fa-trash me-2"></i><span data-fst-i18n="btn.clear">清空全部</span>
+                    </button>
+                    <button class="btn btn-outline-warning" type="button" id="finishMaskBtn" onclick="finishMaskEdit()" style="display:none;">
+                        <i class="fas fa-draw-polygon me-2"></i><span data-fst-i18n="btn.finish_mask">完成检测遮罩</span>
+                    </button>
+                    <button class="btn btn-outline-secondary" type="button" id="cancelEditBtn" onclick="cancelSpecialEdit()" style="display:none;">
+                        <i class="fas fa-times me-2"></i><span data-fst-i18n="btn.cancel">取消编辑</span>
+                    </button>
+                    <button class="btn btn-success ms-auto" type="button" id="toDebugBtn" onclick="goToStep(2)" disabled>
+                        <i class="fas fa-arrow-right me-2"></i><span data-fst-i18n="btn.to_debug">进入调参</span>
+                    </button>
+                </div>
+
+                <div class="status-strip">
+                    <div class="status-pill"><strong data-fst-i18n="status.rois">圆筒数</strong> <span id="roiCountText">0</span></div>
+                    <div class="status-pill"><strong data-fst-i18n="status.points">当前点数</strong> <span id="currentPointText">0</span></div>
+                    <div class="status-pill"><strong data-fst-i18n="status.mode">当前模式</strong> <span id="drawModeText">查看</span></div>
+                </div>
+            </div>
+
+            <div class="fst-panel">
+                <h5 class="mb-3" data-fst-i18n="list.title">圆筒列表</h5>
+                <div class="fst-hint" data-fst-i18n="list.hint">每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。</div>
+                <div id="cylinderList" class="fst-card-list">
+                    <div class="mini-note" data-fst-i18n="list.empty">还没有添加圆筒 ROI。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="fst-panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h5 class="mb-1" data-fst-i18n="debug.title">调参与预览</h5>
+                    <div class="mini-note" data-fst-i18n="debug.subtitle">预览用于检查圆筒 ROI、直径线和小鼠轮廓检测。正式分析时系统会按每个 ROI 自动估计初始不动阈值。</div>
+                </div>
+                <div class="fst-toolbar">
+                    <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)">
+                        <i class="fas fa-arrow-left me-2"></i><span data-fst-i18n="btn.back">返回圆筒页</span>
+                    </button>
+                    <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()">
+                        <i class="fas fa-sync-alt me-2"></i><span data-fst-i18n="btn.refresh">刷新预览</span>
+                    </button>
+                    <button class="btn btn-success" type="button" id="primaryActionBtn" onclick="startAnalysis()">
+                        <i class="fas fa-play me-2"></i><span id="primaryActionText" data-fst-i18n="btn.start">开始 FST 分析</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0" data-fst-i18n="field.preview_frame">预览帧</label>
+                    <span id="frameLabelDebug" class="mini-note">Frame 0 / 0</span>
+                </div>
+                <input type="range" class="form-range" id="frameSliderDebug" min="0" max="0" value="0" oninput="onDebugFrameChange(this.value)">
+            </div>
+
+            <div class="fst-preview mb-4">
+                <div class="fst-canvas-wrap"><canvas id="previewOriginal"></canvas></div>
+                <div class="fst-canvas-wrap"><canvas id="previewResult"></canvas></div>
+            </div>
+
+            <div class="param-grid">
+                <div class="fst-panel mb-0">
+                    <h6 data-fst-i18n="detect.title">检测参数</h6>
+                    <div class="compact-grid">
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.method">检测方式</label>
+                            <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">
+                                <option value="threshold">灰度阈值</option>
+                                <option value="static">静态背景减除</option>
+                            </select>
+                        </div>
+                        <div id="bgTypeWrap">
+                            <label class="form-label" data-fst-i18n="detect.bg_type">背景类型</label>
+                            <select class="form-select" id="bgType" onchange="updateDebugPreview()">
+                                <option value="light" data-fst-i18n="detect.bg_light">浅色背景 / 深色鼠</option>
+                                <option value="dark" data-fst-i18n="detect.bg_dark">深色背景 / 浅色鼠</option>
+                            </select>
+                        </div>
+                        <div id="grayThresholdWrap">
+                            <label class="form-label" data-fst-i18n="detect.gray">灰度阈值</label>
+                            <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
+                            <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.min_area">最小面积</label>
+                            <input type="range" class="form-range" id="minArea" min="10" max="8000" value="80" oninput="syncRangeLabel('minArea'); updateDebugPreview()">
+                            <div class="range-line"><span>10</span><span id="minAreaLabel">80</span><span>8000</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.erosion_kernel">腐蚀核</label>
+                            <input type="range" class="form-range" id="erosionKernel" min="1" max="15" value="3" oninput="syncRangeLabel('erosionKernel'); updateDebugPreview()">
+                            <div class="range-line"><span>1</span><span id="erosionKernelLabel">3</span><span>15</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.erosion_iter">腐蚀次数</label>
+                            <input type="range" class="form-range" id="erosionIter" min="0" max="8" value="1" oninput="syncRangeLabel('erosionIter'); updateDebugPreview()">
+                            <div class="range-line"><span>0</span><span id="erosionIterLabel">1</span><span>8</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.dilation_kernel">膨胀核</label>
+                            <input type="range" class="form-range" id="dilationKernel" min="1" max="15" value="5" oninput="syncRangeLabel('dilationKernel'); updateDebugPreview()">
+                            <div class="range-line"><span>1</span><span id="dilationKernelLabel">5</span><span>15</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="detect.dilation_iter">膨胀次数</label>
+                            <input type="range" class="form-range" id="dilationIter" min="0" max="8" value="2" oninput="syncRangeLabel('dilationIter'); updateDebugPreview()">
+                            <div class="range-line"><span>0</span><span id="dilationIterLabel">2</span><span>8</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fst-panel mb-0">
+                    <h6 data-fst-i18n="stats.title">统计与阈值</h6>
+                    <div class="compact-grid">
+                        <div class="d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoThreshold" checked onchange="updateThresholdUI();">
+                                <label class="form-check-label" for="autoThreshold" data-fst-i18n="stats.auto">自动估计不动阈值</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="stats.sensitivity">阈值灵敏度</label>
+                            <input type="range" class="form-range" id="thresholdSensitivity" min="-3" max="3" step="0.5" value="0" oninput="syncRangeLabel('thresholdSensitivity')">
+                            <div class="range-line"><span>-3</span><span id="thresholdSensitivityLabel">0</span><span>3</span></div>
+                        </div>
+                        <div id="manualThresholdBox">
+                            <label class="form-label" data-fst-i18n="stats.threshold">手动不动阈值</label>
+                            <input type="number" class="form-control" id="immobilityThreshold" min="0" step="0.001" value="0.08">
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="stats.smoothing">平滑窗口 (s)</label>
+                            <input type="number" class="form-control" id="smoothingWindow" min="0" step="0.1" value="0.5">
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="stats.min_immobile">最短不动片段 (s)</label>
+                            <input type="number" class="form-control" id="minImmobility" min="0" step="0.1" value="1.0">
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="stats.gap_merge">短活动间隙合并 (s)</label>
+                            <input type="number" class="form-control" id="gapMerge" min="0" step="0.1" value="0.5">
+                        </div>
+                        <div>
+                            <label class="form-label" data-fst-i18n="stats.bin">分箱时长 (s)</label>
+                            <input type="number" class="form-control" id="binSeconds" min="1" step="1" value="60">
+                            <div class="mini-note" data-fst-i18n="stats.bin_note">可选，仅影响 bins.csv 和时间动态复核</div>
+                        </div>
+                        <div class="d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                <label class="form-check-label" for="generateVideo" data-fst-i18n="stats.video">生成标注视频</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="status-strip mt-3">
+                        <div class="status-pill" id="previewStatus" data-fst-i18n="preview.waiting">等待预览</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
+const isBatch = {{ is_batch | tojson }};
+const launchMode = {{ launch_mode | tojson }};
+const currentVideoIndexFromServer = {{ current_video_index | tojson }};
+const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
+const initialDraftPayload = {{ draft_payload | tojson }};
+{% if video_list %}
+const videoList = {{ video_list | tojson }};
+{% else %}
+const videoList = [];
+{% endif %}
+
+const FST_I18N = {
+    zh: {
+        'workspace.title': '批量单视频编辑模式',
+        'workspace.body': '保存当前视频的圆筒 ROI、直径线和参数后返回批次页面，再统一启动整批分析。',
+        'workspace.back': '返回批次页面',
+        'header.title': '强迫游泳实验配置',
+        'header.subtitle': '侧视多圆筒 FST，使用圆筒直径线归一化运动评分，输出不动时间、ethogram 与活动曲线。',
+        'header.manual': 'FST 使用手册',
+        'step.roi': '1. 圆筒与直径',
+        'step.debug': '2. 调参与启动',
+        'field.default_diameter': '默认圆筒内径 (cm)',
+        'field.preview_video': '预览视频',
+        'field.frame': '选择帧',
+        'field.preview_frame': '预览帧',
+        'hint.roi': '每个圆筒画一个 ROI，边界应覆盖这只鼠可能出现的完整有效区域：包含水面以上头部和贴壁动作，不要把相邻圆筒、大面积空白或强反光一起框进去。完成 ROI 后在右侧卡片里为该圆筒画一条横跨内壁的直径线。',
+        'btn.add': '新增圆筒 ROI',
+        'btn.finish': '完成当前 ROI',
+        'btn.undo': '撤销一点',
+        'btn.clear': '清空全部',
+        'btn.finish_mask': '完成检测遮罩',
+        'btn.cancel': '取消编辑',
+        'btn.to_debug': '进入调参',
+        'btn.back': '返回圆筒页',
+        'btn.refresh': '刷新预览',
+        'btn.start': '开始 FST 分析',
+        'btn.save': '保存设置并返回批次页面',
+        'status.rois': '圆筒数',
+        'status.points': '当前点数',
+        'status.mode': '当前模式',
+        'mode.view': '查看',
+        'mode.roi': '绘制圆筒 ROI',
+        'mode.diameter': '绘制直径线',
+        'mode.waterline': '绘制水位线',
+        'mode.mask': '编辑检测遮罩',
+        'list.title': '圆筒列表',
+        'list.hint': '每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。',
+        'list.empty': '还没有添加圆筒 ROI。',
+        'card.points': 'ROI 点',
+        'card.diameter_ready': '直径线已设置',
+        'card.diameter_missing': '缺少直径线',
+        'card.mask_default': '检测遮罩默认跟随 ROI',
+        'card.mask_custom': '自定义检测遮罩',
+        'card.name': '名称',
+        'card.diameter_cm': '圆筒内径 (cm)',
+        'card.time_mode': '统计模式',
+        'card.global': '跟随全局',
+        'card.relative': '相对首次检测',
+        'card.precise': '精确时间段',
+        'card.start': '开始时间 (s)',
+        'card.end': '结束时间 (s)',
+        'card.draw_diameter': '绘制直径线',
+        'card.draw_waterline': '绘制水位线',
+        'card.edit_mask': '编辑检测遮罩',
+        'card.reset_mask': '恢复默认遮罩',
+        'card.delete': '删除',
+        'debug.title': '调参与预览',
+        'debug.subtitle': '预览用于检查圆筒 ROI、直径线和小鼠轮廓检测。正式分析时系统会按每个 ROI 自动估计初始不动阈值。',
+        'detect.title': '检测参数',
+        'detect.method': '检测方式',
+        'detect.bg_type': '背景类型',
+        'detect.bg_light': '浅色背景 / 深色鼠',
+        'detect.bg_dark': '深色背景 / 浅色鼠',
+        'detect.gray': '灰度阈值',
+        'detect.min_area': '最小面积',
+        'detect.erosion_kernel': '腐蚀核',
+        'detect.erosion_iter': '腐蚀次数',
+        'detect.dilation_kernel': '膨胀核',
+        'detect.dilation_iter': '膨胀次数',
+        'stats.title': '统计与阈值',
+        'stats.auto': '自动估计不动阈值',
+        'stats.sensitivity': '阈值灵敏度',
+        'stats.threshold': '手动不动阈值',
+        'stats.smoothing': '平滑窗口 (s)',
+        'stats.min_immobile': '最短不动片段 (s)',
+        'stats.gap_merge': '短活动间隙合并 (s)',
+        'stats.bin': '分箱时长（可选, s）',
+        'stats.bin_note': '可选，仅影响 bins.csv 和时间动态复核',
+        'stats.video': '生成标注视频',
+        'preview.waiting': '等待预览',
+        'preview.detected': '检测到 {0} / {1} 个圆筒目标',
+        'preview.failed': '预览失败',
+        'alert.need_roi': '请至少完成一个圆筒 ROI。',
+        'alert.need_points': '当前 ROI 至少需要 3 个点。',
+        'alert.need_diameter': '每个圆筒都需要绘制直径线。',
+        'alert.need_mask': '检测遮罩至少需要 3 个点。',
+        'alert.batch_incomplete': '开始批量分析前，请先完成每个视频的 FST 配置：\n{0}',
+        'alert.batch_missing': '{0}. {1}: 缺少圆筒 ROI 或直径线',
+        'alert.start_failed': '启动分析失败',
+        'frame': '帧'
+    },
+    en: {
+        'workspace.title': 'Batch single-video editing',
+        'workspace.body': 'Save this video’s cylinder ROIs, diameter lines, and parameters, then return to the batch page to start the run.',
+        'workspace.back': 'Back to Batch',
+        'header.title': 'Forced Swim Test Setup',
+        'header.subtitle': 'Side-view multi-cylinder FST with cylinder-diameter normalization, immobility scoring, ethogram, and activity curve outputs.',
+        'header.manual': 'FST Manual',
+        'step.roi': '1. Cylinders',
+        'step.debug': '2. Tune & Start',
+        'field.default_diameter': 'Default Diameter (cm)',
+        'field.preview_video': 'Preview Video',
+        'field.frame': 'Frame',
+        'field.preview_frame': 'Preview Frame',
+        'hint.roi': 'Draw one ROI for each cylinder. Cover the full effective area where the mouse can appear, including head-above-water and wall-adjacent motion. Avoid neighboring cylinders, empty space, and strong reflections. Then draw a diameter line across the inner cylinder walls.',
+        'btn.add': 'Add Cylinder ROI',
+        'btn.finish': 'Finish ROI',
+        'btn.undo': 'Undo Point',
+        'btn.clear': 'Clear All',
+        'btn.finish_mask': 'Finish Mask',
+        'btn.cancel': 'Cancel Edit',
+        'btn.to_debug': 'Tune Parameters',
+        'btn.back': 'Back to Cylinders',
+        'btn.refresh': 'Refresh Preview',
+        'btn.start': 'Start FST Analysis',
+        'btn.save': 'Save and Return',
+        'status.rois': 'Cylinders',
+        'status.points': 'Points',
+        'status.mode': 'Mode',
+        'mode.view': 'View',
+        'mode.roi': 'Draw ROI',
+        'mode.diameter': 'Draw Diameter',
+        'mode.waterline': 'Draw Waterline',
+        'mode.mask': 'Edit Mask',
+        'list.title': 'Cylinder List',
+        'list.hint': 'Each ROI needs a cylinder diameter line. Timing can follow global settings, first detection, or absolute video time.',
+        'list.empty': 'No cylinder ROI has been added.',
+        'card.points': 'ROI points',
+        'card.diameter_ready': 'Diameter line set',
+        'card.diameter_missing': 'Missing diameter line',
+        'card.mask_default': 'Mask follows ROI',
+        'card.mask_custom': 'Custom detection mask',
+        'card.name': 'Name',
+        'card.diameter_cm': 'Diameter (cm)',
+        'card.time_mode': 'Time Mode',
+        'card.global': 'Follow Global',
+        'card.relative': 'Relative to Detection',
+        'card.precise': 'Precise Time Range',
+        'card.start': 'Start (s)',
+        'card.end': 'End (s)',
+        'card.draw_diameter': 'Draw Diameter',
+        'card.draw_waterline': 'Draw Waterline',
+        'card.edit_mask': 'Edit Mask',
+        'card.reset_mask': 'Reset Mask',
+        'card.delete': 'Delete',
+        'debug.title': 'Tuning and Preview',
+        'debug.subtitle': 'Preview checks ROIs, diameter lines, and segmentation. Full analysis estimates an initial immobility threshold for each ROI.',
+        'detect.title': 'Detection Parameters',
+        'detect.method': 'Detection Method',
+        'detect.bg_type': 'Background Type',
+        'detect.bg_light': 'Light BG / Dark Mouse',
+        'detect.bg_dark': 'Dark BG / Light Mouse',
+        'detect.gray': 'Gray Threshold',
+        'detect.min_area': 'Minimum Area',
+        'detect.erosion_kernel': 'Erosion Kernel',
+        'detect.erosion_iter': 'Erosion Iterations',
+        'detect.dilation_kernel': 'Dilation Kernel',
+        'detect.dilation_iter': 'Dilation Iterations',
+        'stats.title': 'Scoring and Threshold',
+        'stats.auto': 'Auto-estimate immobility threshold',
+        'stats.sensitivity': 'Threshold Sensitivity',
+        'stats.threshold': 'Manual Threshold',
+        'stats.smoothing': 'Smoothing Window (s)',
+        'stats.min_immobile': 'Min Immobility Bout (s)',
+        'stats.gap_merge': 'Merge Active Gaps (s)',
+        'stats.bin': 'Bin Duration (optional, s)',
+        'stats.bin_note': 'Optional. Only affects bins.csv and temporal QC.',
+        'stats.video': 'Generate Annotated Video',
+        'preview.waiting': 'Waiting for preview',
+        'preview.detected': 'Detected {0} / {1} cylinder targets',
+        'preview.failed': 'Preview failed',
+        'alert.need_roi': 'Please finish at least one cylinder ROI.',
+        'alert.need_points': 'The current ROI needs at least 3 points.',
+        'alert.need_diameter': 'Every cylinder needs a diameter line.',
+        'alert.need_mask': 'Detection mask needs at least 3 points.',
+        'alert.batch_incomplete': 'Complete every FST batch video before starting:\n{0}',
+        'alert.batch_missing': '{0}. {1}: missing cylinder ROI or diameter line',
+        'alert.start_failed': 'Failed to start analysis',
+        'frame': 'Frame'
+    }
+};
+
+let baseFrame = null;
+let currentVideoIdx = parseInt(currentVideoIndexFromServer || 0, 10) || 0;
+let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+let rois = [];
+let currentROI = [];
+let currentEditPoints = [];
+let drawMode = 'view';
+let editIndex = null;
+let debounceTimers = {};
+const MIN_MASK_POINTS = 3;
+const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+
+function lang() { return (typeof getLang === 'function') ? getLang() : 'zh'; }
+function tr(key, fallback) { return (FST_I18N[lang()] && FST_I18N[lang()][key]) || fallback || key; }
+function trFormat(key, values, fallback) {
+    let text = tr(key, fallback);
+    (values || []).forEach((value, index) => { text = text.replaceAll(`{${index}}`, value); });
+    return text;
+}
+function applyFstLang() {
+    document.querySelectorAll('[data-fst-i18n]').forEach(el => {
+        const key = el.getAttribute('data-fst-i18n');
+        const val = tr(key, el.textContent);
+        el.textContent = val;
+    });
+    if (launchMode === 'workspace') {
+        const primaryActionText = document.getElementById('primaryActionText');
+        if (primaryActionText) primaryActionText.textContent = tr('btn.save', 'Save and Return');
+    }
+    refreshLocalizedState();
+}
+function cloneState(value) { return JSON.parse(JSON.stringify(value)); }
+function currentVideoName(index) { return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`; }
+function frameLabelText(current, total) { return `${tr('frame', 'Frame')} ${current} / ${total}`; }
+function cylinderDefaultName(index) { return `Cylinder ${index + 1}`; }
+function defaultTuningParams() {
+    return {
+        bg_method: 'threshold',
+        bg_type: 'light',
+        gray_threshold: 127,
+        erosion_kernel: 3,
+        erosion_iter: 1,
+        dilation_kernel: 5,
+        dilation_iter: 2,
+        min_area: 80,
+        auto_threshold: true,
+        immobility_threshold: 0.08,
+        threshold_sensitivity: 0,
+        smoothing_window_s: 0.5,
+        min_immobility_duration_s: 1.0,
+        min_active_duration_s: 0.3,
+        gap_merge_s: 0.5,
+        bin_seconds: 60
+    };
+}
+function readTuningParamsFromControls() {
+    const auto = document.getElementById('autoThreshold')?.checked ?? true;
+    return {
+        bg_method: document.getElementById('bgMethod')?.value || 'threshold',
+        bg_type: document.getElementById('bgType')?.value || 'light',
+        gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
+        erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
+        dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
+        dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '2', 10),
+        min_area: parseInt(document.getElementById('minArea')?.value || '80', 10),
+        auto_threshold: auto,
+        immobility_threshold: auto ? null : parseFloat(document.getElementById('immobilityThreshold')?.value || '0.08'),
+        threshold_sensitivity: parseFloat(document.getElementById('thresholdSensitivity')?.value || '0'),
+        smoothing_window_s: parseFloat(document.getElementById('smoothingWindow')?.value || '0.5'),
+        min_immobility_duration_s: parseFloat(document.getElementById('minImmobility')?.value || '1.0'),
+        min_active_duration_s: 0.3,
+        gap_merge_s: parseFloat(document.getElementById('gapMerge')?.value || '0.5'),
+        bin_seconds: parseFloat(document.getElementById('binSeconds')?.value || '60')
+    };
+}
+function applyTuningParamsToControls(params) {
+    const merged = { ...defaultTuningParams(), ...(params || {}) };
+    const fieldMap = {
+        bgMethod: merged.bg_method,
+        bgType: merged.bg_type,
+        grayThreshold: merged.gray_threshold,
+        erosionKernel: merged.erosion_kernel,
+        erosionIter: merged.erosion_iter,
+        dilationKernel: merged.dilation_kernel,
+        dilationIter: merged.dilation_iter,
+        minArea: merged.min_area,
+        thresholdSensitivity: merged.threshold_sensitivity,
+        immobilityThreshold: merged.immobility_threshold ?? 0.08,
+        smoothingWindow: merged.smoothing_window_s,
+        minImmobility: merged.min_immobility_duration_s,
+        gapMerge: merged.gap_merge_s,
+        binSeconds: merged.bin_seconds
+    };
+    Object.entries(fieldMap).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = String(value);
+    });
+    const auto = document.getElementById('autoThreshold');
+    if (auto) auto.checked = Boolean(merged.auto_threshold);
+    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea', 'thresholdSensitivity'].forEach(syncRangeLabel);
+    updateBgMethodUI();
+    updateThresholdUI();
+}
+
+let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
+    cylinder_diameter_cm: 10.0,
+    rois: [],
+    current_roi: [],
+    current_edit_points: [],
+    draw_mode: 'view',
+    edit_index: null,
+    tuning_params: defaultTuningParams()
+}));
+
+function ensureVideoConfig(index) {
+    if (!videoConfigs[index]) {
+        videoConfigs[index] = {
+            cylinder_diameter_cm: 10.0,
+            rois: [],
+            current_roi: [],
+            current_edit_points: [],
+            draw_mode: 'view',
+            edit_index: null,
+            tuning_params: defaultTuningParams()
+        };
+    }
+    return videoConfigs[index];
+}
+function persistCurrentVideoState() {
+    const cfg = ensureVideoConfig(currentVideoIdx);
+    const diameter = parseFloat(document.getElementById('defaultDiameterCm')?.value || '10');
+    cfg.cylinder_diameter_cm = Number.isFinite(diameter) ? diameter : 10.0;
+    cfg.rois = cloneState(rois);
+    cfg.current_roi = cloneState(currentROI);
+    cfg.current_edit_points = cloneState(currentEditPoints);
+    cfg.draw_mode = drawMode;
+    cfg.edit_index = editIndex == null ? null : Number(editIndex);
+    cfg.tuning_params = readTuningParamsFromControls();
+}
+function applyCurrentVideoState() {
+    const cfg = ensureVideoConfig(currentVideoIdx);
+    rois = cloneState(cfg.rois || []);
+    currentROI = cloneState(cfg.current_roi || []);
+    currentEditPoints = cloneState(cfg.current_edit_points || []);
+    drawMode = cfg.draw_mode || 'view';
+    editIndex = cfg.edit_index == null ? null : Number(cfg.edit_index);
+    const input = document.getElementById('defaultDiameterCm');
+    if (input) input.value = String(cfg.cylinder_diameter_cm ?? 10.0);
+    applyTuningParamsToControls(cfg.tuning_params);
+    updateCylinderList();
+    syncFrameControls();
+    syncVideoSelectors();
+    drawFstCanvas();
+}
+function hydrateFromDraftPayload() {
+    if (!initialDraftPayload || typeof initialDraftPayload !== 'object') return;
+    const workspaceConfigs = Array.isArray(initialDraftPayload.workspace_video_configs) ? initialDraftPayload.workspace_video_configs : [];
+    const savedConfigs = Array.isArray(initialDraftPayload.per_video_configs) ? initialDraftPayload.per_video_configs : [];
+    for (let index = 0; index < totalVideoCount; index += 1) {
+        const target = ensureVideoConfig(index);
+        const workspaceCfg = workspaceConfigs[index];
+        if (workspaceCfg && typeof workspaceCfg === 'object') {
+            target.cylinder_diameter_cm = workspaceCfg.cylinder_diameter_cm ?? target.cylinder_diameter_cm;
+            target.rois = cloneState(workspaceCfg.rois || []);
+            target.current_roi = cloneState(workspaceCfg.current_roi || []);
+            target.current_edit_points = cloneState(workspaceCfg.current_edit_points || []);
+            target.draw_mode = workspaceCfg.draw_mode || 'view';
+            target.edit_index = workspaceCfg.edit_index ?? null;
+            target.tuning_params = { ...defaultTuningParams(), ...(workspaceCfg.tuning_params || {}) };
+            continue;
+        }
+        const savedCfg = savedConfigs[index];
+        if (savedCfg && typeof savedCfg === 'object') {
+            target.cylinder_diameter_cm = savedCfg.cylinder_diameter_cm ?? target.cylinder_diameter_cm;
+            target.rois = cloneState(savedCfg.rois || []);
+            target.current_roi = [];
+            target.current_edit_points = [];
+            target.draw_mode = 'view';
+            target.edit_index = null;
+            target.tuning_params = { ...defaultTuningParams(), ...(savedCfg || {}) };
+        }
+    }
+    const generateVideo = document.getElementById('generateVideo');
+    if (generateVideo && typeof initialDraftPayload.generate_video === 'boolean') generateVideo.checked = initialDraftPayload.generate_video;
+}
+
+function currentTotalFrames() {
+    return Math.max(0, ((currentVideoInfo && currentVideoInfo.total_frames) || videoInfo.total_frames || 1) - 1);
+}
+function syncFrameControls() {
+    const total = currentTotalFrames();
+    const roiSlider = document.getElementById('frameSliderRoi');
+    const debugSlider = document.getElementById('frameSliderDebug');
+    [roiSlider, debugSlider].forEach(slider => {
+        if (!slider) return;
+        slider.max = total;
+        if (parseInt(slider.value || '0', 10) > total) slider.value = String(total);
+    });
+    document.getElementById('frameLabelRoi').textContent = frameLabelText(parseInt(roiSlider?.value || '0', 10), total);
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(parseInt(debugSlider?.value || '0', 10), total);
+}
+function syncVideoSelectors() {
+    const selector = document.getElementById('videoSelector');
+    if (!selector) return;
+    selector.value = String(currentVideoIdx);
+    Array.from(selector.options).forEach((option, index) => {
+        const cfg = ensureVideoConfig(index);
+        const ready = Array.isArray(cfg.rois) && cfg.rois.length > 0 && cfg.rois.every(roi => (roi.diameter_points || []).length === 2);
+        option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
+    });
+}
+function refreshLocalizedState() {
+    syncFrameControls();
+    updateCylinderList();
+    updateBgMethodUI();
+    updateThresholdUI();
+    drawFstCanvas();
+    if (!rois.length) document.getElementById('previewStatus').textContent = tr('preview.waiting', 'Waiting for preview');
+}
+function debounce(key, fn, delay) {
+    clearTimeout(debounceTimers[key]);
+    debounceTimers[key] = setTimeout(fn, delay);
+}
+
+function loadFrame(frameIdx, callback) {
+    fetch(`/api/get_first_frame/${sessionId}?frame=${frameIdx}&video=${currentVideoIdx}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert(data.error); return; }
+            if (data.video_info) {
+                currentVideoInfo = data.video_info;
+                videoInfoList[currentVideoIdx] = data.video_info;
+                syncFrameControls();
+            }
+            const img = new Image();
+            img.onload = function () {
+                baseFrame = img;
+                drawFstCanvas();
+                if (callback) callback();
+            };
+            img.src = 'data:image/jpeg;base64,' + data.image;
+        })
+        .catch(err => console.error(err));
+}
+
+function canvasPointFromEvent(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: Math.round((e.clientX - rect.left) * canvas.width / rect.width),
+        y: Math.round((e.clientY - rect.top) * canvas.height / rect.height)
+    };
+}
+function modeLabel() {
+    if (drawMode === 'roi') return tr('mode.roi', 'Draw ROI');
+    if (drawMode === 'diameter') return tr('mode.diameter', 'Draw Diameter');
+    if (drawMode === 'waterline') return tr('mode.waterline', 'Draw Waterline');
+    if (drawMode === 'mask') return tr('mode.mask', 'Edit Mask');
+    return tr('mode.view', 'View');
+}
+function drawPoly(ctx, points, color, fillAlpha) {
+    if (!points || points.length === 0) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    if (points.length >= 3) {
+        ctx.closePath();
+        ctx.fillStyle = fillAlpha;
+        ctx.fill();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    points.forEach((p, index) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = index === 0 ? '#22c55e' : color;
+        ctx.fill();
+    });
+}
+function drawFstCanvas() {
+    const canvas = document.getElementById('fstCanvas');
+    if (!canvas || !baseFrame) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = baseFrame.width;
+    canvas.height = baseFrame.height;
+    ctx.drawImage(baseFrame, 0, 0);
+    rois.forEach((roi, index) => {
+        const hue = (index * 47) % 360;
+        const color = `hsl(${hue}, 72%, 52%)`;
+        drawPoly(ctx, roi.points || [], color, `hsla(${hue}, 72%, 52%, 0.14)`);
+        if ((roi.diameter_points || []).length === 2) {
+            const p1 = roi.diameter_points[0];
+            const p2 = roi.diameter_points[1];
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        }
+        if ((roi.waterline_points || []).length === 2) {
+            const p1 = roi.waterline_points[0];
+            const p2 = roi.waterline_points[1];
+            ctx.strokeStyle = '#e0f2fe';
+            ctx.setLineDash([8, 6]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        if ((roi.detection_points || []).length >= MIN_MASK_POINTS) {
+            drawPoly(ctx, roi.detection_points, '#facc15', 'rgba(250,204,21,0.08)');
+        }
+        const cx = (roi.points || []).reduce((sum, p) => sum + p.x, 0) / Math.max((roi.points || []).length, 1);
+        const cy = (roi.points || []).reduce((sum, p) => sum + p.y, 0) / Math.max((roi.points || []).length, 1);
+        ctx.fillStyle = 'rgba(20,20,19,0.82)';
+        ctx.fillRect(cx - 58, cy - 18, 116, 28);
+        ctx.fillStyle = '#faf9f5';
+        ctx.font = '14px sans-serif';
+        ctx.fillText(roi.name || cylinderDefaultName(index), cx - 50, cy);
+    });
+    if (currentROI.length > 0) drawPoly(ctx, currentROI, '#f97316', 'rgba(249,115,22,0.10)');
+    if (currentEditPoints.length > 0) {
+        if (drawMode === 'mask') drawPoly(ctx, currentEditPoints, '#facc15', 'rgba(250,204,21,0.10)');
+        else {
+            ctx.strokeStyle = drawMode === 'diameter' ? '#22c55e' : '#e0f2fe';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(currentEditPoints[0].x, currentEditPoints[0].y);
+            currentEditPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+            currentEditPoints.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.fill();
+            });
+        }
+    }
+    document.getElementById('roiCountText').textContent = String(rois.length);
+    document.getElementById('currentPointText').textContent = drawMode === 'roi' ? String(currentROI.length) : String(currentEditPoints.length);
+    document.getElementById('drawModeText').textContent = modeLabel();
+    document.getElementById('finishRoiBtn').disabled = !(drawMode === 'roi' && currentROI.length >= 3);
+    document.getElementById('toDebugBtn').disabled = !allCurrentRoisReady();
+    const showSpecial = ['diameter', 'waterline', 'mask'].includes(drawMode);
+    document.getElementById('cancelEditBtn').style.display = showSpecial ? '' : 'none';
+    document.getElementById('finishMaskBtn').style.display = drawMode === 'mask' ? '' : 'none';
+    document.getElementById('finishMaskBtn').disabled = !(drawMode === 'mask' && currentEditPoints.length >= MIN_MASK_POINTS);
+}
+
+function allCurrentRoisReady() {
+    return rois.length > 0 && rois.every(roi => (roi.points || []).length >= 3 && (roi.diameter_points || []).length === 2 && Number(roi.cylinder_diameter_cm || 0) > 0);
+}
+function startNewCylinder() {
+    cancelSpecialEdit();
+    currentROI = [];
+    drawMode = 'roi';
+    persistCurrentVideoState();
+    drawFstCanvas();
+}
+function finishCurrentCylinder() {
+    if (currentROI.length < 3) {
+        alert(tr('alert.need_points', 'The current ROI needs at least 3 points.'));
+        return;
+    }
+    const defaultDiameter = parseFloat(document.getElementById('defaultDiameterCm')?.value || '10') || 10;
+    rois.push({
+        points: cloneState(currentROI),
+        name: cylinderDefaultName(rois.length),
+        cylinder_diameter_cm: defaultDiameter,
+        diameter_points: [],
+        time_config: { mode: 'global', start: null, end: null }
+    });
+    currentROI = [];
+    drawMode = 'view';
+    updateCylinderList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
+    drawFstCanvas();
+}
+function editLine(index, mode) {
+    currentROI = [];
+    drawMode = mode;
+    editIndex = index;
+    currentEditPoints = cloneState(rois[index][mode === 'diameter' ? 'diameter_points' : 'waterline_points'] || []);
+    persistCurrentVideoState();
+    updateCylinderList();
+    drawFstCanvas();
+}
+function editMask(index) {
+    currentROI = [];
+    drawMode = 'mask';
+    editIndex = index;
+    currentEditPoints = cloneState(rois[index].detection_points || []);
+    persistCurrentVideoState();
+    updateCylinderList();
+    drawFstCanvas();
+}
+function finishMaskEdit() {
+    if (drawMode !== 'mask' || editIndex == null) return;
+    if (currentEditPoints.length < MIN_MASK_POINTS) {
+        alert(tr('alert.need_mask', 'Detection mask needs at least 3 points.'));
+        return;
+    }
+    rois[editIndex].detection_points = cloneState(currentEditPoints);
+    cancelSpecialEdit();
+    updateDebugPreview();
+}
+function cancelSpecialEdit() {
+    drawMode = 'view';
+    editIndex = null;
+    currentEditPoints = [];
+    updateCylinderList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
+    drawFstCanvas();
+}
+function undoCurrentPoint() {
+    if (drawMode === 'roi' && currentROI.length) currentROI.pop();
+    else if (['diameter', 'waterline', 'mask'].includes(drawMode) && currentEditPoints.length) currentEditPoints.pop();
+    persistCurrentVideoState();
+    drawFstCanvas();
+}
+function clearAllCylinders() {
+    rois = [];
+    currentROI = [];
+    currentEditPoints = [];
+    drawMode = 'view';
+    editIndex = null;
+    updateCylinderList();
+    persistCurrentVideoState();
+    syncVideoSelectors();
+    drawFstCanvas();
+}
+function deleteCylinder(index) {
+    rois.splice(index, 1);
+    cancelSpecialEdit();
+}
+function resetMask(index) {
+    delete rois[index].detection_points;
+    updateCylinderList();
+    persistCurrentVideoState();
+    drawFstCanvas();
+    updateDebugPreview();
+}
+function updateRoiName(index, value) {
+    rois[index].name = value || cylinderDefaultName(index);
+    persistCurrentVideoState();
+    drawFstCanvas();
+}
+function updateRoiDiameter(index, value) {
+    rois[index].cylinder_diameter_cm = parseFloat(value) || parseFloat(document.getElementById('defaultDiameterCm').value || '10');
+    persistCurrentVideoState();
+}
+function updateTimeMode(index, mode) {
+    if (!rois[index].time_config) rois[index].time_config = { mode: 'global', start: null, end: null };
+    rois[index].time_config.mode = mode;
+    if (mode === 'global') {
+        rois[index].time_config.start = null;
+        rois[index].time_config.end = null;
+    }
+    updateCylinderList();
+    persistCurrentVideoState();
+}
+function updateTimeValue(index, key, value) {
+    if (!rois[index].time_config) rois[index].time_config = { mode: 'global', start: null, end: null };
+    rois[index].time_config[key] = value === '' ? null : parseFloat(value);
+    persistCurrentVideoState();
+}
+function updateCylinderList() {
+    const list = document.getElementById('cylinderList');
+    if (!rois.length) {
+        list.innerHTML = `<div class="mini-note">${tr('list.empty', 'No cylinder ROI has been added.')}</div>`;
+        return;
+    }
+    list.innerHTML = rois.map((roi, index) => {
+        const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
+        const showTime = timeConfig.mode !== 'global' ? '' : 'display:none;';
+        const diameterReady = (roi.diameter_points || []).length === 2;
+        const maskReady = (roi.detection_points || []).length >= MIN_MASK_POINTS;
+        return `
+            <div class="fst-roi-card">
+                <div class="fst-card-head">
+                    <div>
+                        <div class="fst-card-title">ROI ${index + 1}</div>
+                        <div class="fst-card-meta">
+                            ${(roi.points || []).length} ${tr('card.points', 'ROI points')} ·
+                            ${diameterReady ? tr('card.diameter_ready', 'Diameter line set') : tr('card.diameter_missing', 'Missing diameter line')} ·
+                            ${maskReady ? tr('card.mask_custom', 'Custom detection mask') : tr('card.mask_default', 'Mask follows ROI')}
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteCylinder(${index})">${tr('card.delete', 'Delete')}</button>
+                </div>
+                <div class="compact-grid">
+                    <div>
+                        <label class="form-label">${tr('card.name', 'Name')}</label>
+                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateRoiName(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${tr('card.diameter_cm', 'Diameter (cm)')}</label>
+                        <input class="form-control" type="number" min="1" step="0.1" value="${roi.cylinder_diameter_cm || document.getElementById('defaultDiameterCm').value || 10}" onchange="updateRoiDiameter(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${tr('card.time_mode', 'Time Mode')}</label>
+                        <select class="form-select" onchange="updateTimeMode(${index}, this.value)">
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('card.global', 'Follow Global')}</option>
+                            <option value="relative" ${timeConfig.mode === 'relative' ? 'selected' : ''}>${tr('card.relative', 'Relative to Detection')}</option>
+                            <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${tr('card.precise', 'Precise Time Range')}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="compact-grid mt-2" style="${showTime}">
+                    <div>
+                        <label class="form-label">${tr('card.start', 'Start (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.start == null ? '' : timeConfig.start}" onchange="updateTimeValue(${index}, 'start', this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${tr('card.end', 'End (s)')}</label>
+                        <input class="form-control" type="number" step="0.1" value="${timeConfig.end == null ? '' : timeConfig.end}" onchange="updateTimeValue(${index}, 'end', this.value)">
+                    </div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button class="btn btn-sm btn-outline-success" type="button" onclick="editLine(${index}, 'diameter')">${tr('card.draw_diameter', 'Draw Diameter')}</button>
+                    <button class="btn btn-sm btn-outline-info" type="button" onclick="editLine(${index}, 'waterline')">${tr('card.draw_waterline', 'Draw Waterline')}</button>
+                    <button class="btn btn-sm btn-outline-warning" type="button" onclick="editMask(${index})">${tr('card.edit_mask', 'Edit Mask')}</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetMask(${index})" ${maskReady ? '' : 'disabled'}>${tr('card.reset_mask', 'Reset Mask')}</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function onRoiFrameChange(value) {
+    document.getElementById('frameLabelRoi').textContent = frameLabelText(value, currentTotalFrames());
+    debounce('roiFrame', () => loadFrame(parseInt(value, 10)), 180);
+}
+function onDebugFrameChange(value) {
+    document.getElementById('frameLabelDebug').textContent = frameLabelText(value, currentTotalFrames());
+    debounce('debugFrame', () => updateDebugPreview(parseInt(value, 10)), 180);
+}
+function onVideoChange(value) {
+    persistCurrentVideoState();
+    currentVideoIdx = parseInt(value, 10) || 0;
+    currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+    applyCurrentVideoState();
+    loadFrame(0, () => {
+        if (document.getElementById('step2').classList.contains('active')) updateDebugPreview(0);
+    });
+}
+function goToStep(step) {
+    if (step === 2 && !allCurrentRoisReady()) {
+        alert(rois.length ? tr('alert.need_diameter', 'Every cylinder needs a diameter line.') : tr('alert.need_roi', 'Please finish at least one cylinder ROI.'));
+        return;
+    }
+    document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
+    document.getElementById(`step${step}`).classList.add('active');
+    [1, 2].forEach(s => {
+        const el = document.getElementById(`stepNav${s}`);
+        el.classList.remove('active', 'done');
+        if (s < step) el.classList.add('done');
+        if (s === step) el.classList.add('active');
+    });
+    if (step === 2) updateDebugPreview();
+}
+function syncRangeLabel(id) {
+    const input = document.getElementById(id);
+    const label = document.getElementById(id + 'Label');
+    if (input && label) label.textContent = input.value;
+}
+function updateBgMethodUI() {
+    const method = document.getElementById('bgMethod')?.value || 'threshold';
+    const visible = method === 'threshold';
+    document.getElementById('bgTypeWrap').style.display = visible ? '' : 'none';
+    document.getElementById('grayThresholdWrap').style.display = visible ? '' : 'none';
+}
+function updateThresholdUI() {
+    const auto = document.getElementById('autoThreshold')?.checked ?? true;
+    document.getElementById('manualThresholdBox').style.display = auto ? 'none' : '';
+}
+function normalizeRois(sourceRois) {
+    return cloneState(sourceRois || []).map(roi => {
+        if (!roi.time_config) roi.time_config = { mode: 'global', start: null, end: null };
+        if (roi.time_config.mode === 'global') {
+            roi.time_config.start = null;
+            roi.time_config.end = null;
+        }
+        if (!roi.cylinder_diameter_cm) roi.cylinder_diameter_cm = parseFloat(document.getElementById('defaultDiameterCm').value || '10');
+        return roi;
+    });
+}
+function buildRequestBody(frameIdx) {
+    persistCurrentVideoState();
+    const tuning = readTuningParamsFromControls();
+    const defaultDiameter = parseFloat(document.getElementById('defaultDiameterCm').value || '10') || 10;
+    const perVideoConfigs = videoConfigs.map((cfg, index) => ({
+        ...defaultTuningParams(),
+        ...(cfg.tuning_params || (index === currentVideoIdx ? tuning : {})),
+        cylinder_diameter_cm: Number.isFinite(cfg.cylinder_diameter_cm) ? cfg.cylinder_diameter_cm : defaultDiameter,
+        rois: normalizeRois(cfg.rois || (index === currentVideoIdx ? rois : []))
+    }));
+    return {
+        frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
+        video: currentVideoIdx,
+        ...tuning,
+        cylinder_diameter_cm: defaultDiameter,
+        rois: normalizeRois(rois),
+        per_video_configs: perVideoConfigs,
+        workspace_video_configs: cloneState(videoConfigs),
+        generate_video: document.getElementById('generateVideo').checked
+    };
+}
+async function saveDraftPayload(redirectToWorkspace = false) {
+    const body = buildRequestBody();
+    body._selected_video_idx = currentVideoIdx;
+    const response = await fetch(`/api/draft/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || '保存当前设置失败');
+    if (redirectToWorkspace && batchWorkspaceUrl) window.location.href = batchWorkspaceUrl;
+    return data;
+}
+function updateDebugPreview(frameIdx) {
+    if (!allCurrentRoisReady()) return;
+    fetch(`/api/debug_preview/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildRequestBody(frameIdx))
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('previewStatus').textContent = data.error;
+                return;
+            }
+            drawImageOnCanvas('previewOriginal', data.original);
+            drawImageOnCanvas('previewResult', data.result);
+            document.getElementById('previewStatus').textContent = trFormat('preview.detected', [data.detections || 0, data.roi_count || rois.length], 'Detected {0} / {1} cylinder targets');
+        })
+        .catch(err => {
+            console.error(err);
+            document.getElementById('previewStatus').textContent = tr('preview.failed', 'Preview failed');
+        });
+}
+function startAnalysis() {
+    if (!allCurrentRoisReady()) {
+        alert(tr('alert.need_diameter', 'Every cylinder needs a diameter line.'));
+        return;
+    }
+    if (launchMode === 'workspace') {
+        document.getElementById('loading').style.display = 'flex';
+        saveDraftPayload(true).catch(error => {
+            document.getElementById('loading').style.display = 'none';
+            alert(error.message || '保存当前设置失败');
+        });
+        return;
+    }
+    const body = buildRequestBody();
+    if (isBatch) {
+        const incomplete = [];
+        body.per_video_configs.forEach((cfg, index) => {
+            const ready = (cfg.rois || []).length > 0 && (cfg.rois || []).every(roi => (roi.diameter_points || []).length === 2);
+            if (!ready) incomplete.push(trFormat('alert.batch_missing', [index + 1, currentVideoName(index)], '{0}. {1}: missing cylinder ROI or diameter line'));
+        });
+        if (incomplete.length) {
+            alert(trFormat('alert.batch_incomplete', [incomplete.join('\n')], 'Complete every FST batch video before starting:\n{0}'));
+            return;
+        }
+    }
+    document.getElementById('loading').style.display = 'flex';
+    fetch(`/api/start_analysis/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = `/monitor/${sessionId}`;
+                return;
+            }
+            document.getElementById('loading').style.display = 'none';
+            alert(data.error || tr('alert.start_failed', 'Failed to start analysis'));
+        })
+        .catch(err => {
+            document.getElementById('loading').style.display = 'none';
+            alert(err);
+        });
+}
+function drawImageOnCanvas(canvasId, base64Data) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = function () {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+    };
+    img.src = 'data:image/jpeg;base64,' + base64Data;
+}
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    hydrateFromDraftPayload();
+    applyCurrentVideoState();
+    applyFstLang();
+    loadFrame(0);
+    const canvas = document.getElementById('fstCanvas');
+    canvas.addEventListener('click', function (e) {
+        const point = canvasPointFromEvent(canvas, e);
+        if (drawMode === 'roi') {
+            currentROI.push(point);
+        } else if (['diameter', 'waterline'].includes(drawMode) && editIndex != null) {
+            currentEditPoints.push(point);
+            if (currentEditPoints.length >= 2) {
+                rois[editIndex][drawMode === 'diameter' ? 'diameter_points' : 'waterline_points'] = cloneState(currentEditPoints.slice(0, 2));
+                cancelSpecialEdit();
+                updateDebugPreview();
+                return;
+            }
+        } else if (drawMode === 'mask' && editIndex != null) {
+            currentEditPoints.push(point);
+        }
+        persistCurrentVideoState();
+        syncVideoSelectors();
+        drawFstCanvas();
+    });
+    canvas.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        undoCurrentPoint();
+        return false;
+    });
+    document.addEventListener('mousescope:langchange', applyFstLang);
+});
+</script>
+{% endblock %}

@@ -10,22 +10,22 @@
 </p>
 
 <p align="center">
-  支持悬尾实验 TST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM 与 Y 迷宫 Y-Maze<br/>
-  Supports Tail Suspension Test (TST), Open Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze (EPM), and Y-Maze.
+  支持悬尾实验 TST、强迫游泳 FST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM 与 Y 迷宫 Y-Maze<br/>
+  Supports Tail Suspension Test (TST), Forced Swim Test (FST), Open Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze (EPM), and Y-Maze.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v2.1.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v2.2.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/UI-Desktop%20Workbench-f59e0b" alt="UI"/>
-  <img src="https://img.shields.io/badge/Modules-5%20Assays-16a34a" alt="Modules"/>
+  <img src="https://img.shields.io/badge/Modules-6%20Assays-16a34a" alt="Modules"/>
   <img src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%20%7C%20English-0f766e" alt="Language"/>
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v2.1.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v2.2.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope v2.1.0 当前首页界面 · Current home interface</sub>
+  <sub>MouseScope v2.2.0 当前首页界面 · Current home interface</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
@@ -36,8 +36,8 @@ MouseScope is a desktop analysis platform built for everyday lab use. It turns m
 
 ## 平台特点 | Highlights
 
-- 一个桌面工作台支持 `TST / OFT / NOR / EPM / Y-Maze` 五类实验。  
-  One desktop workbench supports five common assays: `TST / OFT / NOR / EPM / Y-Maze`.
+- 一个桌面工作台支持 `TST / FST / OFT / NOR / EPM / Y-Maze` 六类实验。
+  One desktop workbench supports six common assays: `TST / FST / OFT / NOR / EPM / Y-Maze`.
 - 支持单视频分析，也支持按视频独立配置的批量工作流。  
   Supports both single-video analysis and per-video configuration in batch sessions.
 - ROI、迷宫区域、目标物、时间窗和检测遮掩框均可视化设置。  
@@ -71,6 +71,7 @@ MouseScope is meant for real lab workflows rather than author-only scripts. The 
 | 实验模块 Assay | 典型用途 Typical Use | 核心设置 Core Setup | 主要指标 Main Metrics |
 |---|---|---|---|
 | `TST` 悬尾实验 / Tail Suspension Test | 不动与挣扎状态分析 / immobility and struggling analysis | 身长标定、ROI、时间窗 / body-length calibration, ROI, time windows | 不动时间、挣扎时间、不动比例、首次不动潜伏期 / immobility time, struggling time, immobility percent, latency |
+| `FST` 强迫游泳 / Forced Swim Test | 漂浮不动与活动状态分析 / immobility and active-state analysis | 圆筒 ROI、直径线、时间窗 / cylinder ROI, diameter line, time windows | 不动时间、不动比例、片段数、潜伏期、ethogram、活动曲线 / immobility time, percent, bouts, latency, ethogram, activity curve |
 | `OFT` 旷场实验 / Open Field Test | 自主活动与中心区偏好 / locomotion and center preference | 4 角场地、可选遮掩框、时间窗 / 4-corner arena, optional mask, time windows | 总路程、速度、中心区时间与比例、壁区时间与比例 / distance, speed, center metrics, wall metrics |
 | `NOR` 新奇物体识别 / Novel Object Recognition | 新奇与熟悉物体探索差异 / novel vs familiar object exploration | 场地 4 角、2 个物体中心、可选遮掩框 / arena corners, 2 object centers, optional mask | 新奇探索时间、熟悉探索时间、辨别指数、偏好指数 / novel exploration, familiar exploration, discrimination index, preference index |
 | `EPM` 高架十字迷宫 / Elevated Plus Maze | 开放臂与封闭臂探索 / open-arm vs closed-arm exploration | 中心区 + 2 开放臂 + 2 封闭臂手动画区 / manual center + 2 open arms + 2 closed arms | 开放臂时间、开放臂进入次数、开放臂进入占比、首次进入开放臂潜伏期 / open-arm time, open entries, open-entry ratio, first open-entry latency |
@@ -105,7 +106,25 @@ The TST module records immobility and struggling states for each ROI and exports
   </tr>
 </table>
 
-### 2. 旷场实验 OFT | Open Field Test
+### 2. 强迫游泳 FST | Forced Swim Test
+
+FST 模块用于分析侧视圆筒视频中的不动与活动状态，支持同屏多圆筒、圆筒直径标定、自动阈值、ethogram 和活动曲线复核。
+
+The FST module analyzes immobility and active states in side-view cylinder videos, with multi-cylinder setup, cylinder-diameter calibration, automatic thresholding, ethogram review, and activity curves.
+
+<p align="center">
+  <img src="docs/assets/fst_demo.gif" alt="FST annotated result" width="960"/>
+  <br/>
+  <sub>FST 结果视频演示 · FST annotated result preview</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/fst_ethogram.png" alt="FST ethogram" width="960"/>
+  <br/>
+  <sub>FST 状态时序图 · FST ethogram</sub>
+</p>
+
+### 3. 旷场实验 OFT | Open Field Test
 
 OFT 模块关注自主活动、中心区偏好与空间占据情况，适合快速获得常用的运动学和空间统计指标。  
 
@@ -132,7 +151,7 @@ The OFT module focuses on locomotion, center preference, and spatial occupancy, 
   </tr>
 </table>
 
-### 3. 新奇物体识别 NOR | Novel Object Recognition
+### 4. 新奇物体识别 NOR | Novel Object Recognition
 
 NOR 模块用于量化小鼠对熟悉物体和新奇物体的探索差异，支持探索时间、偏好与辨别指标输出。  
 
@@ -153,7 +172,7 @@ The NOR module quantifies exploration differences between familiar and novel obj
   </tr>
 </table>
 
-### 4. 高架十字迷宫 EPM | Elevated Plus Maze
+### 5. 高架十字迷宫 EPM | Elevated Plus Maze
 
 EPM 模块用于量化开放臂、封闭臂与中心区的停留和进入情况，适合观察开放空间探索偏好与相关焦虑样行为指标。  
 
@@ -165,7 +184,7 @@ The EPM module quantifies occupancy and entries across open arms, closed arms, a
   <sub>高架十字迷宫 EPM 轨迹图 · EPM trackmap</sub>
 </p>
 
-### 5. Y 迷宫 Y-Maze
+### 6. Y 迷宫 Y-Maze
 
 Y 迷宫模块用于量化各臂停留、入臂序列和自发交替情况，适合快速查看探索模式与交替率。  
 
@@ -266,6 +285,7 @@ MouseScope/
 |  \- api.py
 |- core/
 |  |- vision_tracker.py
+|  |- forced_swim.py
 |  |- open_field.py
 |  |- novel_object.py
 |  |- elevated_plus.py
@@ -302,13 +322,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {2.1.0}
+  version = {2.2.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 2.1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 2.2.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 

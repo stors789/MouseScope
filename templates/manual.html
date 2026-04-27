@@ -417,6 +417,9 @@
                 <a href="{{ url_for('manual', module='tst', return_to=manual_return_to) if manual_return_to else url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
                     <span data-i18n="manual.switch.tst">TST 手册</span>
                 </a>
+                <a href="{{ url_for('manual', module='fst', return_to=manual_return_to) if manual_return_to else url_for('manual', module='fst') }}" class="manual-switch-btn {% if manual_type == 'fst' %}active{% endif %}">
+                    <span data-i18n="manual.switch.fst">FST 手册</span>
+                </a>
                 <a href="{{ url_for('manual', module='oft', return_to=manual_return_to) if manual_return_to else url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
                     <span data-i18n="manual.switch.oft">OFT 手册</span>
                 </a>
@@ -434,6 +437,8 @@
 
         {% if manual_type == 'tst' %}
         {% include "manual_tst_content.html" %}
+        {% elif manual_type == 'fst' %}
+        {% include "manual_fst_content.html" %}
         {% elif manual_type == 'oft' %}
         {% include "manual_oft_content.html" %}
         {% elif manual_type == 'epm' %}

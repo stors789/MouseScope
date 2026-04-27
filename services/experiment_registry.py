@@ -59,6 +59,27 @@ def _tst_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]
     return True, []
 
 
+def _fst_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    rois = (config or {}).get("rois") or []
+    if not rois:
+        return False, ["缺少圆筒 ROI 配置"]
+    for idx, roi in enumerate(rois, start=1):
+        if not isinstance(roi, dict) or _points_count(roi.get("points")) < 3:
+            return False, [f"ROI {idx} 缺少圆筒多边形点（至少 3 个）"]
+        diameter_points = (roi or {}).get("diameter_points") or []
+        if len(diameter_points) != 2:
+            return False, [f"ROI {idx} 缺少圆筒直径线"]
+        try:
+            diameter_cm = float((roi or {}).get("cylinder_diameter_cm") or (config or {}).get("cylinder_diameter_cm") or 0)
+        except Exception:
+            diameter_cm = 0.0
+        if diameter_cm <= 0:
+            return False, [f"ROI {idx} 缺少圆筒实际直径"]
+        if not _mask_valid(roi):
+            return False, [f"ROI {idx} 的检测遮罩少于 3 个点"]
+    return True, []
+
+
 def _maze_zone_complete(zone_points, expected_points: int = 4) -> bool:
     return isinstance(zone_points, list) and len(zone_points) == int(expected_points)
 
@@ -122,6 +143,15 @@ EXPERIMENT_SPECS: dict[str, ExperimentSpec] = {
         calibrate_template="calibrate.html",
         monitor_template="monitor.html",
         validator=_tst_video_complete,
+    ),
+    "forced_swim": ExperimentSpec(
+        key="forced_swim",
+        label="强迫游泳 Forced Swim Test",
+        short_label="FST",
+        manual_module="fst",
+        calibrate_template="calibrate_forced_swim.html",
+        monitor_template="monitor_forced_swim.html",
+        validator=_fst_video_complete,
     ),
     "open_field": ExperimentSpec(
         key="open_field",

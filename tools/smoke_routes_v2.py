@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Route and inline-script smoke test for the v2.1.0 workbench flow."""
+"""Route and inline-script smoke test for the v2.2.0 workbench flow."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ BASE_VIDEO_INFO = {
     "height": 480,
     "total_frames": 900,
 }
-EXPERIMENTS = ("tst", "open_field", "novel_object", "elevated_plus", "y_maze")
+EXPERIMENTS = ("tst", "forced_swim", "open_field", "novel_object", "elevated_plus", "y_maze")
 
 
 def _rendered_script_blocks(html: str) -> list[str]:
@@ -86,6 +86,7 @@ def main() -> int:
         "/",
         "/upload",
         "/manual?module=tst",
+        "/manual?module=fst",
         "/manual?module=oft",
         "/manual?module=nor",
         "/manual?module=epm",
@@ -125,7 +126,7 @@ def main() -> int:
                 if expected_status == 200 and response.content_type.startswith("text/html"):
                     _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
 
-    print("v2.1.0 route smoke test passed")
+    print("v2.2.0 route smoke test passed")
     return 0
 
 

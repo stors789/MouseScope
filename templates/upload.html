@@ -83,7 +83,7 @@
     <div class="upload-hero-main">
         <div class="upload-kicker">
             <i class="fas fa-clapperboard"></i>
-            <span>MouseScope v2.1.0</span>
+            <span>MouseScope v2.2.0</span>
         </div>
         <h1 class="upload-title" data-page-i18n="hero.title">统一上传入口</h1>
         <p class="upload-copy" data-page-i18n="hero.copy">
@@ -93,7 +93,7 @@
     <aside class="upload-hero-side">
         <div class="upload-side-card">
             <h3 data-page-i18n="hero.modules_title">支持模块</h3>
-            <p class="mb-0" data-page-i18n="hero.modules_body">当前支持 TST、Open Field、Novel Object、EPM 与 Y-Maze。</p>
+            <p class="mb-0" data-page-i18n="hero.modules_body">当前支持 TST、FST、Open Field、Novel Object、EPM 与 Y-Maze。</p>
         </div>
         <div class="upload-side-card">
             <h3 data-page-i18n="hero.path_title">推荐路径</h3>
@@ -133,6 +133,7 @@
                                     <label for="experimentType" class="form-label fw-semibold" data-i18n="upload.exp.label">实验模块 / Experiment</label>
                                     <select class="form-select" id="experimentType" name="experiment_type">
                                         <option value="tst" selected data-i18n="upload.exp.tst_option">悬尾实验 TST</option>
+                                        <option value="forced_swim" data-i18n="upload.exp.fst_option">强迫游泳 Forced Swim Test</option>
                                         <option value="open_field" data-i18n="upload.exp.oft_option">旷场实验 Open Field Test</option>
                                         <option value="novel_object" data-i18n="upload.exp.nor_option">新奇物体识别 Novel Object Recognition</option>
                                         <option value="elevated_plus" data-i18n="upload.exp.epm_option">高架十字迷宫 Elevated Plus Maze</option>
@@ -291,6 +292,7 @@
                 </div>
                 <div class="d-grid gap-2 mt-3">
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='tst') }}" target="_blank" data-i18n="upload.side.manual.tst">查看 TST 手册</a>
+                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='fst') }}" target="_blank" data-i18n="upload.side.manual.fst">查看 FST 手册</a>
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='oft') }}" target="_blank" data-i18n="upload.side.manual.oft">查看 OFT 手册</a>
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='nor') }}" target="_blank" data-i18n="upload.side.manual.nor">查看 NOR 手册</a>
                     <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='epm') }}" target="_blank" data-i18n="upload.side.manual.epm">查看 EPM 手册</a>
@@ -309,7 +311,7 @@
                 'hero.title': '统一上传入口',
                 'hero.copy': '选择实验模块并上传视频后，单视频会直接进入该视频设置页；多视频会先进入批次页面，方便逐条检查和完成 ROI、时间窗与参数设置。',
                 'hero.modules_title': '支持模块',
-                'hero.modules_body': '当前支持 TST、Open Field、Novel Object、EPM 与 Y-Maze。',
+                'hero.modules_body': '当前支持 TST、FST、Open Field、Novel Object、EPM 与 Y-Maze。',
                 'hero.path_title': '推荐路径',
                 'hero.path_item_1': '单视频：上传后直接进入该视频配置页。',
                 'hero.path_item_2': '多视频：先进入批次页面，再逐条完成 ROI 和参数。',
@@ -319,7 +321,7 @@
                 'hero.title': 'Unified Upload Entry',
                 'hero.copy': 'Choose an experiment module and upload the videos. A single video opens its own setup page directly, while multiple videos first open a batch page so ROI, timing, and parameters can be completed one by one.',
                 'hero.modules_title': 'Supported Modules',
-                'hero.modules_body': 'Currently supports TST, Open Field, Novel Object, EPM, and Y-Maze.',
+                'hero.modules_body': 'Currently supports TST, FST, Open Field, Novel Object, EPM, and Y-Maze.',
                 'hero.path_title': 'Recommended Path',
                 'hero.path_item_1': 'Single video: upload and open its dedicated configuration page.',
                 'hero.path_item_2': 'Multiple videos: open the batch page first, then finish ROI and parameter setup one by one.',

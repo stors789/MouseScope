@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+{% block title %}强迫游泳实验监控 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.fst-monitor { max-width: 1480px; margin: 0 auto; }
+.monitor-head { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+.monitor-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,0.85fr); gap:1rem; align-items:start; }
+.monitor-card { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.2rem; }
+.metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.9rem; }
+.metric-box { background:var(--bg-page); border:1px solid var(--border-card); border-radius:16px; padding:1rem; }
+.metric-label { color:var(--text-muted); font-size:0.85rem; }
+.metric-value { color:var(--text-primary); font-size:1.35rem; font-weight:800; margin-top:0.2rem; }
+.download-grid { display:flex; gap:0.7rem; flex-wrap:wrap; }
+.roi-table-wrap { overflow-x:auto; }
+.roi-table { width:100%; border-collapse:collapse; }
+.roi-table th, .roi-table td { padding:0.85rem 0.75rem; border-bottom:1px solid var(--border-card); white-space:nowrap; }
+.roi-table th { color:var(--text-muted); font-size:0.82rem; text-transform:uppercase; letter-spacing:0.04em; }
+.state-pill { display:inline-flex; align-items:center; justify-content:center; min-width:84px; padding:0.28rem 0.72rem; border-radius:999px; font-size:0.82rem; font-weight:800; }
+.state-pill.active { background:rgba(37,99,235,0.12); color:#1d4ed8; }
+.state-pill.immobile { background:rgba(201,100,66,0.14); color:#9a3412; }
+.state-pill.completed { background:rgba(34,197,94,0.12); color:#15803d; }
+.state-pill.uncertain { background:rgba(148,163,184,0.15); color:#475569; }
+.state-pill.outside { background:rgba(148,163,184,0.15); color:#475569; }
+.log-box { background:#141413; color:#e8e6dc; border-radius:16px; padding:1rem; font-family:Consolas, Monaco, monospace; font-size:0.85rem; min-height:220px; max-height:420px; overflow-y:auto; }
+@media (max-width:1180px) {
+    .monitor-grid { grid-template-columns:1fr; }
+    .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:620px) {
+    .metric-grid { grid-template-columns:1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fst-monitor">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-fst-i18n="header.title">强迫游泳实验实时监控</h1>
+            <div class="text-secondary" data-fst-i18n="header.subtitle">多圆筒 FST 并行分析，实时展示 active / immobile 状态与活动评分。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()">
+                <i class="fas fa-stop me-2"></i><span data-fst-i18n="btn.stop">停止分析</span>
+            </button>
+            <button class="btn btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt me-2"></i><span data-fst-i18n="btn.refresh">刷新</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-fst-i18n="processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-fst-i18n="processing.waiting">等待引擎响应...</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-label" data-fst-i18n="processing.status">状态</div>
+                        <div class="metric-value" id="statusText" data-fst-i18n="status.waiting">等待中</div>
+                    </div>
+                </div>
+                <div class="progress mb-2" style="height:14px;">
+                    <div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div>
+                </div>
+                <div class="text-secondary small"><span data-fst-i18n="processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
+
+            <div class="monitor-card">
+                <h5 class="mb-3" data-fst-i18n="overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box">
+                        <div class="metric-label" data-fst-i18n="overview.frames">已处理帧</div>
+                        <div class="metric-value" id="processedFrames">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-fst-i18n="overview.elapsed">运行时间</div>
+                        <div class="metric-value" id="elapsedTime">0s</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-fst-i18n="overview.speed">处理速度</div>
+                        <div class="metric-value" id="processingSpeed">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-label" data-fst-i18n="overview.rois">圆筒数</div>
+                        <div class="metric-value" id="roiCount">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-fst-i18n="table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-fst-i18n="table.subtitle">每个圆筒的不动时间、比例、阈值和当前状态。</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-fst-i18n="table.state">状态</th>
+                                <th data-fst-i18n="table.score">活动评分</th>
+                                <th data-fst-i18n="table.imm_time">不动时间</th>
+                                <th data-fst-i18n="table.imm_pct">不动比例</th>
+                                <th data-fst-i18n="table.bouts">片段数</th>
+                                <th data-fst-i18n="table.latency">潜伏期</th>
+                                <th data-fst-i18n="table.threshold">阈值</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody">
+                            <tr><td colspan="8" class="text-secondary" data-fst-i18n="table.waiting">等待结果...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-fst-i18n="download.title">结果下载</h5>
+                <div class="download-grid">
+                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-fst-i18n="download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-fst-i18n="download.video">标注视频</a>
+                    <a href="#" id="dlTrack" class="btn btn-outline-primary" data-fst-i18n="download.track">逐帧 CSV</a>
+                    <a href="#" id="dlSummary" class="btn btn-outline-primary" data-fst-i18n="download.summary">汇总 CSV</a>
+                    <a href="#" id="dlBins" class="btn btn-outline-primary" data-fst-i18n="download.bins">分箱 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-fst-i18n="download.report">TXT 报告</a>
+                    <a href="#" id="dlEthogram" class="btn btn-outline-primary" data-fst-i18n="download.ethogram">Ethogram</a>
+                    <a href="#" id="dlActivity" class="btn btn-outline-primary" data-fst-i18n="download.activity">活动曲线</a>
+                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-fst-i18n="download.folder">打开结果目录</button>
+                </div>
+                <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
+                    <span data-fst-i18n="download.path">保存位置:</span> <code id="resultPathText"></code>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <h5 class="mb-3" data-fst-i18n="log.title">日志</h5>
+                <div id="logBox" class="log-box">$ <span data-fst-i18n="log.waiting">等待日志输出...</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+let updateInterval = null;
+
+const FST_MONITOR_I18N = {
+    zh: {
+        'header.title': '强迫游泳实验实时监控',
+        'header.subtitle': '多圆筒 FST 并行分析，实时展示 active / immobile 状态与活动评分。',
+        'btn.stop': '停止分析',
+        'btn.refresh': '刷新',
+        'processing.title': '处理状态',
+        'processing.waiting': '等待引擎响应...',
+        'processing.status': '状态',
+        'processing.progress': '完成进度',
+        'overview.title': '会话概览',
+        'overview.frames': '已处理帧',
+        'overview.elapsed': '运行时间',
+        'overview.speed': '处理速度',
+        'overview.rois': '圆筒数',
+        'table.title': 'ROI 实时结果',
+        'table.subtitle': '每个圆筒的不动时间、比例、阈值和当前状态。',
+        'table.state': '状态',
+        'table.score': '活动评分',
+        'table.imm_time': '不动时间',
+        'table.imm_pct': '不动比例',
+        'table.bouts': '片段数',
+        'table.latency': '潜伏期',
+        'table.threshold': '阈值',
+        'table.waiting': '等待结果...',
+        'download.title': '结果下载',
+        'download.all': '全部下载',
+        'download.video': '标注视频',
+        'download.track': '逐帧 CSV',
+        'download.summary': '汇总 CSV',
+        'download.bins': '分箱 CSV',
+        'download.report': 'TXT 报告',
+        'download.ethogram': 'Ethogram',
+        'download.activity': '活动曲线',
+        'download.folder': '打开结果目录',
+        'download.path': '保存位置:',
+        'log.title': '日志',
+        'log.waiting': '等待日志输出...',
+        'status.waiting': '等待中',
+        'status.analyzing': '分析中',
+        'status.completed': '已完成',
+        'status.error': '出错',
+        'status.stopped': '已停止',
+        'status.invalid': '会话失效',
+        'status.expired': '分析会话不存在或已过期',
+        'state.active': '活动',
+        'state.immobile': '不动',
+        'state.uncertain': '不确定',
+        'state.outside': '窗外',
+        'state.completed': '完成',
+        'alert.stop_sent': '已发送停止命令',
+        'alert.folder_failed': '打开结果目录失败'
+    },
+    en: {
+        'header.title': 'Forced Swim Test Monitor',
+        'header.subtitle': 'Parallel multi-cylinder FST analysis with live active / immobile state and motion score.',
+        'btn.stop': 'Stop Analysis',
+        'btn.refresh': 'Refresh',
+        'processing.title': 'Processing Status',
+        'processing.waiting': 'Waiting for engine...',
+        'processing.status': 'Status',
+        'processing.progress': 'Progress',
+        'overview.title': 'Session Overview',
+        'overview.frames': 'Processed Frames',
+        'overview.elapsed': 'Elapsed',
+        'overview.speed': 'Speed',
+        'overview.rois': 'Cylinders',
+        'table.title': 'ROI Live Results',
+        'table.subtitle': 'Immobility time, percent, threshold, and current state for each cylinder.',
+        'table.state': 'State',
+        'table.score': 'Motion Score',
+        'table.imm_time': 'Immobility',
+        'table.imm_pct': 'Immobility %',
+        'table.bouts': 'Bouts',
+        'table.latency': 'Latency',
+        'table.threshold': 'Threshold',
+        'table.waiting': 'Waiting for results...',
+        'download.title': 'Downloads',
+        'download.all': 'Download All',
+        'download.video': 'Annotated Video',
+        'download.track': 'Frame CSV',
+        'download.summary': 'Summary CSV',
+        'download.bins': 'Bins CSV',
+        'download.report': 'TXT Report',
+        'download.ethogram': 'Ethogram',
+        'download.activity': 'Activity Curve',
+        'download.folder': 'Open Result Folder',
+        'download.path': 'Save path:',
+        'log.title': 'Logs',
+        'log.waiting': 'Waiting for log output...',
+        'status.waiting': 'Waiting',
+        'status.analyzing': 'Analyzing',
+        'status.completed': 'Completed',
+        'status.error': 'Error',
+        'status.stopped': 'Stopped',
+        'status.invalid': 'Session Invalid',
+        'status.expired': 'Analysis session not found or expired',
+        'state.active': 'Active',
+        'state.immobile': 'Immobile',
+        'state.uncertain': 'Uncertain',
+        'state.outside': 'Outside',
+        'state.completed': 'Completed',
+        'alert.stop_sent': 'Stop command sent',
+        'alert.folder_failed': 'Failed to open result folder'
+    }
+};
+
+function lang() { return (typeof getLang === 'function') ? getLang() : 'zh'; }
+function tr(key, fallback) { return (FST_MONITOR_I18N[lang()] && FST_MONITOR_I18N[lang()][key]) || fallback || key; }
+function applyFstMonitorLang() {
+    document.querySelectorAll('[data-fst-i18n]').forEach(el => {
+        const key = el.getAttribute('data-fst-i18n');
+        const val = tr(key, el.textContent);
+        el.textContent = val;
+    });
+}
+function getStatusText(status) {
+    return {
+        waiting: tr('status.waiting', 'Waiting'),
+        analyzing: tr('status.analyzing', 'Analyzing'),
+        completed: tr('status.completed', 'Completed'),
+        error: tr('status.error', 'Error'),
+        stopped: tr('status.stopped', 'Stopped')
+    }[status] || status;
+}
+function stateClass(state) {
+    const value = String(state || 'uncertain').toLowerCase();
+    if (value.includes('immobile')) return 'immobile';
+    if (value.includes('active')) return 'active';
+    if (value.includes('complete')) return 'completed';
+    if (value.includes('outside')) return 'outside';
+    return 'uncertain';
+}
+function stateLabel(state) {
+    const cls = stateClass(state);
+    return {
+        active: tr('state.active', 'Active'),
+        immobile: tr('state.immobile', 'Immobile'),
+        completed: tr('state.completed', 'Completed'),
+        outside: tr('state.outside', 'Outside'),
+        uncertain: tr('state.uncertain', 'Uncertain')
+    }[cls] || state;
+}
+function fmtNum(value, digits = 2, empty = '-') {
+    if (value === null || value === undefined || value === '') return empty;
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(digits) : empty;
+}
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`)
+        .then(r => {
+            if (!r.ok) throw new Error('session');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('statusText').textContent = getStatusText(data.status);
+            document.getElementById('messageText').textContent = data.message || '-';
+            document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+            document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+            document.getElementById('progressText').textContent = `${data.progress || 0}%`;
+
+            const stats = data.stats || {};
+            document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+            document.getElementById('elapsedTime').textContent = `${(stats.elapsed_time || 0).toFixed(1)}s`;
+            document.getElementById('processingSpeed').textContent = (stats.fps || 0).toFixed(1);
+
+            const rows = data.realtime_data || [];
+            document.getElementById('roiCount').textContent = rows.length || ((data.experiment_stats && data.experiment_stats.roi_count) || 0);
+            renderTable(rows);
+            renderLogs(data.logs || []);
+
+            if (data.status === 'completed') {
+                showDownloads();
+                clearInterval(updateInterval);
+                updateInterval = null;
+                fetchResultDir();
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+            if (data.status === 'error' || data.status === 'stopped') {
+                clearInterval(updateInterval);
+                updateInterval = null;
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+        })
+        .catch(() => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            document.getElementById('statusText').textContent = tr('status.invalid', 'Session Invalid');
+            document.getElementById('messageText').textContent = tr('status.expired', 'Analysis session not found or expired');
+            document.getElementById('stopBtn').style.display = 'none';
+        });
+}
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="8" class="text-secondary">${tr('table.waiting', 'Waiting for results...')}</td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(row => {
+        const cls = stateClass(row.state);
+        return `
+            <tr>
+                <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+                <td><span class="state-pill ${cls}">${escapeHtml(stateLabel(row.state))}</span></td>
+                <td>${fmtNum(row.motion_score, 4)}</td>
+                <td>${fmtNum(row.immobility_time_s, 1)} s</td>
+                <td>${fmtNum(row.immobility_percent, 1)}%</td>
+                <td>${row.immobility_bouts ?? '-'}</td>
+                <td>${row.latency_to_immobility_s == null ? '-' : fmtNum(row.latency_to_immobility_s, 1) + ' s'}</td>
+                <td>${fmtNum(row.threshold_low, 4)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    if (!logs.length) {
+        box.textContent = `$ ${tr('log.waiting', 'Waiting for log output...')}`;
+        return;
+    }
+    box.innerHTML = logs.map(log => {
+        let cls = '#b0aea5';
+        if (/error|failed|失败/i.test(log)) cls = '#f87171';
+        else if (/saved|completed|完成|threshold/i.test(log)) cls = '#93c5fd';
+        return `<div style="color:${cls}; margin-bottom:0.35rem;">$ ${escapeHtml(log)}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+}
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    document.getElementById('dlVideo').href = `/api/download/${sessionId}/video`;
+    document.getElementById('dlTrack').href = `/api/download/${sessionId}/track_csv`;
+    document.getElementById('dlSummary').href = `/api/download/${sessionId}/summary_csv`;
+    document.getElementById('dlBins').href = `/api/download/${sessionId}/bins_csv`;
+    document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
+    document.getElementById('dlEthogram').href = `/api/download/${sessionId}/ethogram`;
+    document.getElementById('dlActivity').href = `/api/download/${sessionId}/activity_curve`;
+}
+function stopAnalysis() {
+    fetch(`/api/stop/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => alert(data.message || tr('alert.stop_sent', 'Stop command sent')));
+}
+function openResultFolder() {
+    fetch(`/api/open_folder/${sessionId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) alert(data.error || tr('alert.folder_failed', 'Failed to open result folder'));
+        });
+}
+function fetchResultDir() {
+    fetch(`/api/result_dir/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('resultPathInfo').style.display = 'block';
+                document.getElementById('resultPathText').textContent = data.path;
+            }
+        });
+}
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+document.addEventListener('mousescope:langchange', function () {
+    applyFstMonitorLang();
+    updateStatus();
+});
+applyFstMonitorLang();
+updateStatus();
+updateInterval = setInterval(updateStatus, 2000);
+</script>
+{% endblock %}
