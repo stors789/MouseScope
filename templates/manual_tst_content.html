@@ -122,6 +122,8 @@
                             ['<code>dilation_kernel</code>', '调参页', '膨胀核大小，用于补回轮廓空洞和断裂。', '轮廓断裂或身体不完整时增大；背景噪声和鼠体黏连时减小。'],
                             ['<code>dilation_iter</code>', '调参页', '膨胀次数，决定轮廓修补力度。', '轮廓仍破碎时增大；相邻噪声粘连时减小。'],
                             ['<code>min_area</code>', '调参页', '最小轮廓面积，过滤太小的误检。', '误检细小亮点就增大；鼠体太小被漏检就减小。'],
+                            ['<code>auto_behavior_threshold</code>', '调参页', '自动根据当前视频的运动分布估计挣扎判定阈值。', '不同视频运动幅度差异较大时建议开启；正式统计前仍需复核结果视频。'],
+                            ['<code>behavior_threshold_sensitivity</code>', '调参页', '自动阈值的灵敏度。数值越高，越容易进入挣扎判定。', '自动阈值开启后可用；误判挣扎偏多就降低，漏判挣扎偏多就提高。'],
                             ['<code>generate_video</code>', '开始分析前', '是否导出带叠加标注的视频。', '关闭后可以明显提速，但会失去最直观的复核材料。']
                         ]
                     },
@@ -141,11 +143,13 @@
                 },
                 outputs: {
                     title: '结果字典',
-                    lead: 'TST 的主要导出包括结果视频、逐帧日志 CSV、immobility 汇总 CSV 和 TXT 报告。批量模式下，这些文件会出现在对应视频自己的子文件夹里。',
+                    lead: 'TST 的主要导出包括结果视频、逐帧日志 CSV、immobility 汇总 CSV、活动曲线、ethogram 和 TXT 报告。批量模式下，这些文件会出现在对应视频自己的子文件夹里。',
                     files: [
                         ['<code>*_analyzed.mp4</code>', '叠加了 ROI、轮廓、质心、状态文本和关键指标的结果视频，是人工复核优先级最高的文件。'],
                         ['<code>*_logs.csv</code>', '逐帧检测日志，只保存“该帧检测到鼠体”的记录。适合做自定义时间序列分析。'],
                         ['<code>*_immobility.csv</code>', '按 ROI 汇总的不动 / 挣扎统计结果，是 TST 主要结构化结果表。'],
+                        ['<code>*_activity_curve.png</code>', '按 ROI 绘制活动强度曲线，并标出当前使用的行为阈值，适合检查阈值是否贴合该视频。'],
+                        ['<code>*_ethogram_swing.png</code> / <code>*_ethogram_merged.png</code>', '行为时间轴图。前者单独显示摆动，后者把摆动合并到非挣扎状态，方便不同汇报口径复核。'],
                         ['<code>*_report.txt</code>', '便于快速阅读的文本报告，内容来自 <code>immobility.csv</code> 的核心字段。']
                     ],
                     logsTable: {
@@ -156,6 +160,8 @@
                             ['<code>roi_id</code>', 'ROI 编号。', '对应当前视频内的 ROI 顺序。'],
                             ['<code>roi_name</code>', 'ROI 名称。', '就是你在界面里填写的名字。'],
                             ['<code>is_struggling</code>', '这一帧是否被判为挣扎。', '为 <code>false</code> 不一定纯静止，也可能是摆动被归为非挣扎。'],
+                            ['<code>is_swinging</code>', '这一帧是否被识别为整体规律摆动。', '摆动帧在汇总里按非挣扎处理，适合解释 <code>Immobile (Swing)</code>。'],
+                            ['<code>decision_flow_p90_mm_s</code> / <code>speed_std_mm_s</code>', '用于最终行为判定的活动强度指标。', '可配合活动曲线复核自动阈值是否合适。'],
                             ['<code>flow_p90_mm_s</code>', 'ROI 内强运动像素的 P90 光流值，单位是归一化后的速度量纲。', '数值越大通常内部运动越强；跨视频比较依赖标定是否准确。']
                         ]
                     },
@@ -167,6 +173,10 @@
                             ['<code>total_time_seconds</code>', '真正参与统计的总时长。', '只统计 ROI 自己时间窗内的时段。'],
                             ['<code>immobility_time_seconds</code>', '被判为非挣扎的总时长。', '包含静止以及被系统识别为摆动但非挣扎的片段。'],
                             ['<code>struggling_time_seconds</code>', '被判为挣扎的总时长。', '和不动时间共同构成主要行为结果。'],
+                            ['<code>detected_rate_percent</code>', '统计窗口内成功检测到鼠体的比例。', '低检测率时必须优先复核轮廓和 ROI，而不能只看不动比例。'],
+                            ['<code>uncertain_time_seconds</code> / <code>uncertain_percent</code>', '检测缺失或无法稳定判定的时间。', '这部分不会被直接算作不动，主要用于质控。'],
+                            ['<code>auto_behavior_threshold</code> / <code>behavior_threshold_sensitivity</code>', '是否启用自动行为阈值及其灵敏度设置。', '便于追溯本次结果是手动阈值还是自动阈值。'],
+                            ['<code>flow_thr_lo</code> / <code>flow_thr_hi</code>', '本次实际使用的光流低 / 高阈值。', '自动阈值开启后尤其建议记录，用于跨批次复核。'],
                             ['<code>immobility_percent</code>', '不动时间占统计总时长的百分比。', '越高表示非挣扎占比越高。'],
                             ['<code>struggling_percent</code>', '挣扎时间占统计总时长的百分比。', '常与 immobility percent 互补。'],
                             ['<code>immobility_episodes</code>', '进入不动状态的片段次数。', '对状态切换频率敏感。'],
@@ -333,6 +343,8 @@
                             ['<code>dilation_kernel</code>', 'Tuning page', 'Sets the dilation kernel used to reconnect fragmented contours.', 'Increase when the body contour is broken; decrease when noise merges into the body.'],
                             ['<code>dilation_iter</code>', 'Tuning page', 'Controls dilation strength via repeat count.', 'Increase when contours stay fragmented; reduce when clutter fuses into the mouse.'],
                             ['<code>min_area</code>', 'Tuning page', 'Filters out contours smaller than the specified area.', 'Increase when tiny artifacts survive; reduce when a small mouse body is being discarded.'],
+                            ['<code>auto_behavior_threshold</code>', 'Tuning page', 'Automatically estimates behavior thresholds from the current video motion distribution.', 'Useful when motion amplitude differs across videos; still review result videos before formal statistics.'],
+                            ['<code>behavior_threshold_sensitivity</code>', 'Tuning page', 'Sensitivity for the automatic threshold. Higher values make struggling easier to enter.', 'Available when auto threshold is enabled; lower it for too many false struggles and raise it for missed struggles.'],
                             ['<code>generate_video</code>', 'Before analysis starts', 'Whether an annotated result video should be exported.', 'Turning it off speeds up analysis, but removes the most important manual review artifact.']
                         ]
                     },
@@ -352,11 +364,13 @@
                 },
                 outputs: {
                     title: 'Result dictionary',
-                    lead: 'TST mainly exports an annotated video, a frame-level log CSV, an immobility summary CSV, and a TXT report. In batch mode, those files are stored inside the child folder of the corresponding video.',
+                    lead: 'TST mainly exports an annotated video, frame-level log CSV, immobility summary CSV, activity curve, ethograms, and a TXT report. In batch mode, those files are stored inside the child folder of the corresponding video.',
                     files: [
                         ['<code>*_analyzed.mp4</code>', 'Annotated result video with ROI, contour, centroid, state label, and key overlay metrics. This is the highest-priority review file.'],
                         ['<code>*_logs.csv</code>', 'Frame-level detection log. Only frames where the mouse was detected are written.'],
                         ['<code>*_immobility.csv</code>', 'Per-ROI summary table for immobility and struggling. This is the main structured TST result file.'],
+                        ['<code>*_activity_curve.png</code>', 'Per-ROI activity curve with the behavior thresholds used in the run, useful for checking threshold fit.'],
+                        ['<code>*_ethogram_swing.png</code> / <code>*_ethogram_merged.png</code>', 'Behavior timelines. The first separates swing, while the second merges swing into the non-struggling state for reporting.'],
                         ['<code>*_report.txt</code>', 'Human-readable text summary generated from the core fields in <code>immobility.csv</code>.']
                     ],
                     logsTable: {
@@ -367,6 +381,8 @@
                             ['<code>roi_id</code>', 'ROI index.', 'Matches the ROI order inside the current video.'],
                             ['<code>roi_name</code>', 'ROI name.', 'Exactly what you entered in the UI.'],
                             ['<code>is_struggling</code>', 'Whether that detected frame was labeled as struggling.', 'A value of <code>false</code> may mean real immobility or swing-filtered non-struggling motion.'],
+                            ['<code>is_swinging</code>', 'Whether the frame was identified as regular whole-body swing.', 'Swing frames are summarized as non-struggling and help explain <code>Immobile (Swing)</code>.'],
+                            ['<code>decision_flow_p90_mm_s</code> / <code>speed_std_mm_s</code>', 'Activity metrics used by the final behavior decision.', 'Review them with the activity curve when checking automatic thresholds.'],
                             ['<code>flow_p90_mm_s</code>', 'P90 optical-flow magnitude inside the ROI, expressed in normalized speed units.', 'Higher values usually mean stronger internal motion; cross-video comparison depends on correct calibration.']
                         ]
                     },
@@ -378,6 +394,10 @@
                             ['<code>total_time_seconds</code>', 'Total analyzed duration for that ROI.', 'Only the ROI time window is counted.'],
                             ['<code>immobility_time_seconds</code>', 'Total time labeled as non-struggling.', 'Includes stillness and swing-filtered non-struggling periods.'],
                             ['<code>struggling_time_seconds</code>', 'Total time labeled as struggling.', 'Together with immobility time this forms the main behavioral output.'],
+                            ['<code>detected_rate_percent</code>', 'Percentage of analyzed frames where the mouse was successfully detected.', 'Low detection rate means you should review contours and ROI before trusting percentages.'],
+                            ['<code>uncertain_time_seconds</code> / <code>uncertain_percent</code>', 'Time with missing detection or unstable state evidence.', 'This is not forced into immobility; it is mainly a quality-control metric.'],
+                            ['<code>auto_behavior_threshold</code> / <code>behavior_threshold_sensitivity</code>', 'Whether automatic behavior thresholds were used and with what sensitivity.', 'Useful for provenance when comparing runs.'],
+                            ['<code>flow_thr_lo</code> / <code>flow_thr_hi</code>', 'Actual low / high optical-flow thresholds used in this run.', 'Especially important to record when auto threshold is enabled.'],
                             ['<code>immobility_percent</code>', 'Percentage of the analyzed window labeled as immobile / non-struggling.', 'Higher means more non-struggling behavior.'],
                             ['<code>struggling_percent</code>', 'Percentage of the analyzed window labeled as struggling.', 'Often interpreted alongside immobility percent.'],
                             ['<code>immobility_episodes</code>', 'Number of entries into immobility.', 'Sensitive to state switching frequency.'],

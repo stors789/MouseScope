@@ -38,6 +38,7 @@ os.environ.setdefault('MKL_NUM_THREADS', _cpu_count)
 
 import secrets
 import cv2
+import errno
 import threading
 import time
 import shutil
@@ -50,6 +51,7 @@ from flask import (
     Flask, request, redirect, url_for,
     flash, jsonify, session
 )
+from werkzeug.exceptions import RequestEntityTooLarge
 
 # 将 core/ 加入路径（兼容 PyInstaller 打包环境）
 if getattr(sys, 'frozen', False):
@@ -112,6 +114,8 @@ SESSION_FINISHED_TTL_SECONDS = 12 * 60 * 60
 SESSION_ERROR_TTL_SECONDS = 24 * 60 * 60
 DEBUG_STATIC_BG_CACHE_TTL_SECONDS = 30 * 60
 DEBUG_STATIC_BG_CACHE_MAX_ITEMS = 32
+UPLOAD_FREE_SPACE_BUFFER_BYTES = 512 * 1024 * 1024
+UPLOAD_ORPHAN_STAGING_TTL_SECONDS = 24 * 60 * 60
 LICENSE_EXEMPT_ENDPOINTS = {
     'static',
     'index',
@@ -123,6 +127,17 @@ LICENSE_EXEMPT_ENDPOINTS = {
     'api_get_license',
     'api_accept_license',
 }
+
+
+class UploadStorageError(RuntimeError):
+    """Raised when MouseScope cannot safely store an uploaded video."""
+
+    def __init__(self, message, path=None, required_bytes=None, free_bytes=None):
+        super().__init__(message)
+        self.path = path
+        self.required_bytes = required_bytes
+        self.free_bytes = free_bytes
+
 
 def china_now():
     return datetime.now(CHINA_TZ)
@@ -140,6 +155,161 @@ def _report_value(value, suffix=''):
     if value is None or value == '':
         return '-'
     return f"{value}{suffix}"
+
+
+def _format_storage_bytes(value):
+    if value is None:
+        return '未知'
+    size = float(max(int(value), 0))
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+
+def _nearest_existing_path(path):
+    current = Path(path)
+    if current.is_file():
+        current = current.parent
+    while not current.exists() and current.parent != current:
+        current = current.parent
+    return current
+
+
+def _free_bytes_for_path(path):
+    try:
+        usage = shutil.disk_usage(str(_nearest_existing_path(path)))
+        return int(usage.free)
+    except Exception:
+        return None
+
+
+def _storage_error_message(path, required_bytes=None, free_bytes=None):
+    needed = int(required_bytes or 0) + UPLOAD_FREE_SPACE_BUFFER_BYTES
+    required_text = _format_storage_bytes(needed) if needed else '未知'
+    free_text = _format_storage_bytes(free_bytes)
+    target = Path(path)
+    return (
+        f"磁盘空间不足，无法保存上传视频。当前可用空间约 {free_text}，"
+        f"本次保存建议预留 {required_text}。请清理 MouseScope 所在磁盘的 "
+        f"data/uploads 或 data/results 目录，或把软件/输出目录放到空间更大的磁盘后重试。"
+        f"保存位置: {target}"
+    )
+
+
+def _ensure_upload_storage_available(path, required_bytes=None):
+    free_bytes = _free_bytes_for_path(path)
+    if free_bytes is None:
+        return
+    required = int(required_bytes or 0)
+    threshold = required + UPLOAD_FREE_SPACE_BUFFER_BYTES
+    if free_bytes < threshold:
+        raise UploadStorageError(
+            _storage_error_message(path, required, free_bytes),
+            path=str(path),
+            required_bytes=required,
+            free_bytes=free_bytes,
+        )
+
+
+def _is_no_space_error(exc):
+    if not isinstance(exc, OSError):
+        return False
+    return (
+        getattr(exc, 'errno', None) == errno.ENOSPC
+        or getattr(exc, 'winerror', None) == 112
+        or 'No space left on device' in str(exc)
+        or 'not enough space' in str(exc).lower()
+    )
+
+
+def _raise_upload_storage_error(path, required_bytes=None, cause=None):
+    free_bytes = _free_bytes_for_path(path)
+    raise UploadStorageError(
+        _storage_error_message(path, required_bytes, free_bytes),
+        path=str(path),
+        required_bytes=required_bytes,
+        free_bytes=free_bytes,
+    ) from cause
+
+
+def _remove_partial_file(path):
+    try:
+        target = Path(path)
+        if target.exists() and target.is_file():
+            target.unlink()
+    except Exception:
+        pass
+
+
+def _uploaded_file_size(file_storage):
+    size = getattr(file_storage, 'content_length', None)
+    if size:
+        return int(size)
+
+    stream = getattr(file_storage, 'stream', None)
+    if stream is None:
+        return None
+    try:
+        position = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(position)
+        return int(size)
+    except Exception:
+        return None
+
+
+def _unique_path_for_upload(directory, filename):
+    candidate = Path(directory) / filename
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    for index in range(2, 10000):
+        next_candidate = candidate.with_name(f"{stem}_{index}{suffix}")
+        if not next_candidate.exists():
+            return next_candidate
+    return candidate.with_name(f"{stem}_{secrets.token_hex(4)}{suffix}")
+
+
+def _path_is_within(path, parent):
+    try:
+        path_abs = os.path.abspath(os.fspath(path))
+        parent_abs = os.path.abspath(os.fspath(parent))
+        common = os.path.commonpath([path_abs, parent_abs])
+        return normalized_path_key(common) == normalized_path_key(parent_abs)
+    except Exception:
+        return False
+
+
+def _staged_upload_root():
+    return UPLOAD_DIR / '_staged'
+
+
+def _staged_upload_owner(path):
+    root = _staged_upload_root()
+    if not _path_is_within(path, root):
+        return None
+    try:
+        relative = os.path.relpath(os.path.abspath(os.fspath(path)), os.path.abspath(os.fspath(root)))
+        parts = Path(relative).parts
+        return parts[0] if parts else None
+    except Exception:
+        return None
+
+
+def _cleanup_empty_staged_parents(start_dir):
+    root = _staged_upload_root()
+    current = Path(start_dir)
+    while _path_is_within(current, root) and normalized_path_key(current) != normalized_path_key(root):
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
 
 
 def _report_time_mode_label(mode):
@@ -290,6 +460,20 @@ def _update_video_entry_info(video_info, fps_override=None):
     return video_info
 
 
+def _opencv_can_open_video(path):
+    cap = cv2.VideoCapture(str(path))
+    try:
+        if not cap.isOpened():
+            return False
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if total_frames > 0:
+            return True
+        ret, _frame = cap.read()
+        return bool(ret)
+    finally:
+        cap.release()
+
+
 def _resolve_result_dir(output_dir):
     if not output_dir:
         return str(RESULT_DIR)
@@ -306,25 +490,81 @@ def _save_uploaded_video(file_storage, prefix):
     staged_dir = UPLOAD_DIR / '_staged' / str(prefix)
     staged_dir.mkdir(parents=True, exist_ok=True)
     staged_name = build_ascii_file_name(original_name, prefix=str(prefix), fallback='video')
-    save_path = staged_dir / staged_name
-    file_storage.save(str(save_path))
+    save_path = _unique_path_for_upload(staged_dir, staged_name)
+    expected_size = _uploaded_file_size(file_storage)
+    _ensure_upload_storage_available(staged_dir, expected_size)
+    try:
+        file_storage.save(str(save_path))
+    except OSError as exc:
+        _remove_partial_file(save_path)
+        if _is_no_space_error(exc):
+            _raise_upload_storage_error(staged_dir, expected_size, cause=exc)
+        raise
     _register_original_name(save_path, original_name)
     return str(save_path), original_name
+
+
+def _adopt_uploaded_staging_file(source, session_id, display_name):
+    staged_root = _staged_upload_root()
+    if not _path_is_within(source, staged_root):
+        return None
+
+    owner = _staged_upload_owner(source)
+    if owner and len(owner) == 32 and owner != str(session_id):
+        return None
+
+    session_dir = staged_root / str(session_id)
+    if _path_is_within(source, session_dir):
+        return str(source), display_name
+
+    source = Path(source)
+    previous_parent = source.parent
+    session_dir.mkdir(parents=True, exist_ok=True)
+    staged_name = build_ascii_file_name(display_name, prefix=str(session_id), fallback='video')
+    staged_path = _unique_path_for_upload(session_dir, staged_name)
+
+    try:
+        shutil.move(str(source), str(staged_path))
+    except OSError as exc:
+        _remove_partial_file(staged_path)
+        if _is_no_space_error(exc):
+            required_bytes = source.stat().st_size if source.exists() else None
+            _raise_upload_storage_error(session_dir, required_bytes, cause=exc)
+        raise
+
+    _cleanup_empty_staged_parents(previous_parent)
+    _register_original_name(staged_path, display_name)
+    return str(staged_path), display_name
 
 
 def _stage_local_video_if_needed(path, session_id, original_name=None):
     source = Path(path).expanduser()
     display_name = clean_display_name(original_name or _get_original_name_for_path(source) or source.name, fallback='video')
+    adopted = _adopt_uploaded_staging_file(source, session_id, display_name)
+    if adopted:
+        return adopted
+
     source_path = str(source)
-    if not contains_non_ascii(source_path):
+    if not contains_non_ascii(source_path) or _opencv_can_open_video(source):
         return source_path, display_name
 
     staged_dir = UPLOAD_DIR / '_staged' / str(session_id)
     staged_dir.mkdir(parents=True, exist_ok=True)
     staged_name = build_ascii_file_name(display_name, prefix=str(session_id), fallback='video')
-    staged_path = staged_dir / staged_name
+    staged_path = _unique_path_for_upload(staged_dir, staged_name)
     if not staged_path.exists() or staged_path.stat().st_size != source.stat().st_size:
-        shutil.copy2(source, staged_path)
+        required_bytes = source.stat().st_size
+        try:
+            os.link(source, staged_path)
+        except OSError:
+            _ensure_upload_storage_available(staged_dir, required_bytes)
+            try:
+                shutil.copy2(source, staged_path)
+            except OSError as exc:
+                _remove_partial_file(staged_path)
+                if _is_no_space_error(exc):
+                    _raise_upload_storage_error(staged_dir, required_bytes, cause=exc)
+                raise
     _register_original_name(staged_path, display_name)
     return str(staged_path), display_name
 
@@ -337,6 +577,16 @@ app = Flask(__name__,
             static_folder=str(BUNDLE_DIR / 'static'))
 app.secret_key = secrets.token_hex(32)
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_exc):
+    message = '上传文件超过 2GB 限制，请压缩视频、拆分批次，或改用本地路径方式选择文件。'
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': message}), 413
+    flash(message, 'error')
+    return redirect(url_for('upload_page'))
+
 
 # 会话存储（运行时 + 磁盘快照）
 analysis_sessions = SessionStore(
@@ -461,6 +711,27 @@ def _cleanup_session_artifacts(session_id):
             pass
 
 
+def _cleanup_orphan_upload_staging(now):
+    staged_root = _staged_upload_root()
+    if not staged_root.exists():
+        return
+
+    active_session_ids = {str(session_id) for session_id, _sess in analysis_sessions.items()}
+    for target in staged_root.iterdir():
+        if not target.is_dir() or target.name in active_session_ids:
+            continue
+        try:
+            age_seconds = now - target.stat().st_mtime
+        except OSError:
+            continue
+        if age_seconds <= UPLOAD_ORPHAN_STAGING_TTL_SECONDS:
+            continue
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def _cleanup_expired_runtime_state():
     now = _now_ts()
 
@@ -483,6 +754,7 @@ def _cleanup_expired_runtime_state():
     for session_id in expired_session_ids:
         analysis_sessions.delete(session_id)
 
+    _cleanup_orphan_upload_staging(now)
     cleanup_debug_preview_cache(now, DEBUG_STATIC_BG_CACHE_TTL_SECONDS, DEBUG_STATIC_BG_CACHE_MAX_ITEMS)
 
 
@@ -568,10 +840,12 @@ from routes.pages import register_page_routes
 from routes.api import register_api_routes
 
 route_context = SimpleNamespace(
+    UploadStorageError=UploadStorageError,
     analysis_sessions=analysis_sessions,
     analysis_history=analysis_history,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
+    _cleanup_session_artifacts=_cleanup_session_artifacts,
     RESULT_DIR=RESULT_DIR,
     _extract_video_info_from_entry=_extract_video_info_from_entry,
     _get_original_name_for_path=_get_original_name_for_path,

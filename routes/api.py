@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -103,15 +104,68 @@ def register_api_routes(app, ctx) -> None:
         output_dir = _history_output_dir(record)
         if not output_dir or not os.path.isdir(output_dir):
             return []
+        created_at = _safe_timestamp(record.get('created_at'))
+        finished_at = _safe_timestamp(record.get('finished_at') or record.get('updated_at'))
         collected = []
         for root, _dirs, names in os.walk(output_dir):
             for name in names:
                 path = os.path.join(root, name)
-                if name.endswith('_history_results.zip'):
+                if not _is_history_fallback_result_file(path, created_at, finished_at):
                     continue
                 if os.path.isfile(path):
                     collected.append(path)
         return collected
+
+    def _safe_timestamp(value) -> float | None:
+        try:
+            if value is None or value == '':
+                return None
+            return float(value)
+        except Exception:
+            return None
+
+    def _nonnegative_int(value, label: str) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f'{label} 参数必须是非负整数')
+        return max(0, parsed)
+
+    def _is_history_fallback_result_file(path: str, created_at: float | None, finished_at: float | None) -> bool:
+        suffix = Path(path).suffix.lower()
+        if suffix == '.zip':
+            return False
+        if suffix not in {'.mp4', '.csv', '.txt', '.png', '.jpg', '.jpeg'}:
+            return False
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return False
+        if created_at is not None and mtime < created_at - 60:
+            return False
+        if finished_at is not None and mtime > finished_at + 6 * 60 * 60:
+            return False
+        return True
+
+    def _temp_zip_path(prefix: str) -> str:
+        RESULT_DIR.mkdir(parents=True, exist_ok=True)
+        safe_prefix = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(prefix or 'results'))[:80] or 'results'
+        fd, path = tempfile.mkstemp(prefix=f'{safe_prefix}_', suffix='.zip', dir=str(RESULT_DIR))
+        os.close(fd)
+        return path
+
+    def _send_zip_and_cleanup(zip_path: str, download_name: str):
+        response = send_file(zip_path, as_attachment=True, download_name=download_name)
+
+        @response.call_on_close
+        def _cleanup_zip():
+            try:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+            except Exception:
+                pass
+
+        return response
 
     @app.route('/api/tasks')
     def api_tasks():
@@ -201,8 +255,7 @@ def register_api_routes(app, ctx) -> None:
             return jsonify({'error': '没有可下载的结果文件'}), 404
 
         output_dir = _history_output_dir(record)
-        safe_run_id = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(run_id))[:80] or 'history'
-        zip_path = str(RESULT_DIR / f'{safe_run_id}_history_results.zip')
+        zip_path = _temp_zip_path(f'{run_id}_history_results')
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for path in files:
                 if os.path.exists(path):
@@ -212,7 +265,7 @@ def register_api_routes(app, ctx) -> None:
                         arcname = os.path.basename(path)
                     zf.write(path, arcname)
 
-        return send_file(zip_path, as_attachment=True, download_name='MouseScope_history_results.zip')
+        return _send_zip_and_cleanup(zip_path, 'MouseScope_history_results.zip')
 
     @app.route('/api/history/open_folder/<run_id>', methods=['POST'])
     def history_open_folder(run_id):
@@ -245,17 +298,29 @@ def register_api_routes(app, ctx) -> None:
         if not sess:
             return jsonify({'error': '会话不存在'}), 404
 
-        frame_idx = int(request.args.get('frame', 0))
-        video_idx = int(request.args.get('video', 0))
+        try:
+            frame_idx = _nonnegative_int(request.args.get('frame', 0), 'frame')
+            video_idx = _nonnegative_int(request.args.get('video', 0), 'video')
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
 
-        video_path = sess['video_paths'][min(video_idx, len(sess['video_paths'])-1)]
+        video_paths = sess.get('video_paths') or []
+        if not video_paths:
+            return jsonify({'error': '会话没有视频文件'}), 404
+        video_idx = min(video_idx, len(video_paths) - 1)
+        video_info = _session_video_info(sess, video_idx)
+        total_frames = int(video_info.get('total_frames') or 0)
+        if total_frames > 0:
+            frame_idx = min(frame_idx, total_frames - 1)
+
+        video_path = video_paths[video_idx]
         cap = cv2.VideoCapture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         cap.release()
 
         if not ret:
-            return jsonify({'error': '无法读取帧'}), 500
+            return jsonify({'error': '无法读取帧'}), 400
 
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
@@ -263,8 +328,8 @@ def register_api_routes(app, ctx) -> None:
         return jsonify({
             'image': img_b64,
             'frame_idx': frame_idx,
-            'total_frames': _session_video_info(sess, video_idx)['total_frames'],
-            'video_info': _session_video_info(sess, video_idx),
+            'total_frames': video_info['total_frames'],
+            'video_info': video_info,
         })
 
 
@@ -469,13 +534,13 @@ def register_api_routes(app, ctx) -> None:
             return jsonify({'error': '没有结果文件'}), 404
 
         result_dir = _resolve_result_dir(sess.get('output_dir'))
-        zip_path = str(RESULT_DIR / f'{session_id}_results.zip')
+        zip_path = _temp_zip_path(f'{session_id}_results')
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for f in analysis.result_files:
                 if os.path.exists(f):
                     zf.write(f, _result_zip_arcname(f, result_dir))
 
-        return send_file(zip_path, as_attachment=True, download_name='MouseScope_results.zip')
+        return _send_zip_and_cleanup(zip_path, 'MouseScope_results.zip')
 
 
     @app.route('/api/download/<session_id>/<file_type>')

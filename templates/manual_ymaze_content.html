@@ -139,7 +139,7 @@
                 <table class="manual-data-table">
                     <thead><tr><th>参数</th><th>作用</th><th>结果影响</th></tr></thead>
                     <tbody>
-                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才记为一次入臂。</td><td>直接影响 <code>total_arm_entries</code>、各臂入臂数和 <code>alternation_percent</code>。</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才有资格记为一次入臂。</td><td>同一臂会保持锁定，只有稳定回到中心区或进入另一条臂后，才允许再次计入该臂。</td></tr>
                         <tr><td><code>movement_threshold_cm_s</code></td><td>区分移动与低活动 / 静止。</td><td>影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。</td></tr>
                         <tr><td><code>bin_seconds</code></td><td>时间分箱长度。</td><td>决定 <code>*_bins.csv</code> 每一行覆盖的时长。</td></tr>
                         <tr><td><code>generate_video</code></td><td>是否导出带标注结果视频。</td><td>关闭可提速，但会失去最直观的复核材料。</td></tr>
@@ -151,7 +151,7 @@
                 <h3><span class="step-number">6</span><span>结果字典</span></h3>
                 <p>Y 迷宫会导出结果视频、逐帧轨迹 CSV、summary CSV、分箱 CSV，以及每个 ROI 的热图和轨迹图。</p>
                 <div class="manual-file-grid">
-                    <div class="manual-file-card"><h4><i class="fas fa-file-video" style="color: var(--primary-color);"></i><span><code>*_analyzed.mp4</code></span></h4><p>叠加手画区域、当前区域标签、入臂事件、交替事件和轨迹的结果视频。</p></div>
+                    <div class="manual-file-card"><h4><i class="fas fa-file-video" style="color: var(--primary-color);"></i><span><code>*_analyzed.mp4</code></span></h4><p>叠加手画区域、入臂深度触发区、当前区域标签、入臂事件、交替事件和轨迹的结果视频。</p></div>
                     <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></h4><p>逐帧记录区域、速度、累计距离、入臂事件和最近入臂序列。</p></div>
                     <div class="manual-file-card"><h4><i class="fas fa-file-csv" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code> / <code>*_bins.csv</code></span></h4><p>输出核心统计结果和固定时间箱汇总。</p></div>
                 </div>
@@ -176,6 +176,7 @@
                         <tr><td><code>alternation_percent</code></td><td>交替率。</td><td>总入臂数过低时容易不稳定。</td></tr>
                         <tr><td><code>arm_a_time_s</code> / <code>arm_b_time_s</code> / <code>arm_c_time_s</code></td><td>各臂停留时间。</td><td>可用于识别明显的臂偏好。</td></tr>
                         <tr><td><code>center_time_s</code></td><td>中心区停留时间。</td><td>过高时常提示有效探索不足。</td></tr>
+                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，当前默认为约 0.2 s。</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -195,7 +196,7 @@
                 <h3><span class="step-number">8</span><span>常见问题与排错</span></h3>
                 <ul class="manual-list">
                     <li>交替率异常高或异常低：先检查中心区和三条臂是否画得过窄、重叠或空隙过大。</li>
-                    <li>入臂数明显偏高：优先提高 <code>entry_depth_ratio</code>，并确认中心区边界没有和臂区重叠。</li>
+                    <li>入臂数明显偏高：先复核结果视频中的 <code>arm_entry_event</code>，再调整 <code>entry_depth_ratio</code>，并确认中心区边界没有和臂区重叠。</li>
                     <li>某一条臂几乎没有访问：先排除该臂边界识别差、阴影或高亮背景干扰。</li>
                     <li>总入臂数很低：解释交替率前，先确认视频本身是否存在探索不足或检测漏检。</li>
                 </ul>
@@ -318,7 +319,7 @@
                     <tbody>
                         <tr><td><code>bg_type</code></td><td>Defines whether the background is light or dark.</td><td>Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.</td></tr>
                         <tr><td><code>gray_threshold</code></td><td>Controls how strict the foreground split is.</td><td>Increase when noise is abundant; decrease when contours break or disappear.</td></tr>
-                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before counting as an entry.</td><td>Increase when repeated entries are counted near the center junction.</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before it can count as an entry.</td><td>The same arm stays locked until the centroid returns stably to center or enters another arm.</td></tr>
                         <tr><td><code>movement_threshold_cm_s</code></td><td>Separates moving frames from low-motion frames.</td><td>Adjust when moving / immobile labeling looks unstable.</td></tr>
                     </tbody>
                 </table>
@@ -327,10 +328,11 @@
             <section class="manual-section" id="ymaze-outputs-en">
                 <h3><span class="step-number">6</span><span>Outputs</span></h3>
                 <ul class="manual-list">
-                    <li><code>*_analyzed.mp4</code>: annotated video with hand-drawn zones, zone labels, entry events, alternation events, and trajectory overlay.</li>
+                    <li><code>*_analyzed.mp4</code>: annotated video with hand-drawn zones, entry-depth trigger regions, zone labels, entry events, alternation events, and trajectory overlay.</li>
                     <li><code>*_track.csv</code>: frame-level records of zone, speed, cumulative distance, arm-entry events, and recent entry sequence.</li>
                     <li><code>*_summary.csv</code>: one-row-per-ROI summary table with the main Y-maze metrics.</li>
                     <li><code>*_bins.csv</code>: fixed-width temporal bins for occupancy, entries, alternations, and distance.</li>
+                    <li><code>entry_reset_center_s</code> in summary records the stable-center reset duration used by the same-arm entry lock.</li>
                 </ul>
             </section>
 
@@ -348,7 +350,7 @@
                 <h3><span class="step-number">8</span><span>Troubleshooting</span></h3>
                 <ul class="manual-list">
                     <li>Implausibly high or low alternation rate: check whether the center and arm zones are too narrow, overlapping, or separated by large gaps.</li>
-                    <li>Entry counts too high: increase <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
+                    <li>Entry counts too high: review <code>arm_entry_event</code> in the annotated video, then tune <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
                     <li>One arm is rarely visited: check that the arm boundary is visible and not dominated by glare or shadow.</li>
                     <li>Very low total entries: confirm that exploration is genuinely low rather than missed by detection.</li>
                 </ul>

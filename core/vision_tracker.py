@@ -8,19 +8,8 @@
 import cv2
 import numpy as np
 from collections import deque, defaultdict
-from typing import List, Tuple, Optional, Dict, Any
 import time
-import os
-
-# YOLOv11-seg (Ultralytics) 可选依赖
-try:
-    from ultralytics import YOLO  # type: ignore
-    _HAS_ULTRALYTICS = True
-except Exception:
-    YOLO = None  # type: ignore
-    _HAS_ULTRALYTICS = False
-
-import threading
+from file_utils import write_image_unicode
 
 # GPU 检测（用于 OpenCV CUDA，如果可用）
 USE_GPU = False
@@ -30,258 +19,6 @@ try:
         print(f"✓ OpenCV CUDA 可用")
 except:
     pass
-
-
-_YOLO_MODEL_CACHE: Dict[str, Any] = {}
-_YOLO_MODEL_LOCK = threading.Lock()
-
-
-def _torch_cuda_available() -> bool:
-    try:
-        import torch  # type: ignore
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
-
-
-def _get_yolo_model(model_path: str):
-    """Load and cache a YOLO model by path (thread-safe)."""
-    with _YOLO_MODEL_LOCK:
-        model = _YOLO_MODEL_CACHE.get(model_path)
-        if model is not None:
-            return model
-        if not _HAS_ULTRALYTICS:
-            raise RuntimeError("未安装 ultralytics，无法使用YOLO分割检测")
-        model = YOLO(model_path)
-        # 仅在首次加载时做一次 fuse（如果支持）
-        try:
-            model.fuse()
-        except Exception:
-            pass
-        # 打印一次性信息，帮助确认是否可用CUDA
-        try:
-            dev = 'cuda' if _torch_cuda_available() else 'cpu'
-            print(f"YOLO模型已加载: {os.path.basename(str(model_path))} | torch_device_hint={dev}")
-        except Exception:
-            pass
-        _YOLO_MODEL_CACHE[model_path] = model
-        return model
-
-
-class YoloSegDetector:
-    """Use a YOLO segmentation model to produce mouse mask + bbox inside ROI."""
-
-    def __init__(self, model_path: str, conf: float = 0.25, imgsz: int = 640):
-        self.model_path = model_path
-        self.conf = float(conf)
-        self.imgsz = int(imgsz)
-        self._model = _get_yolo_model(model_path)
-        self.device = 'cuda:0' if _torch_cuda_available() else 'cpu'
-        self.half = bool(self.device.startswith('cuda'))
-
-    def _predict(self, source):
-        """Internal predict wrapper to force device/half and keep calls consistent."""
-        try:
-            # Ultralytics API: model.predict(...) is stable across versions
-            return self._model.predict(
-                source=source,
-                conf=self.conf,
-                imgsz=self.imgsz,
-                device=self.device,
-                half=self.half,
-                verbose=False,
-            )
-        except Exception:
-            # fallback to __call__
-            try:
-                return self._model(source, conf=self.conf, imgsz=self.imgsz, verbose=False)
-            except Exception:
-                return []
-
-    def detect_batch(self, bgr_frames: List[np.ndarray]) -> List[List[Dict[str, Any]]]:
-        """Batch inference. Returns list aligned to input frames."""
-        if not bgr_frames:
-            return []
-        try:
-            results = self._predict(bgr_frames)
-        except Exception:
-            results = []
-
-        if not results:
-            return [[] for _ in bgr_frames]
-
-        out: List[List[Dict[str, Any]]] = []
-        for frame, r0 in zip(bgr_frames, results):
-            out.append(self._parse_single_result(frame, r0, roi_polygon_mask=None))
-        # 若 results 数量不足，补齐
-        while len(out) < len(bgr_frames):
-            out.append([])
-        return out
-
-    def _parse_single_result(self, roi_bgr: np.ndarray, r0, roi_polygon_mask: Optional[np.ndarray]) -> List[Dict[str, Any]]:
-        if r0 is None:
-            return []
-        if getattr(r0, 'masks', None) is None or getattr(r0, 'boxes', None) is None:
-            return []
-
-        boxes = r0.boxes
-        if boxes is None:
-            return []
-
-        h, w = roi_bgr.shape[:2]
-
-        # 优先使用 polygon（避免把全分辨率 float mask 从 GPU 拷回 CPU，极慢）
-        polys = None
-        try:
-            polys = getattr(r0.masks, 'xy', None)
-        except Exception:
-            polys = None
-
-        if polys is not None:
-            try:
-                boxes_xyxy = boxes.xyxy.detach().cpu().numpy()
-                confs = boxes.conf.detach().cpu().numpy()
-            except Exception:
-                return []
-
-            detections: List[Dict[str, Any]] = []
-            for poly, box_xyxy, conf in zip(polys, boxes_xyxy, confs):
-                if poly is None:
-                    continue
-                try:
-                    poly_np = np.asarray(poly, dtype=np.float32)
-                except Exception:
-                    continue
-                if poly_np.ndim != 2 or poly_np.shape[0] < 3 or poly_np.shape[1] != 2:
-                    continue
-
-                # clip 到图像范围
-                poly_np[:, 0] = np.clip(poly_np[:, 0], 0, w - 1)
-                poly_np[:, 1] = np.clip(poly_np[:, 1], 0, h - 1)
-                poly_i32 = poly_np.astype(np.int32)
-
-                base_mask_u8 = np.zeros((h, w), dtype=np.uint8)
-                try:
-                    cv2.fillPoly(base_mask_u8, [poly_i32], 255)
-                except Exception:
-                    continue
-
-                if roi_polygon_mask is not None and roi_polygon_mask.size > 0:
-                    if roi_polygon_mask.shape[:2] != base_mask_u8.shape[:2]:
-                        rpm = cv2.resize(roi_polygon_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-                    else:
-                        rpm = roi_polygon_mask
-                    mask_u8 = cv2.bitwise_and(base_mask_u8, base_mask_u8, mask=rpm)
-                else:
-                    mask_u8 = base_mask_u8
-
-                area = int(np.count_nonzero(mask_u8))
-                if area <= 0:
-                    continue
-
-                x1, y1, x2, y2 = [float(v) for v in box_xyxy]
-                x1 = max(0, min(w - 1, int(round(x1))))
-                y1 = max(0, min(h - 1, int(round(y1))))
-                x2 = max(0, min(w, int(round(x2))))
-                y2 = max(0, min(h, int(round(y2))))
-                if x2 <= x1 or y2 <= y1:
-                    continue
-
-                bx, by = x1, y1
-                bw, bh = (x2 - x1), (y2 - y1)
-                cx = float(bx + bw / 2.0)
-                cy = float(by + bh / 2.0)
-
-                detections.append({
-                    'bbox_xyxy': (x1, y1, x2, y2),
-                    'bbox': (bx, by, bw, bh),
-                    'centroid': (cx, cy),
-                    'polygon': poly_i32,
-                    'mask': mask_u8,
-                    'area': area,
-                    'conf': float(conf),
-                })
-            return detections
-
-        # 回退：旧版/不支持 polygon 的情况下才走 masks.data（可能很慢）
-        masks = getattr(r0.masks, 'data', None)
-        if masks is None:
-            return []
-
-        try:
-            masks_np = masks.detach().cpu().numpy()
-            boxes_xyxy = boxes.xyxy.detach().cpu().numpy()
-            confs = boxes.conf.detach().cpu().numpy()
-        except Exception:
-            return []
-        detections: List[Dict[str, Any]] = []
-        for mask_f, box_xyxy, conf in zip(masks_np, boxes_xyxy, confs):
-            if mask_f.shape[0] != h or mask_f.shape[1] != w:
-                mask_f = cv2.resize(mask_f, (w, h), interpolation=cv2.INTER_LINEAR)
-
-            base_mask_u8 = (mask_f > 0.5).astype(np.uint8) * 255
-            base_area = int(np.sum(base_mask_u8 == 255))
-            if base_area <= 0:
-                continue
-
-            if roi_polygon_mask is not None and roi_polygon_mask.size > 0:
-                if roi_polygon_mask.shape[:2] != base_mask_u8.shape[:2]:
-                    rpm = cv2.resize(roi_polygon_mask, (w, h), interpolation=cv2.INTER_NEAREST)
-                else:
-                    rpm = roi_polygon_mask
-                cropped_mask = cv2.bitwise_and(base_mask_u8, base_mask_u8, mask=rpm)
-                cropped_area = int(np.sum(cropped_mask == 255))
-                mask_u8 = cropped_mask if cropped_area > 0 else base_mask_u8
-            else:
-                mask_u8 = base_mask_u8
-
-            area = int(np.sum(mask_u8 == 255))
-            if area <= 0:
-                continue
-
-            x1, y1, x2, y2 = [float(v) for v in box_xyxy]
-            x1 = max(0, min(w - 1, int(round(x1))))
-            y1 = max(0, min(h - 1, int(round(y1))))
-            x2 = max(0, min(w, int(round(x2))))
-            y2 = max(0, min(h, int(round(y2))))
-            if x2 <= x1 or y2 <= y1:
-                continue
-
-            bx, by = x1, y1
-            bw, bh = (x2 - x1), (y2 - y1)
-            cx = float(bx + bw / 2.0)
-            cy = float(by + bh / 2.0)
-
-            detections.append({
-                'bbox_xyxy': (x1, y1, x2, y2),
-                'bbox': (bx, by, bw, bh),
-                'centroid': (cx, cy),
-                'polygon': None,
-                'mask': mask_u8,
-                'area': area,
-                'conf': float(conf),
-            })
-        return detections
-
-    def detect(self, roi_bgr: np.ndarray, roi_polygon_mask: Optional[np.ndarray] = None) -> List[Dict[str, Any]]:
-        """Return list of detections in ROI-local coordinates.
-
-        Each detection dict contains:
-          - bbox_xyxy: (x1, y1, x2, y2) ROI-local
-          - bbox: (x, y, w, h) ROI-local
-          - centroid: (cx, cy) ROI-local
-          - mask: uint8 ROI-local (0/255)
-          - area: int, mask pixel count
-          - conf: float
-        """
-        if roi_bgr is None or roi_bgr.size == 0:
-            return []
-
-        results = self._predict(roi_bgr)
-        if not results:
-            return []
-        r0 = results[0]
-        return self._parse_single_result(roi_bgr, r0, roi_polygon_mask=roi_polygon_mask)
 
 
 class BackgroundSubtractor:
@@ -934,10 +671,6 @@ class MouseTracker:
                  morphology_processor,
                  detector,
                  flow_analyzer,
-                 use_yolo_seg: bool = False,
-                 yolo_model_path: Optional[str] = None,
-                 yolo_conf: float = 0.25,
-                 yolo_imgsz: int = 640,
                  fps=30.0,
                  pixel_to_mm=1.0,
                  roi_name=None,
@@ -951,7 +684,9 @@ class MouseTracker:
                  min_active_seconds=0.2,  # 最小激活时长（秒）
                  calm_seconds=0.5,  # 冷却时长（秒）
                  coherence_thr=0.8,  # 方向一致性阈值
-                 coherence_calm_seconds=0.5):  # 方向一致性判定时长（秒，默认0.5s）
+                 coherence_calm_seconds=0.5,  # 方向一致性判定时长（秒，默认0.5s）
+                 auto_behavior_threshold=False,
+                 behavior_threshold_sensitivity=0.0):  # 自动行为阈值灵敏度
         """
         初始化追踪器
         
@@ -1000,21 +735,6 @@ class MouseTracker:
         self.detector = detector
         self.flow_analyzer = flow_analyzer
 
-        # YOLO-seg 检测（可选）：用于替代 bg_subtractor + contour detector
-        self.use_yolo_seg = bool(use_yolo_seg)
-        self.yolo_model_path = str(yolo_model_path) if yolo_model_path else None
-        self.yolo_conf = float(yolo_conf)
-        self.yolo_imgsz = int(yolo_imgsz)
-        self.yolo_detector: Optional[YoloSegDetector] = None
-        if self.use_yolo_seg and self.yolo_model_path:
-            try:
-                self.yolo_detector = YoloSegDetector(self.yolo_model_path, conf=self.yolo_conf, imgsz=self.yolo_imgsz)
-            except Exception as e:
-                # 若依赖/模型不可用，则回退到传统方法
-                self.yolo_detector = None
-                self.use_yolo_seg = False
-                print(f"⚠ YOLO分割检测初始化失败，将回退到背景减除: {e}")
-        
         # 物理参数
         self.fps = fps
         self.pixel_to_mm = pixel_to_mm
@@ -1031,6 +751,10 @@ class MouseTracker:
         self.speed_std_thr_hi = speed_std_thr_hi
         self.speed_std_thr_lo = speed_std_thr_lo
         self.coherence_thr = coherence_thr
+        self.auto_behavior_threshold = bool(auto_behavior_threshold)
+        self.behavior_threshold_sensitivity = float(np.clip(behavior_threshold_sensitivity, -3.0, 3.0))
+        self.behavior_threshold_samples = []
+        self.collect_behavior_threshold_samples = self.auto_behavior_threshold
         
         # 创建ROI掩码
         self.roi_mask = None
@@ -1055,6 +779,8 @@ class MouseTracker:
         self.is_struggling = False
         self.frames_active = 0
         self.calm_counter = 0
+        self.moderate_activity_counter = 0
+        self.moderate_entry_frames = max(1, int(0.45 * fps))
         self.frame_count = 0
         self.detected_count = 0  # 检测到老鼠的帧数
         
@@ -1062,6 +788,8 @@ class MouseTracker:
         self.immobility_stats = {
             'first_frame': 0,
             'total_frames': 0,
+            'detected_frames': 0,
+            'undetected_frames': 0,
             'immobility_frames': 0,
             'struggling_frames': 0,
             'immobility_episodes': 0,
@@ -1084,10 +812,19 @@ class MouseTracker:
         self.min_swing_frames = int(1.5 * fps) # 摆动确认窗口（约1.5秒）
         # 说明：旧实现要求“连续满足条件 >= min_swing_frames”，在摆动端点/短暂遮挡时会频繁清零。
         # 新实现用滑窗证据（命中数）做迟滞确认，更符合“摆动是连续行为”的物理直觉。
-        self.swing_buffer = deque(maxlen=self.min_swing_frames)  # [{'is_struggling': bool, 'swing_candidate': bool}, ...]
+        self.swing_rigidity_frames = max(5, int(1.0 * fps))
+        self.swing_buffer = deque(maxlen=self.min_swing_frames + self.swing_rigidity_frames)  # [{'is_struggling': bool, 'swing_candidate': bool}, ...]
         self.swing_evidence = deque(maxlen=self.min_swing_frames)  # 0/1
         self.swing_confirm_hits = max(1, int(0.65 * self.min_swing_frames))
         self.swing_release_hits = max(0, int(0.35 * self.min_swing_frames))
+        self.swing_aspect_range_ratio_max = 0.24
+        self.swing_y_range_body_max = 0.025
+        self.swing_area_range_ratio_max = 0.10
+        self._swing_area_history = deque(maxlen=self.swing_rigidity_frames)
+        self._swing_aspect_history = deque(maxlen=self.swing_rigidity_frames)
+        self._swing_cx_history = deque(maxlen=self.swing_rigidity_frames)
+        self._swing_cy_history = deque(maxlen=self.swing_rigidity_frames)
+        self._swing_bbox_h_history = deque(maxlen=self.swing_rigidity_frames)
         
         # 旧变量保留（兼容性），但不再主要使用
         self.swing_persistence = 0
@@ -1102,7 +839,7 @@ class MouseTracker:
         x, y, w, h = cv2.boundingRect(self.roi_polygon)
         self.roi_bbox = (x, y, w, h)
     
-    def update(self, frame, current_time=None, gray=None, yolo_dets_full=None):
+    def update(self, frame, current_time=None, gray=None):
         """
         更新追踪（处理一帧）
         
@@ -1142,101 +879,31 @@ class MouseTracker:
         
         self._perf_times['roi'].append(time.time() - t0)
         
-        # 2-4. 检测小鼠（YOLO分割优先；否则回退到背景减除+轮廓检测）
-        fg_mask = None
-        detections = []
+        # 2-4. 检测小鼠：背景减除 -> ROI裁剪掩码 -> 形态学 -> 轮廓检测
+        t0 = time.time()
+        fg_mask_raw = self.bg_subtractor.apply(roi_frame, gray=roi_gray)
+        fg_mask = cv2.bitwise_and(fg_mask_raw, fg_mask_raw, mask=self._cropped_roi_mask)
+        self._perf_times['bg_sub'].append(time.time() - t0)
 
-        if self.use_yolo_seg and self.yolo_detector is not None:
-            # YOLO 分割：在全帧上推理（避免ROI裁剪导致尺度分布变化），再把检测归属到本ROI
-            t0 = time.time()
-            if yolo_dets_full is None:
-                yolo_dets_full = self.yolo_detector.detect(frame)
-            self._perf_times['detect'].append(time.time() - t0)
+        t0 = time.time()
+        fg_mask = self.morphology_processor.process(fg_mask, inplace=True)
+        self._perf_times['morph'].append(time.time() - t0)
 
-            best = None
-            best_score = 0.0
-
-            # 优先使用“质心在ROI内”的检测；若没有，则回退到“mask与ROI bbox 区域有交集”的检测
-            candidates_in = []
-            candidates_overlap = []
-            for d in (yolo_dets_full or []):
-                mask_full = d.get('mask')
-                if mask_full is None or not isinstance(mask_full, np.ndarray):
-                    continue
-                if mask_full.shape[:2] != frame.shape[:2]:
-                    continue
-
-                cx, cy = d.get('centroid', (None, None))
-                if cx is None or cy is None:
-                    continue
-                try:
-                    inside = cv2.pointPolygonTest(self.roi_polygon, (float(cx), float(cy)), False) >= 0
-                except Exception:
-                    inside = False
-
-                # overlap：只在 ROI bbox 局部计算（避免全帧 bool 运算导致极慢）
-                try:
-                    mask_roi = mask_full[y:y+h, x:x+w]
-                    overlap = cv2.bitwise_and(mask_roi, self._cropped_roi_mask)
-                    overlap_area = int(np.count_nonzero(overlap))
-                except Exception:
-                    overlap_area = 0
-
-                if inside:
-                    candidates_in.append((d, overlap_area))
-                elif overlap_area > 0:
-                    candidates_overlap.append((d, overlap_area))
-
-            candidates = candidates_in if len(candidates_in) > 0 else candidates_overlap
-            for d, overlap_area in candidates:
-                conf = float(d.get('conf', 0.0))
-                score = conf * float(overlap_area)
-                if score > best_score:
-                    best_score = score
-                    best = (d, overlap_area)
-
-            if best is not None:
-                d, overlap_area = best
-                mask_full = d['mask']
-
-                # 生成 ROI-local fg_mask（用于光流统计），并强制限制在ROI内
-                fg_mask = mask_full[y:y+h, x:x+w].copy()
-                fg_mask = cv2.bitwise_and(fg_mask, fg_mask, mask=self._cropped_roi_mask)
-
-                # bbox/centroid 使用全局坐标（来自全帧推理）
-                detections = [
-                    {
-                        'centroid': d.get('centroid'),
-                        'bbox': d.get('bbox'),
-                        'area': int(overlap_area),
-                        'contour': None,
-                        'conf': d.get('conf', 0.0),
-                        '_yolo_full': True,
-                    }
-                ]
-            else:
-                fg_mask = np.zeros((roi_frame.shape[0], roi_frame.shape[1]), dtype=np.uint8)
-        else:
-            # 传统方法：背景减除 -> ROI裁剪掩码 -> 形态学 -> 轮廓检测
-            t0 = time.time()
-            fg_mask_raw = self.bg_subtractor.apply(roi_frame, gray=roi_gray)
-            fg_mask = cv2.bitwise_and(fg_mask_raw, fg_mask_raw, mask=self._cropped_roi_mask)
-            self._perf_times['bg_sub'].append(time.time() - t0)
-
-            t0 = time.time()
-            fg_mask = self.morphology_processor.process(fg_mask, inplace=True)
-            self._perf_times['morph'].append(time.time() - t0)
-
-            t0 = time.time()
-            detections = self.detector.detect(fg_mask)
-            self._perf_times['detect'].append(time.time() - t0)
+        t0 = time.time()
+        detections = self.detector.detect(fg_mask)
+        self._perf_times['detect'].append(time.time() - t0)
         
         if len(detections) == 0:
             # 即使未检测到，也视为不动（如果已经在追踪中）
             # 确保统计数据更新，否则报告会为空
             # 注意：这里不增加frames_active，因为没有检测到活动
             # 但是我们需要更新时间统计（如果已经在时间段内）
-            self._update_immobility_stats(False, current_time)
+            # Missed detections are tracked as uncertain, not immobile.
+            self._update_immobility_stats(False, current_time, detected=False)
+            self.last_centroid = None
+            self.moderate_activity_counter = 0
+            if self.flow_analyzer is not None:
+                self.flow_analyzer.prev_gray = gray
             
             return {
                 'roi_id': self.roi_id,
@@ -1246,6 +913,9 @@ class MouseTracker:
                 'contour': None,
                 'flow': None,
                 'is_struggling': False,
+                'is_swinging': False,
+                'state': 'uncertain',
+                'is_in_stats_window': self._is_in_stats_window(current_time),
                 'fg_mask': fg_mask,
                 'roi_offset': (x, y)  # 记录偏移量
             }
@@ -1253,31 +923,21 @@ class MouseTracker:
         # 选择最大的检测（假设是小鼠）
         detection = max(detections, key=lambda d: d.get('area', 0))
 
-        # 【重要】统一 detection 坐标系：
-        # - 传统路径：检测在 ROI-crop 上完成，需要加 (x,y) 偏移到全局
-        # - YOLO全帧路径：检测已经是全局坐标，不做偏移
-        if detection.get('_yolo_full'):
-            # 确保 centroid / bbox 形状正确
-            pass
-        else:
-            # centroid 偏移
-            local_centroid = detection['centroid']
-            global_centroid = (local_centroid[0] + x, local_centroid[1] + y)
+        # 统一 detection 坐标系：检测在 ROI-crop 上完成，需要加 (x, y) 偏移到全局。
+        local_centroid = detection['centroid']
+        global_centroid = (local_centroid[0] + x, local_centroid[1] + y)
 
-            # bbox 偏移
-            local_bbox = detection['bbox']  # (bx, by, bw, bh)
-            global_bbox = (local_bbox[0] + x, local_bbox[1] + y, local_bbox[2], local_bbox[3])
+        local_bbox = detection['bbox']  # (bx, by, bw, bh)
+        global_bbox = (local_bbox[0] + x, local_bbox[1] + y, local_bbox[2], local_bbox[3])
 
-            # contour 偏移（YOLO分割路径可能没有轮廓）
-            local_contour = detection.get('contour')
-            global_contour = None
-            if local_contour is not None:
-                global_contour = local_contour + np.array([[x, y]])
+        local_contour = detection.get('contour')
+        global_contour = None
+        if local_contour is not None:
+            global_contour = local_contour + np.array([[x, y]])
 
-            # 更新 detection 为全局坐标
-            detection['centroid'] = global_centroid
-            detection['bbox'] = global_bbox
-            detection['contour'] = global_contour
+        detection['centroid'] = global_centroid
+        detection['bbox'] = global_bbox
+        detection['contour'] = global_contour
         
         # 记录首次检测时间
         if self.first_detected_time is None:
@@ -1380,6 +1040,45 @@ class MouseTracker:
         # 挣扎时老鼠会卷曲 (Curling)，导致 高宽比(AspectRatio) 变小，或 边界框高度(Height) 变小
         # 摆动时老鼠被重力拉长，身体应该是细长的
         _, _, w, h = detection['bbox']
+        aspect_ratio = h / (w + 1e-6)
+        area_value = float(max(detection.get('area', 0), 0))
+        bbox_h_value = float(max(h, 1))
+        self._swing_area_history.append(area_value)
+        self._swing_aspect_history.append(float(aspect_ratio))
+        self._swing_cx_history.append(float(cx))
+        self._swing_cy_history.append(float(cy))
+        self._swing_bbox_h_history.append(bbox_h_value)
+
+        aspect_range_ratio = 0.0
+        y_range_body = 0.0
+        area_range_ratio = 0.0
+        rigidity_window_ready = len(self._swing_aspect_history) >= self.swing_rigidity_frames
+        if rigidity_window_ready:
+            aspect_window = np.asarray(self._swing_aspect_history, dtype=np.float32)
+            y_window = np.asarray(self._swing_cy_history, dtype=np.float32)
+            area_window = np.asarray(self._swing_area_history, dtype=np.float32)
+            h_window = np.asarray(self._swing_bbox_h_history, dtype=np.float32)
+
+            aspect_p10, aspect_p90 = np.percentile(aspect_window, [10, 90])
+            y_p10, y_p90 = np.percentile(y_window, [10, 90])
+            area_p10, area_p90 = np.percentile(area_window, [10, 90])
+
+            aspect_med = max(abs(float(np.median(aspect_window))), 1e-6)
+            h_med = max(abs(float(np.median(h_window))), 1e-6)
+            area_med = max(abs(float(np.median(area_window))), 1.0)
+
+            aspect_range_ratio = float(max(0.0, (aspect_p90 - aspect_p10) / aspect_med))
+            y_range_body = float(max(0.0, (y_p90 - y_p10) / h_med))
+            area_range_ratio = float(max(0.0, (area_p90 - area_p10) / area_med))
+
+        rigid_body_like = bool(
+            (not rigidity_window_ready)
+            or (
+                aspect_range_ratio <= self.swing_aspect_range_ratio_max
+                and y_range_body <= self.swing_y_range_body_max
+                and area_range_ratio <= self.swing_area_range_ratio_max
+            )
+        )
         aspect_ratio = h / (w + 1e-6) # 高宽比
         
         # 设定一个形态阈值（自适应基线）：
@@ -1407,6 +1106,7 @@ class MouseTracker:
         # - 挣扎：高熵(多方向) + 低一致性 + 高加速度波动/内部运动偏大
         eps = 1e-6
         flow_over_speed = float(flow_p90 / (abs(speed) + eps))
+        flow_over_speed_std = float(flow_p90 / (abs(speed_std) + eps))
 
         coh_med = float(np.median(coherence_arr)) if len(coherence_arr) > 0 else float(coherence)
         ent = float(flow_entropy)
@@ -1484,10 +1184,35 @@ class MouseTracker:
         if abs(speed) >= speed_floor_for_fos:
             fos_ok = flow_over_speed <= 2.2
 
-        # “明显挣扎”反门控：即便周期性强，只要内部运动很乱，也不要计为摆动证据
-        struggle_like = (ent >= 0.55) or (coh_med <= 0.75) or (abs(speed) >= speed_floor_for_fos and flow_over_speed >= 3.0)
+        # Restore the original swing standard from git: explicit rigid-swing gates,
+        # without the later score-margin classifier.
+        strong_activity_like = False
+        swing_margin = swing_score - struggle_score
+        struggle_like = (
+            (ent >= 0.55)
+            or (coh_med <= 0.75)
+            or (abs(speed) >= speed_floor_for_fos and flow_over_speed >= 3.0)
+        )
 
-        is_swinging_condition = bool(freq_ok and acf_ok and amp_ok and yx_ok and coh_ok and ent_ok and fos_ok and (not struggle_like))
+        internal_flow_ok = flow_over_speed_std <= 3.2
+        motion_swing_candidate = bool(freq_ok and acf_ok and amp_ok and yx_ok and coh_ok and ent_ok and fos_ok and (not struggle_like))
+        is_swinging_condition = bool(motion_swing_candidate and rigid_body_like)
+        sample_swing_like = bool(is_swinging_condition)
+        if (
+            self.collect_behavior_threshold_samples
+            and self._is_in_stats_window(current_time)
+            and np.isfinite(flow_p90)
+            and np.isfinite(speed_std)
+        ):
+            self.behavior_threshold_samples.append({
+                'flow_p90': float(flow_p90),
+                'speed_std': float(speed_std),
+                'flow_over_speed': float(flow_over_speed),
+                'flow_over_speed_std': float(flow_over_speed_std),
+                'entropy': float(ent),
+                'coherence': float(coh_med),
+                'swing_like': bool(sample_swing_like),
+            })
         
         # E. 状态更新 (带迟滞/去抖动 + 最小持续时间过滤)
         # 逻辑：摆动必须持续至少1.5秒才被确认。
@@ -1495,26 +1220,39 @@ class MouseTracker:
         
         # 将当前帧写入证据/缓冲（用于回溯修正）
         # 注意：这里先记录 is_struggling=False 占位，后面会用 final_struggling 回填。
+        retroactive_swing_frames = 0
         if not self.is_in_confirmed_swing:
-            self.swing_buffer.append({'is_struggling': False, 'swing_candidate': bool(is_swinging_condition)})
+            self.swing_buffer.append({
+                'is_struggling': False,
+                'swing_candidate': bool(is_swinging_condition),
+                'motion_swing_candidate': bool(motion_swing_candidate),
+                'in_stats_window': bool(self._is_in_stats_window(current_time)),
+            })
         self.swing_evidence.append(1 if is_swinging_condition else 0)
 
         # 确认/退出逻辑（滑窗迟滞）
         if not self.is_in_confirmed_swing:
             if len(self.swing_evidence) >= self.min_swing_frames:
-                if int(sum(self.swing_evidence)) >= int(self.swing_confirm_hits):
+                if int(sum(self.swing_evidence)) >= int(self.swing_confirm_hits) and rigid_body_like:
                     self.is_in_confirmed_swing = True
 
                     # 【关键】回溯修正统计数据
-                    # 仅修正 swing_candidate=True 的帧，避免把真正挣扎段“洗掉”。
+                    # Once the sliding window confirms a swing, the whole window is
+                    # considered one continuous swing segment. Candidate holes inside
+                    # that window are tolerated by design and should not flicker back
+                    # to struggling/immobile in the stats or video.
+                    retroactive_swing_frames = len(self.swing_buffer)
                     for frame_info in self.swing_buffer:
-                        if frame_info.get('swing_candidate') and frame_info.get('is_struggling'):
+                        if (
+                            frame_info.get('in_stats_window', True)
+                            and frame_info.get('is_struggling')
+                            and self.immobility_stats['struggling_frames'] > 0
+                        ):
                             self.immobility_stats['struggling_frames'] -= 1
                             self.immobility_stats['immobility_frames'] += 1
 
                     self.swing_buffer.clear()
                     self.swing_evidence.clear()
-                    print(f"[ROI {self.roi_id}] Swing Confirmed! Retroactively fixed stats.")
         else:
             # 已确认：当证据持续不足时退出
             if len(self.swing_evidence) >= self.min_swing_frames:
@@ -1542,6 +1280,7 @@ class MouseTracker:
             # 确认为摆动 -> 强制不动
             self.is_struggling = False
             self.calm_counter = 0
+            self.moderate_activity_counter = 0
             self.swing_persistence = self.fps * 0.2
         else:
             # 非摆动状态 -> 正常判定
@@ -1561,11 +1300,33 @@ class MouseTracker:
                     # 因此：速度波动仍可直接触发；但仅靠 flow_p90 触发时，要求 flow_over_speed 足够大（更像内部乱动）。
                     enter_by_speed = speed_std > self.speed_std_thr_hi
                     enter_by_flow = (flow_p90 > self.flow_thr_hi and flow_over_speed >= 2.5)
-                    if enter_by_speed or enter_by_flow:
+                    moderate_flow_floor = max(self.flow_thr_lo, self.flow_thr_hi * 0.45)
+                    swing_protected = bool(
+                        motion_swing_candidate
+                        or (
+                            swing_score >= 4.0
+                            and ent <= 0.08
+                            and acf_peak >= 0.55
+                            and rigid_body_like
+                        )
+                    )
+                    moderate_by_flow = (
+                        flow_p90 >= moderate_flow_floor
+                        and flow_over_speed >= 2.5
+                        and not swing_protected
+                    )
+                    if moderate_by_flow:
+                        self.moderate_activity_counter += 1
+                    else:
+                        self.moderate_activity_counter = 0
+                    enter_by_sustained_flow = self.moderate_activity_counter >= self.moderate_entry_frames
+                    if enter_by_speed or enter_by_flow or enter_by_sustained_flow:
                         self.is_struggling = True
                         self.calm_counter = 0
+                        self.moderate_activity_counter = 0
                 else:
                     # 当前挣扎：使用低阈值判断退出
+                    self.moderate_activity_counter = 0
                     if flow_p90 < self.flow_thr_lo and speed_std < self.speed_std_thr_lo:
                         self.calm_counter += 1
                     else:
@@ -1615,6 +1376,25 @@ class MouseTracker:
             'flow_p90': flow_p90,
             'coherence': coherence,  # 当前帧方向一致性
             'is_swinging': effective_is_swinging, # 返回生效的状态，而不仅仅是瞬时检测
+            'swing_state': {
+                'is_confirmed_swing': bool(self.is_in_confirmed_swing),
+                'is_effective_swing': bool(effective_is_swinging),
+                'is_candidate': bool(is_swinging_condition),
+                'motion_candidate': bool(motion_swing_candidate),
+                'is_newly_confirmed': bool(retroactive_swing_frames > 0),
+                'retroactive_frame_count': int(retroactive_swing_frames),
+                'struggle_like': bool(struggle_like),
+                'strong_activity_like': bool(strong_activity_like),
+                'internal_flow_ok': bool(internal_flow_ok),
+                'rigid_body_like': bool(rigid_body_like),
+                'rigidity_window_ready': bool(rigidity_window_ready),
+                'aspect_range_ratio': float(aspect_range_ratio),
+                'y_range_body': float(y_range_body),
+                'area_range_ratio': float(area_range_ratio),
+                'swing_score': float(swing_score),
+                'struggle_score': float(struggle_score),
+                'swing_margin': float(swing_margin),
+            },
             'calm_counter': self.calm_counter,
             'aspect_ratio': aspect_ratio,
             'flow_entropy': float(flow_entropy),
@@ -1624,9 +1404,86 @@ class MouseTracker:
             'amp_ratio': float(amp_ratio),
             'y_over_x': float(y_over_x),
             'flow_over_speed': float(flow_over_speed),
+            'flow_over_speed_std': float(flow_over_speed_std),
             'accel_std': float(accel_std),
+            'internal_flow_ok': bool(internal_flow_ok),
+            'rigid_body_like': bool(rigid_body_like),
+            'aspect_range_ratio': float(aspect_range_ratio),
+            'y_range_body': float(y_range_body),
+            'area_range_ratio': float(area_range_ratio),
             'is_in_stats_window': self._is_in_stats_window(current_time),
         }
+
+    def get_behavior_thresholds(self):
+        return {
+            'flow_thr_hi': float(self.flow_thr_hi),
+            'flow_thr_lo': float(self.flow_thr_lo),
+            'speed_std_thr_hi': float(self.speed_std_thr_hi),
+            'speed_std_thr_lo': float(self.speed_std_thr_lo),
+        }
+
+    def apply_behavior_thresholds(self, thresholds):
+        if not isinstance(thresholds, dict):
+            return
+        self.flow_thr_hi = float(thresholds.get('flow_thr_hi', self.flow_thr_hi))
+        self.flow_thr_lo = float(thresholds.get('flow_thr_lo', self.flow_thr_lo))
+        self.speed_std_thr_hi = float(thresholds.get('speed_std_thr_hi', self.speed_std_thr_hi))
+        self.speed_std_thr_lo = float(thresholds.get('speed_std_thr_lo', self.speed_std_thr_lo))
+
+    def auto_configure_behavior_thresholds(self):
+        if not self.auto_behavior_threshold:
+            return False
+
+        samples = [
+            sample for sample in self.behavior_threshold_samples
+            if not sample.get('swing_like')
+            and np.isfinite(sample.get('flow_p90', np.nan))
+            and np.isfinite(sample.get('speed_std', np.nan))
+        ]
+        min_samples = max(30, int(round(self.fps * 3.0)))
+        if len(samples) < min_samples:
+            return False
+
+        flow_values = np.asarray([sample['flow_p90'] for sample in samples], dtype=np.float32)
+        speed_values = np.asarray([sample['speed_std'] for sample in samples], dtype=np.float32)
+        if flow_values.size == 0 or speed_values.size == 0:
+            return False
+
+        fallback = self.get_behavior_thresholds()
+        if float(np.max(flow_values)) < max(8.0, fallback['flow_thr_hi'] * 0.20) and float(np.max(speed_values)) < max(6.0, fallback['speed_std_thr_hi'] * 0.20):
+            return False
+
+        sensitivity_factor = float(np.clip(1.0 - 0.10 * self.behavior_threshold_sensitivity, 0.65, 1.35))
+
+        def estimate_hi(values, fallback_hi, max_factor):
+            p20, p50, p80, p90 = np.percentile(values, [20, 50, 80, 90])
+            if p90 <= p20 + 1e-6:
+                base = float(max(p50, p20 * 1.25))
+            else:
+                # TST high thresholds mean "enter struggling". P90 was too close
+                # to the outlier tail for quiet ROIs, so low-amplitude but visible
+                # struggle waves stayed below the red line. P80 tracks the active
+                # shoulder while the lower clip keeps auto mode from becoming as
+                # permissive as the earlier P20/P80 estimator.
+                base = float(p80)
+            hi = base * sensitivity_factor
+            return float(np.clip(hi, fallback_hi * 0.60, fallback_hi * max_factor))
+
+        def estimate_lo(values, hi):
+            p35 = float(np.percentile(values, 35))
+            return float(max(0.001, min(hi * 0.65, max(hi * 0.40, p35))))
+
+        flow_hi = estimate_hi(flow_values, fallback['flow_thr_hi'], 1.60)
+        speed_hi = estimate_hi(speed_values, fallback['speed_std_thr_hi'], 1.35)
+        thresholds = {
+            'flow_thr_hi': flow_hi,
+            'flow_thr_lo': estimate_lo(flow_values, flow_hi),
+            'speed_std_thr_hi': speed_hi,
+            'speed_std_thr_lo': estimate_lo(speed_values, speed_hi),
+        }
+        self.apply_behavior_thresholds(thresholds)
+        self.collect_behavior_threshold_samples = False
+        return True
     
     def _is_in_stats_window(self, current_time=None):
         """判断当前帧是否在统计时间窗口内"""
@@ -1659,7 +1516,7 @@ class MouseTracker:
             return True
         return True
 
-    def _update_immobility_stats(self, is_struggling, current_time=None):
+    def _update_immobility_stats(self, is_struggling, current_time=None, detected=True):
         """更新不动时间统计"""
         # 检查时间配置
         if self.time_config:
@@ -1695,6 +1552,12 @@ class MouseTracker:
             stats['first_frame'] = self.frame_count
         
         stats['total_frames'] += 1
+        if not detected:
+            stats['undetected_frames'] += 1
+            stats['last_state'] = None
+            return
+
+        stats['detected_frames'] += 1
         
         # 只要在时间段内，就应该统计（无论是否active）
         # 如果未激活（frames_active < min），默认为不动
@@ -1737,6 +1600,12 @@ class MouseTracker:
                 'roi_id': self.roi_id,
                 'roi_name': self.roi_name,
                 'time_config': self.time_config,
+                'auto_behavior_threshold': bool(self.auto_behavior_threshold),
+                'behavior_threshold_sensitivity': round(float(self.behavior_threshold_sensitivity), 3),
+                'flow_thr_hi': round(float(self.flow_thr_hi), 3),
+                'flow_thr_lo': round(float(self.flow_thr_lo), 3),
+                'speed_std_thr_hi': round(float(self.speed_std_thr_hi), 3),
+                'speed_std_thr_lo': round(float(self.speed_std_thr_lo), 3),
                 'total_time_seconds': 0.0,
                 'immobility_time_seconds': 0.0,
                 'struggling_time_seconds': 0.0,
@@ -1747,15 +1616,24 @@ class MouseTracker:
                 'immobility_frequency_per_min': 0.0,
                 'struggling_frequency_per_min': 0.0,
                 'latency_to_immobility_seconds': None,
+                'detected_frames': 0,
+                'undetected_frames': 0,
+                'detected_rate_percent': 0.0,
+                'uncertain_time_seconds': 0.0,
+                'uncertain_percent': 0.0,
                 'total_frames': 0,
             }
         
         total_time = stats['total_frames'] / fps
+        detected_time = stats.get('detected_frames', 0) / fps
+        uncertain_time = stats.get('undetected_frames', 0) / fps
         immobile_time = stats['immobility_frames'] / fps
         struggling_time = stats['struggling_frames'] / fps
         
         immobile_percent = (stats['immobility_frames'] / stats['total_frames']) * 100
         struggling_percent = (stats['struggling_frames'] / stats['total_frames']) * 100
+        detected_rate = (stats.get('detected_frames', 0) / stats['total_frames']) * 100
+        uncertain_percent = (stats.get('undetected_frames', 0) / stats['total_frames']) * 100
         
         duration_minutes = total_time / 60.0
         immobile_freq = stats['immobility_episodes'] / max(duration_minutes, 1/60.0)
@@ -1769,16 +1647,28 @@ class MouseTracker:
             'roi_id': self.roi_id,
             'roi_name': self.roi_name,
             'time_config': self.time_config,  # 添加时间配置信息
+            'auto_behavior_threshold': bool(self.auto_behavior_threshold),
+            'behavior_threshold_sensitivity': round(float(self.behavior_threshold_sensitivity), 3),
+            'flow_thr_hi': round(float(self.flow_thr_hi), 3),
+            'flow_thr_lo': round(float(self.flow_thr_lo), 3),
+            'speed_std_thr_hi': round(float(self.speed_std_thr_hi), 3),
+            'speed_std_thr_lo': round(float(self.speed_std_thr_lo), 3),
             'total_time_seconds': round(total_time, 2),
+            'detected_time_seconds': round(detected_time, 2),
+            'uncertain_time_seconds': round(uncertain_time, 2),
             'immobility_time_seconds': round(immobile_time, 2),
             'struggling_time_seconds': round(struggling_time, 2),
+            'detected_rate_percent': round(detected_rate, 1),
             'immobility_percent': round(immobile_percent, 1),
             'struggling_percent': round(struggling_percent, 1),
+            'uncertain_percent': round(uncertain_percent, 1),
             'immobility_episodes': stats['immobility_episodes'],
             'struggling_episodes': stats['struggling_episodes'],
             'immobility_frequency_per_min': round(immobile_freq, 2),
             'struggling_frequency_per_min': round(struggling_freq, 2),
             'latency_to_immobility_seconds': round(latency_seconds, 2) if latency_seconds is not None else None,
+            'detected_frames': stats.get('detected_frames', 0),
+            'undetected_frames': stats.get('undetected_frames', 0),
             'total_frames': stats['total_frames'],
         }
 
@@ -1799,6 +1689,7 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
     """
     # 【性能优化】避免不必要的复制
     output = frame if inplace else frame.copy()
+    occupied_panels = []
     
     for result in tracker_results:
         if not result['detected']:
@@ -1812,20 +1703,18 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         # 颜色：挣扎=红色，不动=绿色
         if result.get('is_swinging', False):
             color = (0, 255, 0) # 绿色
-            status_text = 'Immobile (Swing)'
+            status_text = 'Swing'
         else:
             color = (0, 0, 255) if is_struggling else (0, 255, 0)
-            status_text = 'Struggling' if is_struggling else 'Immobile'
+            status_text = 'Struggle' if is_struggling else 'Immobile'
             
-        # 绘制轮廓（YOLO全帧分割路径可能没有 contour）
+        # 绘制轮廓
         if contour is not None and isinstance(contour, np.ndarray) and contour.size > 0:
             cv2.drawContours(output, [contour], 0, color, 2)
         
         # 绘制质心
         cx, cy = int(centroid[0]), int(centroid[1])
         cv2.circle(output, (cx, cy), 5, color, -1)
-        
-        roi_name = result.get('roi_name', f"ROI {roi_id}")
         
         # 【性能优化】简化信息显示，减少绘制操作
         # 只显示最重要的 2 行信息
@@ -1841,13 +1730,13 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
             time_color = (128, 128, 128)  # 灰色
         
         info_lines = [
-            f"{time_indicator} {roi_name} | {status_text}",  # 第一行：状态+ROI名称
+            f"{time_indicator} R{roi_id} | {status_text}",  # 第一行：状态+ROI编号
         ]
         
-        if result['flow'] is not None:
+        if result.get('flow') is not None:
             flow_val = result.get('flow_p90', 0.0)
             ar = result.get('aspect_ratio', 0.0)
-            info_lines.append(f"Flow: {flow_val:.1f} | AR: {ar:.2f}")
+            info_lines.append(f"F:{flow_val:.1f} AR:{ar:.2f}")
         
         # 绘制简化的信息（不使用半透明叠加，直接绘制）
         # 用轮廓顶端作为信息框锚点；若无轮廓则用 bbox 顶端
@@ -1863,13 +1752,66 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
                 except Exception:
                     y_min = cy
         
-        # 信息框尺寸
-        panel_width = 260
-        panel_height = len(info_lines) * 22 + 10
+        # 信息框尺寸：短文本 + 动态宽度，避免多 ROI 并排时互相遮挡。
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.45
+        text_sizes = [cv2.getTextSize(line, font, font_scale, 1)[0] for line in info_lines]
+        max_text_width = max((size[0] for size in text_sizes), default=100)
+        panel_width = int(min(max(max_text_width + 14, 150), output.shape[1] - 10))
+        line_step = 19
+        panel_height = len(info_lines) * line_step + 9
         
         # 位置
-        panel_x = max(5, min(cx - panel_width // 2, output.shape[1] - panel_width - 5))
-        panel_y = max(10, y_min - panel_height - 10)
+        def _overlaps(rect_a, rect_b):
+            ax1, ay1, ax2, ay2 = rect_a
+            bx1, by1, bx2, by2 = rect_b
+            return ax1 < bx2 and ax2 > bx1 and ay1 < by2 and ay2 > by1
+
+        def _clamp_panel(x, y):
+            x = max(5, min(int(x), output.shape[1] - panel_width - 5))
+            y = max(5, min(int(y), output.shape[0] - panel_height - 5))
+            return x, y
+
+        def _overlap_area(rect_a, rect_b):
+            ax1, ay1, ax2, ay2 = rect_a
+            bx1, by1, bx2, by2 = rect_b
+            ow = max(0, min(ax2, bx2) - max(ax1, bx1))
+            oh = max(0, min(ay2, by2) - max(ay1, by1))
+            return ow * oh
+
+        base_x = cx - panel_width // 2
+        base_y = y_min - panel_height - 10
+        candidate_positions = [
+            (base_x, base_y),
+            (base_x, cy + 12),
+            (cx + 12, cy - panel_height // 2),
+            (cx - panel_width - 12, cy - panel_height // 2),
+            (base_x, y_min - panel_height * 2 - 14),
+            (base_x, y_min + 8),
+        ]
+
+        best_score = None
+        panel_x, panel_y = _clamp_panel(base_x, base_y)
+        for cand_x, cand_y in candidate_positions:
+            cand_x, cand_y = _clamp_panel(cand_x, cand_y)
+            rect = (cand_x, cand_y, cand_x + panel_width, cand_y + panel_height)
+            overlap = sum(_overlap_area(rect, existing) for existing in occupied_panels)
+            distance = abs(cand_x - base_x) + abs(cand_y - base_y)
+            score = overlap * 1000 + distance
+            if best_score is None or score < best_score:
+                best_score = score
+                panel_x, panel_y = cand_x, cand_y
+            if overlap == 0:
+                break
+
+        panel_rect = (panel_x, panel_y, panel_x + panel_width, panel_y + panel_height)
+        while any(_overlaps(panel_rect, existing) for existing in occupied_panels):
+            next_y = panel_y + panel_height + 4
+            if next_y + panel_height > output.shape[0] - 5:
+                break
+            panel_y = next_y
+            panel_rect = (panel_x, panel_y, panel_x + panel_width, panel_y + panel_height)
+        occupied_panels.append(panel_rect)
         
         # 背景
         bg_color = (0, 0, 0) if in_stats else (40, 40, 40)
@@ -1886,11 +1828,11 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         
         # 绘制文本
         for i, line in enumerate(info_lines):
-            y_pos = panel_y + 18 + i * 22
+            y_pos = panel_y + 16 + i * line_step
             # 第一行用状态颜色，其余白色
             text_color = time_color if i == 0 else (200, 200, 200)
             cv2.putText(output, line, (panel_x + 6, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
+                       font, font_scale, text_color, 1, cv2.LINE_AA)
         
         # 绘制轨迹
         if show_trajectory and 'trajectory' in result:
@@ -1901,6 +1843,205 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
                 cv2.line(output, pt1, pt2, (200, 200, 200), 1)
     
     return output
+
+
+TST_STATE_COLORS = {
+    'struggle': (0, 0, 220),
+    'immobile': (0, 170, 0),
+    'swing': (180, 80, 210),
+    'uncertain': (145, 145, 145),
+}
+
+
+def _draw_tst_axes(image, x0, y0, w, h, label):
+    cv2.rectangle(image, (x0, y0), (x0 + w, y0 + h), (226, 232, 240), 1)
+    cv2.putText(image, label[:24], (16, y0 + h // 2 + 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (51, 65, 85), 1, cv2.LINE_AA)
+
+
+def _tst_tracker_lookup(trackers):
+    return {int(getattr(tracker, 'roi_id', 0)): tracker for tracker in (trackers or [])}
+
+
+def _tst_records_by_roi(logs, trackers=None):
+    grouped = defaultdict(list)
+    for row in logs or []:
+        try:
+            roi_id = int(row.get('roi_id'))
+        except Exception:
+            continue
+        grouped[roi_id].append(row)
+    for rows in grouped.values():
+        rows.sort(key=lambda item: (float(item.get('time') or 0.0), int(item.get('frame') or 0)))
+    roi_ids = set(grouped.keys())
+    for tracker in trackers or []:
+        try:
+            roi_ids.add(int(getattr(tracker, 'roi_id', 0)))
+        except Exception:
+            pass
+    return {roi_id: grouped.get(roi_id, []) for roi_id in sorted(roi_ids) if roi_id}
+
+
+def _tst_row_time_bounds(grouped):
+    times = []
+    for rows in grouped.values():
+        for row in rows:
+            try:
+                times.append(float(row.get('time') or 0.0))
+            except Exception:
+                pass
+    if not times:
+        return 0.0, 1.0
+    start = min(times)
+    end = max(times)
+    return start, max(1.0, end - start)
+
+
+def _tst_row_state(row, distinguish_swing=True):
+    detected = row.get('detected', True)
+    if detected is False or str(detected).lower() == 'false':
+        return 'uncertain'
+
+    def _as_bool(value):
+        if isinstance(value, str):
+            return value.strip().lower() in {'1', 'true', 'yes', 'y'}
+        return bool(value)
+
+    is_swinging = _as_bool(row.get('is_swinging', False))
+    is_struggling = _as_bool(row.get('is_struggling', False))
+    if distinguish_swing and is_swinging:
+        return 'swing'
+    if is_struggling:
+        return 'struggle'
+    return 'immobile'
+
+
+def render_tst_ethogram(logs, trackers, path, distinguish_swing=True):
+    grouped = _tst_records_by_roi(logs, trackers)
+    if not grouped:
+        return False
+    tracker_by_roi = _tst_tracker_lookup(trackers)
+    start_time, duration = _tst_row_time_bounds(grouped)
+    plot_w = 1120
+    left = 180
+    right = 50
+    row_h = 52
+    top = 58
+    bottom = 56
+    width = left + plot_w + right
+    height = top + row_h * len(grouped) + bottom
+    image = np.full((height, width, 3), 250, dtype=np.uint8)
+    image[:, :] = (245, 244, 237)
+    title = "Tail Suspension Ethogram"
+    title += " (Swing separated)" if distinguish_swing else " (Swing merged with immobile)"
+    cv2.putText(image, title, (24, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 19), 2, cv2.LINE_AA)
+    for idx, (roi_id, rows) in enumerate(grouped.items()):
+        tracker = tracker_by_roi.get(roi_id)
+        roi_name = getattr(tracker, 'roi_name', f'ROI {roi_id}') if tracker else f'ROI {roi_id}'
+        y = top + idx * row_h
+        _draw_tst_axes(image, left, y, plot_w, 24, f"ROI {roi_id} {roi_name}")
+        for row in rows:
+            try:
+                t = float(row.get('time') or 0.0) - start_time
+            except Exception:
+                t = 0.0
+            x = left + int(np.clip(t / duration, 0.0, 1.0) * plot_w)
+            state = _tst_row_state(row, distinguish_swing=distinguish_swing)
+            color = TST_STATE_COLORS.get(state, TST_STATE_COLORS['uncertain'])
+            cv2.line(image, (x, y + 1), (x, y + 23), color, 1)
+        cv2.putText(image, f"{duration:.1f}s", (left + plot_w - 60, y + 43),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 116, 139), 1, cv2.LINE_AA)
+    legend_states = ['struggle', 'swing', 'immobile', 'uncertain'] if distinguish_swing else ['struggle', 'immobile', 'uncertain']
+    legend_y = height - 28
+    legend_x = left
+    for state in legend_states:
+        cv2.rectangle(image, (legend_x, legend_y - 12), (legend_x + 24, legend_y + 2), TST_STATE_COLORS[state], -1)
+        cv2.putText(image, state, (legend_x + 32, legend_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (51, 65, 85), 1, cv2.LINE_AA)
+        legend_x += 145
+    return write_image_unicode(path, image)
+
+
+def render_tst_activity_curve(logs, trackers, path):
+    grouped = _tst_records_by_roi(logs, trackers)
+    if not grouped:
+        return False
+    tracker_by_roi = _tst_tracker_lookup(trackers)
+    start_time, duration = _tst_row_time_bounds(grouped)
+    plot_w = 1120
+    left = 180
+    right = 50
+    row_h = 140
+    top = 58
+    bottom = 54
+    width = left + plot_w + right
+    height = top + row_h * len(grouped) + bottom
+    image = np.full((height, width, 3), 250, dtype=np.uint8)
+    image[:, :] = (245, 244, 237)
+    cv2.putText(image, "Tail Suspension Activity Curve", (24, 34),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 19), 2, cv2.LINE_AA)
+    for idx, (roi_id, rows) in enumerate(grouped.items()):
+        tracker = tracker_by_roi.get(roi_id)
+        roi_name = getattr(tracker, 'roi_name', f'ROI {roi_id}') if tracker else f'ROI {roi_id}'
+        y = top + idx * row_h
+        plot_h = 92
+        _draw_tst_axes(image, left, y, plot_w, plot_h, f"ROI {roi_id} {roi_name}")
+        values = []
+        for row in rows:
+            try:
+                values.append(float(row.get('decision_flow_p90_mm_s', row.get('flow_p90_mm_s')) or 0.0))
+            except Exception:
+                values.append(0.0)
+        if not values:
+            continue
+        thresholds = tracker.get_behavior_thresholds() if tracker and hasattr(tracker, 'get_behavior_thresholds') else {}
+        lo = float(thresholds.get('flow_thr_lo', 0.0) or 0.0)
+        hi = float(thresholds.get('flow_thr_hi', 0.0) or 0.0)
+        y_max = max(max(values), hi * 1.25, lo * 1.25, 10.0)
+        points = []
+        for row, value in zip(rows, values):
+            try:
+                t = float(row.get('time') or 0.0) - start_time
+            except Exception:
+                t = 0.0
+            x = left + int(np.clip(t / duration, 0.0, 1.0) * plot_w)
+            yy = y + plot_h - int(np.clip(value / y_max, 0.0, 1.0) * plot_h)
+            points.append((x, yy))
+        if len(points) >= 2:
+            cv2.polylines(image, [np.asarray(points, dtype=np.int32)], False, (37, 99, 235), 2, cv2.LINE_AA)
+        strip_y = y + plot_h + 4
+        strip_h = 7
+        last_x = None
+        for row in rows:
+            try:
+                t = float(row.get('time') or 0.0) - start_time
+            except Exception:
+                t = 0.0
+            x = left + int(np.clip(t / duration, 0.0, 1.0) * plot_w)
+            if last_x is None:
+                last_x = x
+                continue
+            if row.get('is_swinging'):
+                color = (180, 95, 30)
+            elif row.get('is_struggling'):
+                color = (25, 25, 220)
+            else:
+                color = (150, 165, 155)
+            cv2.rectangle(image, (last_x, strip_y), (max(x, last_x + 1), strip_y + strip_h), color, -1)
+            last_x = x
+        if lo > 0:
+            lo_y = y + plot_h - int(np.clip(lo / y_max, 0.0, 1.0) * plot_h)
+            cv2.line(image, (left, lo_y), (left + plot_w, lo_y), (0, 170, 0), 1, cv2.LINE_AA)
+            cv2.putText(image, f"release {lo:.1f}", (left + 8, max(y + 12, lo_y - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (40, 120, 40), 1, cv2.LINE_AA)
+        if hi > 0:
+            hi_y = y + plot_h - int(np.clip(hi / y_max, 0.0, 1.0) * plot_h)
+            cv2.line(image, (left, hi_y), (left + plot_w, hi_y), (0, 0, 220), 1, cv2.LINE_AA)
+            cv2.putText(image, f"enter {hi:.1f}", (left + 92, max(y + 12, hi_y - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (40, 40, 150), 1, cv2.LINE_AA)
+        cv2.putText(image, f"max {y_max:.1f}", (left + plot_w - 82, y + 14),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (100, 116, 139), 1, cv2.LINE_AA)
+    return write_image_unicode(path, image)
 
 
 # ==================== 便捷函数 ====================

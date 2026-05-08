@@ -1,4 +1,4 @@
-const I18N = {
+﻿const I18N = {
     zh: {
         'nav.home':           '首页',
         'nav.start':          '开始分析',
@@ -7,7 +7,7 @@ const I18N = {
         'nav.license':        '许可协议',
         'lang.toggle':        'English',
 
-        'footer.rights':      'MouseScope Desktop v2.2.0 © 2026 All Rights Reserved | 版权所有',
+        'footer.rights':      'MouseScope Desktop v2.3.0 © 2026 All Rights Reserved | 版权所有',
         'footer.academic':    '仅限学术研究使用 · 禁止商业用途 · 禁止二次分发',
         'footer.viewlicense': '查看完整许可协议',
 
@@ -19,7 +19,7 @@ const I18N = {
         'license.loading':       '加载中...',
 
         'home.subtitle':     '面向小鼠行为学视频分析的桌面软件平台<br>当前支持悬尾实验、强迫游泳、旷场实验、新奇物体识别、高架十字迷宫与 Y 迷宫',
-        'home.version':      'Desktop Edition v2.2.0 · 学术研究专用',
+        'home.version':      'Desktop Edition v2.3.0 · 学术研究专用',
         'home.note':         '选择实验模块并上传视频后，按页面提示完成标定、ROI 和参数设置，即可导出结果视频、统计表、轨迹图与热图。',
         'home.btn.start':    '开始分析',
         'home.btn.manual':   '查看手册',
@@ -311,6 +311,8 @@ const I18N = {
         'calib.debug.btn.refresh':    '刷新预览',
         'calib.debug.gen.video':      '生成结果视频',
         'calib.debug.gen.video.hint': '(取消可加速约20%)',
+        'calib.debug.auto.behavior':  '自动估计行为阈值（可选）',
+        'calib.debug.behavior.sensitivity':'行为阈值灵敏度',
         'calib.debug.btn.start':      '开始分析',
         'calib.alert.session_error':  '会话错误: {0}',
         'calib.alert.session_retry':  '请返回首页重新上传',
@@ -670,7 +672,7 @@ const I18N = {
         'nav.license':        'License',
         'lang.toggle':        '中文',
 
-        'footer.rights':      'MouseScope Desktop v2.2.0 © 2026 All Rights Reserved',
+        'footer.rights':      'MouseScope Desktop v2.3.0 © 2026 All Rights Reserved',
         'footer.academic':    'For Academic Research Only · No Commercial Use · No Redistribution',
         'footer.viewlicense': 'View Full License',
 
@@ -682,7 +684,7 @@ const I18N = {
         'license.loading':       'Loading...',
 
         'home.subtitle':     'A modular desktop platform for automated mouse behavioral video analysis<br>Now supports TST, FST, OFT, Novel Object Recognition, Elevated Plus Maze, and Y-Maze',
-        'home.version':      'Desktop Edition v2.2.0 · Academic Research Only',
+        'home.version':      'Desktop Edition v2.3.0 · Academic Research Only',
         'home.note':         'Choose an assay, upload the videos, then follow the setup page to finish calibration, ROI, and parameter tuning before exporting videos, tables, track maps, and heatmaps.',
         'home.btn.start':    'Start Analysis',
         'home.btn.manual':   'User Manual',
@@ -974,6 +976,8 @@ const I18N = {
         'calib.debug.btn.refresh':     'Refresh Preview',
         'calib.debug.gen.video':       'Generate Result Video',
         'calib.debug.gen.video.hint':  '(Uncheck to speed up ~20%)',
+        'calib.debug.auto.behavior':   'Auto Behavior Threshold (Optional)',
+        'calib.debug.behavior.sensitivity':'Behavior Threshold Sensitivity',
         'calib.debug.btn.start':       'Start Analysis',
         'calib.alert.session_error':   'Session error: {0}',
         'calib.alert.session_retry':   'Please return to the home page and upload again.',

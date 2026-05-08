@@ -9,8 +9,8 @@ def _points_count(points) -> int:
     return len(points or [])
 
 
-def _roi_points_complete(roi: dict[str, Any] | None) -> bool:
-    return isinstance(roi, dict) and _points_count(roi.get("points")) >= 4
+def _roi_points_complete(roi: dict[str, Any] | None, min_points: int = 4) -> bool:
+    return isinstance(roi, dict) and _points_count(roi.get("points")) >= int(min_points)
 
 
 def _mask_valid(roi: dict[str, Any] | None) -> bool:
@@ -54,8 +54,8 @@ def _tst_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]
     if not config or not config.get("pixel_to_mm"):
         return False, ["缺少体长标定"]
     for idx, roi in enumerate(rois, start=1):
-        if not _roi_points_complete(roi):
-            return False, [f"ROI {idx} 缺少多边形点"]
+        if not _roi_points_complete(roi, min_points=3):
+            return False, [f"ROI {idx} 缺少多边形点（至少 3 个）"]
     return True, []
 
 

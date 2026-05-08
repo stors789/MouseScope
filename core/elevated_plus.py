@@ -203,6 +203,9 @@ class ElevatedPlusTracker:
         self.prev_stats_centroid_px: Optional[Tuple[float, float]] = None
         self.prev_centroid_px: Optional[Tuple[float, float]] = None
         self.current_entry_arm: Optional[str] = None
+        self.center_entry_reset_s = 0.2
+        self.center_entry_reset_frames = max(1, int(round(self.fps * self.center_entry_reset_s)))
+        self.center_entry_streak = 0
         self.missing_frames = 0
         self.max_gap_frames = 5
 
@@ -528,7 +531,13 @@ class ElevatedPlusTracker:
                 else:
                     self.immobile_frames += 1
 
-                if zone_key in self.ARM_ZONE_NAMES and self._is_inside_entry_zone(zone_key, centroid_px):
+                inside_entry_zone = zone_key in self.ARM_ZONE_NAMES and self._is_inside_entry_zone(zone_key, centroid_px)
+                if zone_group == "center":
+                    self.center_entry_streak += 1
+                    if self.center_entry_streak >= self.center_entry_reset_frames:
+                        self.current_entry_arm = None
+                elif inside_entry_zone:
+                    self.center_entry_streak = 0
                     if self.current_entry_arm != zone_key:
                         arm_entry_event = True
                         arm_entry_name = zone_key
@@ -541,7 +550,7 @@ class ElevatedPlusTracker:
                         else:
                             self.closed_entries += 1
                 else:
-                    self.current_entry_arm = None
+                    self.center_entry_streak = 0
 
                 self.trajectory_px_stats.append(centroid_px)
                 template_xy = self.project_point_to_template_cm(centroid_px, zone_key)
@@ -550,11 +559,12 @@ class ElevatedPlusTracker:
                 self.trajectory_px_live.append(centroid_px)
             else:
                 self.prev_stats_centroid_px = None
-                self.current_entry_arm = None
+                self.center_entry_streak = 0
                 self.immobile_frames += 1
         else:
             self.prev_stats_centroid_px = None
             self.current_entry_arm = None
+            self.center_entry_streak = 0
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
@@ -648,6 +658,7 @@ class ElevatedPlusTracker:
             "open_arm_length_cm": format_metric(self.open_arm_length_cm),
             "closed_arm_length_cm": format_metric(self.closed_arm_length_cm),
             "entry_depth_ratio": round(self.entry_depth_ratio, 3),
+            "entry_reset_center_s": format_seconds(self.center_entry_reset_s),
             "movement_threshold_cm_s": round(self.movement_threshold_cm_s, 3),
             "cm_per_px_est": round(self.cm_per_px, 6),
         }

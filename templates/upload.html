@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}上传视频 - MouseScope{% endblock %}
 {% block extra_css %}
 <style>
@@ -83,7 +83,7 @@
     <div class="upload-hero-main">
         <div class="upload-kicker">
             <i class="fas fa-clapperboard"></i>
-            <span>MouseScope v2.2.0</span>
+            <span>MouseScope v2.3.0</span>
         </div>
         <h1 class="upload-title" data-page-i18n="hero.title">统一上传入口</h1>
         <p class="upload-copy" data-page-i18n="hero.copy">
@@ -115,13 +115,13 @@
             <div class="card-body">
                 <ul class="nav nav-tabs mb-4" id="uploadMethodTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="web-upload-tab" data-bs-toggle="tab"
-                            data-bs-target="#web-upload" type="button" role="tab"><span
+                        <button class="nav-link" id="web-upload-tab" data-bs-toggle="tab"
+                            data-bs-target="#web-upload" type="button" role="tab" aria-selected="false"><span
                                 data-i18n="upload.tab.web">网页上传</span></button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="local-path-tab" data-bs-toggle="tab" data-bs-target="#local-path"
-                            type="button" role="tab"><span data-i18n="upload.tab.local">服务器本地路径</span></button>
+                        <button class="nav-link active" id="local-path-tab" data-bs-toggle="tab" data-bs-target="#local-path"
+                            type="button" role="tab" aria-selected="true"><span data-i18n="upload.tab.local">服务器本地路径</span></button>
                     </li>
                 </ul>
 
@@ -149,7 +149,7 @@
                         </div>
                     </div>
                     <div class="tab-content" id="uploadMethodContent">
-                        <div class="tab-pane fade show active" id="web-upload" role="tabpanel">
+                        <div class="tab-pane fade" id="web-upload" role="tabpanel">
                             <div class="upload-zone-compact" id="dropZone">
                                 <div class="text-center">
                                     <h4 data-i18n="upload.drop.hint">拖拽文件到这里</h4>
@@ -167,7 +167,7 @@
                             </div>
                         </div>
 
-                        <div class="tab-pane fade" id="local-path" role="tabpanel">
+                        <div class="tab-pane fade show active" id="local-path" role="tabpanel">
                             <div class="alert alert-info">
                                 <strong data-i18n="upload.local.tip.title">提示:</strong><br>
                                 <span data-i18n="upload.local.tip.body"
@@ -473,41 +473,49 @@
             };
 
             xhr.onload = function () {
-                if (xhr.status === 200) {
-                    const result = JSON.parse(xhr.responseText);
-                    if (result.success && result.paths.length > 0) {
-                        // 将上传后的服务器路径追加到textarea
-                        const currentPaths = textarea.value.trim();
-                        const newPaths = result.paths.join('\n');
-                        textarea.value = currentPaths ? currentPaths + '\n' + newPaths : newPaths;
-
-                        progressBar.style.width = '100%';
-                        progressBar.classList.remove('progress-bar-animated');
-                        progressBar.classList.add('bg-success');
-                        const doneText = trUploadGlobal('upload.status.done', (typeof getLang === 'function' && getLang() === 'en') ? 'files uploaded' : '个文件已上传');
-                        statusText.innerHTML = `<i class="fas fa-check-circle me-2 text-success"></i><span>${result.paths.length} ${doneText}</span>`;
-
-                        const msgUpload = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.upload.success'].replace('{}', result.paths.length) : result.paths.length + ' 个文件已上传并添加到路径列表';
-                        const uploadedNames = Array.isArray(result.names) && result.names.length === result.paths.length
-                            ? result.names
-                            : result.paths.map(p => p.split('/').pop());
-                        fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgUpload + '</strong><div class="small text-muted mt-1">' + uploadedNames.join(', ') + '</div></div>';
-                        configSection.style.display = 'block';
-
-                        setTimeout(() => {
-                            progressDiv.style.display = 'none';
-                            progressBar.classList.remove('bg-success');
-                            progressBar.classList.add('progress-bar-animated');
-                        }, 3000);
-                    } else {
-                        const pre = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.upload'] : '上传失败: ';
-                        statusText.textContent = pre + (result.error || (getLang && getLang() === 'en' ? 'Unknown error' : '未知错误'));
-                        progressBar.classList.add('bg-danger');
-                    }
-                } else {
-                    statusText.textContent = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.retry'] : '上传失败，请重试';
-                    progressBar.classList.add('bg-danger');
+                let result = {};
+                try {
+                    result = JSON.parse(xhr.responseText || '{}');
+                } catch (_err) {
+                    result = {};
                 }
+
+                if (xhr.status === 200 && result.success && result.paths.length > 0) {
+                    // 将上传后的服务器路径追加到textarea
+                    const currentPaths = textarea.value.trim();
+                    const newPaths = result.paths.join('\n');
+                    textarea.value = currentPaths ? currentPaths + '\n' + newPaths : newPaths;
+
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('progress-bar-animated');
+                    progressBar.classList.add('bg-success');
+                    const doneText = trUploadGlobal('upload.status.done', (typeof getLang === 'function' && getLang() === 'en') ? 'files uploaded' : '个文件已上传');
+                    statusText.innerHTML = `<i class="fas fa-check-circle me-2 text-success"></i><span>${result.paths.length} ${doneText}</span>`;
+
+                    const msgUpload = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.upload.success'].replace('{}', result.paths.length) : result.paths.length + ' 个文件已上传并添加到路径列表';
+                    const uploadedNames = Array.isArray(result.names) && result.names.length === result.paths.length
+                        ? result.names
+                        : result.paths.map(p => p.split('/').pop());
+                    fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgUpload + '</strong><div class="small text-muted mt-1">' + uploadedNames.join(', ') + '</div></div>';
+                    configSection.style.display = 'block';
+
+                    setTimeout(() => {
+                        progressDiv.style.display = 'none';
+                        progressBar.classList.remove('bg-success');
+                        progressBar.classList.add('progress-bar-animated');
+                    }, 3000);
+                    return;
+                }
+
+                const pre = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.upload'] : '上传失败: ';
+                const fallback = (xhr.status === 413)
+                    ? ((getLang && getLang() === 'en') ? 'The selected upload is larger than the 2GB limit.' : '上传文件超过 2GB 限制')
+                    : ((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.retry'] : '上传失败，请重试');
+                const errorMessage = result.error || fallback;
+                statusText.textContent = pre + errorMessage;
+                progressBar.classList.add('bg-danger');
+                fileList.innerHTML = '<div class="alert alert-danger"><strong></strong></div>';
+                fileList.querySelector('strong').textContent = pre + errorMessage;
             };
 
             xhr.onerror = function () {

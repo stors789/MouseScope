@@ -159,7 +159,7 @@
                 <table class="manual-data-table">
                     <thead><tr><th>参数</th><th>作用</th><th>结果影响</th></tr></thead>
                     <tbody>
-                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才记为一次入臂。</td><td>直接影响 <code>open_entries</code>、<code>closed_entries</code> 和 <code>open_entry_percent</code>。</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>定义质心需要深入臂区多远才有资格记为一次入臂。</td><td>同一臂会保持锁定，只有稳定回到中心区或进入另一条臂后，才允许再次计入该臂。</td></tr>
                         <tr><td><code>movement_threshold_cm_s</code></td><td>区分移动与低活动 / 静止。</td><td>影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。</td></tr>
                         <tr><td><code>bin_seconds</code></td><td>时间分箱长度。</td><td>决定 <code>*_bins.csv</code> 每一行覆盖的时长。</td></tr>
                         <tr><td><code>generate_video</code></td><td>是否导出带标注结果视频。</td><td>关闭可提速，但会失去最直观的复核材料。</td></tr>
@@ -195,6 +195,7 @@
                         <tr><td><code>open_entries</code> / <code>closed_entries</code> / <code>total_arm_entries</code></td><td>入臂次数。</td><td>总入臂数很低时应谨慎解释比例。</td></tr>
                         <tr><td><code>open_entry_percent</code></td><td>开放臂进入占比。</td><td>常与开放臂时间比例配合报告。</td></tr>
                         <tr><td><code>first_open_entry_latency_s</code></td><td>首次进入开放臂潜伏期。</td><td>若始终未进入开放臂，可能为空。</td></tr>
+                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，当前默认为约 0.2 s。</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -215,7 +216,7 @@
                 <ul class="manual-list">
                     <li>开放臂时间异常高：检查开放臂是否画得过宽，或外侧亮背景是否漏进了检测区域。</li>
                     <li>开放臂时间异常低：检查开放臂是否画得过窄，或边缘阴影是否把鼠体切断了。</li>
-                    <li>入臂数明显偏高：优先提高 <code>entry_depth_ratio</code>，并确认中心区与各臂交界处没有重叠。</li>
+                    <li>入臂数明显偏高：先复核结果视频中的 <code>arm_entry_event</code>，再调整 <code>entry_depth_ratio</code>，并确认中心区与各臂交界处没有重叠。</li>
                     <li>频繁出现 <code>Unknown</code>：通常是区域之间存在空隙，或质心落到了未覆盖边界。</li>
                     <li>热图看起来偏位：先复核 5 区画区和真实尺寸填写是否正确。</li>
                 </ul>
@@ -339,7 +340,7 @@
                     <tbody>
                         <tr><td><code>bg_type</code></td><td>Defines whether the background is light or dark.</td><td>Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.</td></tr>
                         <tr><td><code>gray_threshold</code></td><td>Controls how strict the foreground split is.</td><td>Increase when noise is abundant; decrease when contours break or disappear.</td></tr>
-                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before counting as an entry.</td><td>Increase when entries are repeatedly counted near the center junction.</td></tr>
+                        <tr><td><code>entry_depth_ratio</code></td><td>Defines how deep the centroid must travel into an arm before it can count as an entry.</td><td>The same arm stays locked until the centroid returns stably to center or enters another arm.</td></tr>
                         <tr><td><code>movement_threshold_cm_s</code></td><td>Separates moving frames from low-motion frames.</td><td>Adjust when moving / immobile labels look unstable.</td></tr>
                     </tbody>
                 </table>
@@ -352,6 +353,7 @@
                     <li><code>*_track.csv</code>: frame-level records of zone, speed, cumulative distance, and arm-entry events.</li>
                     <li><code>*_summary.csv</code>: one-row-per-ROI summary table with the main EPM metrics.</li>
                     <li><code>*_bins.csv</code>: fixed-width temporal bins for time allocation, entries, and distance.</li>
+                    <li><code>entry_reset_center_s</code> in summary records the stable-center reset duration used by the same-arm entry lock.</li>
                 </ul>
             </section>
 
@@ -370,7 +372,7 @@
                 <ul class="manual-list">
                     <li>Open-arm time unexpectedly high: check whether the open arms are too wide or whether bright background leaked into detection.</li>
                     <li>Open-arm time unexpectedly low: check whether the open arms are too narrow or arm-edge shadows are breaking the contour.</li>
-                    <li>Entry counts too high: increase <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
+                    <li>Entry counts too high: review <code>arm_entry_event</code> in the annotated video, then tune <code>entry_depth_ratio</code> and confirm that center-arm boundaries do not overlap.</li>
                     <li>Frequent <code>Unknown</code> states usually indicate gaps between zones or uncovered boundary areas.</li>
                 </ul>
             </section>

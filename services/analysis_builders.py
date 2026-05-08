@@ -297,6 +297,8 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
     default_dilation_kernel = int(data.get("dilation_kernel", 5))
     default_dilation_iter = int(data.get("dilation_iter", 3))
     default_min_area = int(data.get("min_area", 100))
+    default_auto_behavior_threshold = bool(data.get("auto_behavior_threshold", False))
+    default_behavior_threshold_sensitivity = float(data.get("behavior_threshold_sensitivity", 0.0))
 
     per_video_configs = _iter_video_configs(
         sess,
@@ -310,6 +312,8 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
             "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
             "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
             "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "auto_behavior_threshold": bool(raw_cfg.get("auto_behavior_threshold", default_auto_behavior_threshold)),
+            "behavior_threshold_sensitivity": float(raw_cfg.get("behavior_threshold_sensitivity", default_behavior_threshold_sensitivity)),
             "pixel_to_mm": float(raw_cfg.get("pixel_to_mm", data.get("pixel_to_mm", 1.0))),
             "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
         },
@@ -324,6 +328,8 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
         "dilation_kernel": default_dilation_kernel,
         "dilation_iter": default_dilation_iter,
         "min_area": default_min_area,
+        "auto_behavior_threshold": default_auto_behavior_threshold,
+        "behavior_threshold_sensitivity": default_behavior_threshold_sensitivity,
         "pixel_to_mm": float(data.get("pixel_to_mm", 1.0)),
         "rois": data.get("rois", []),
         "per_video_configs": per_video_configs,

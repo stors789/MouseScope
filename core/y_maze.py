@@ -214,6 +214,9 @@ class YMazeTracker:
 
         self.arm_entry_sequence: List[str] = []
         self.current_entry_arm: Optional[str] = None
+        self.center_entry_reset_s = 0.2
+        self.center_entry_reset_frames = max(1, int(round(self.fps * self.center_entry_reset_s)))
+        self.center_entry_streak = 0
         self.first_detected_time_abs: Optional[float] = None
         self.prev_all_centroid_px: Optional[Tuple[float, float]] = None
         self.last_all_centroid_px: Optional[Tuple[float, float]] = None
@@ -510,7 +513,13 @@ class YMazeTracker:
                 else:
                     self.immobile_frames += 1
 
-                if zone_key in self.ARM_NAMES and self._is_inside_entry_zone(zone_key, centroid_px):
+                inside_entry_zone = zone_key in self.ARM_NAMES and self._is_inside_entry_zone(zone_key, centroid_px)
+                if zone_key == "center":
+                    self.center_entry_streak += 1
+                    if self.center_entry_streak >= self.center_entry_reset_frames:
+                        self.current_entry_arm = None
+                elif inside_entry_zone:
+                    self.center_entry_streak = 0
                     if self.current_entry_arm != zone_key:
                         arm_entry_event = True
                         entry_arm_name = zone_key
@@ -524,7 +533,7 @@ class YMazeTracker:
                                 self.alternation_count += 1
                                 alternation_event = True
                 else:
-                    self.current_entry_arm = None
+                    self.center_entry_streak = 0
 
                 self.trajectory_px_stats.append(centroid_px)
                 template_xy = self.project_point_to_template_cm(centroid_px, zone_key)
@@ -533,11 +542,12 @@ class YMazeTracker:
                 self.trajectory_px_live.append(centroid_px)
             else:
                 self.prev_stats_centroid_px = None
-                self.current_entry_arm = None
+                self.center_entry_streak = 0
                 self.immobile_frames += 1
         else:
             self.prev_stats_centroid_px = None
             self.current_entry_arm = None
+            self.center_entry_streak = 0
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
@@ -629,6 +639,7 @@ class YMazeTracker:
             "arm_length_cm": format_metric(self.arm_length_cm),
             "arm_width_cm": format_metric(self.arm_width_cm),
             "entry_depth_ratio": round(self.entry_depth_ratio, 3),
+            "entry_reset_center_s": format_seconds(self.center_entry_reset_s),
             "movement_threshold_cm_s": round(self.movement_threshold_cm_s, 3),
             "entry_sequence": self._sequence_tail(max_items=12),
             "cm_per_px_est": round(self.cm_per_px, 6),
@@ -723,11 +734,15 @@ def draw_y_maze_results(
     for tracker, result in tracker_results:
         if tracker.detection_polygon_img is not None:
             _draw_poly_outline(output, tracker.detection_polygon_img, (244, 180, 0), 2)
+        for entry_poly in tracker.entry_polygons_img.values():
+            fill_poly_alpha(output, entry_poly, (0, 191, 255), alpha=0.16)
         for zone_name, poly in tracker.zone_polygons_img.items():
             group = "center" if zone_name == "center" else "arm"
             color = _zone_color(group, True)
             thickness = 3 if zone_name == result.get("zone_key") else 2
             _draw_poly_outline(output, poly, color, thickness)
+        for entry_poly in tracker.entry_polygons_img.values():
+            _draw_poly_outline(output, entry_poly, (0, 191, 255), 2)
 
         for arm_name in tracker.ARM_NAMES:
             poly = tracker.zone_polygons_img[arm_name]

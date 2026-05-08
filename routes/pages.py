@@ -10,9 +10,11 @@ from services.experiment_registry import get_experiment_spec, normalize_experime
 
 
 def register_page_routes(app, ctx) -> None:
+    UploadStorageError = ctx.UploadStorageError
     analysis_sessions = ctx.analysis_sessions
     BUNDLE_DIR = ctx.BUNDLE_DIR
     VALID_VIDEO_EXTS = ctx.VALID_VIDEO_EXTS
+    _cleanup_session_artifacts = ctx._cleanup_session_artifacts
     _extract_video_info_from_entry = ctx._extract_video_info_from_entry
     _get_original_name_for_path = ctx._get_original_name_for_path
     _now_ts = ctx._now_ts
@@ -105,14 +107,19 @@ def register_page_routes(app, ctx) -> None:
         saved_names = []
         upload_id = secrets.token_hex(8)
 
-        for f in files:
-            if f and f.filename:
-                ext = os.path.splitext(f.filename)[1].lower()
-                if ext not in VALID_VIDEO_EXTS:
-                    continue
-                save_path, original_name = _save_uploaded_video(f, upload_id)
-                saved_paths.append(save_path)
-                saved_names.append(original_name)
+        try:
+            for f in files:
+                if f and f.filename:
+                    ext = os.path.splitext(f.filename)[1].lower()
+                    if ext not in VALID_VIDEO_EXTS:
+                        continue
+                    save_path, original_name = _save_uploaded_video(f, upload_id)
+                    saved_paths.append(save_path)
+                    saved_names.append(original_name)
+        except UploadStorageError as exc:
+            _cleanup_session_artifacts(upload_id)
+            app.logger.warning("Upload failed because storage is full: %s", exc)
+            return jsonify({'success': False, 'error': str(exc)}), 507
 
         if not saved_paths:
             return jsonify({'success': False, 'error': '没有有效的视频文件'}), 400
@@ -131,34 +138,40 @@ def register_page_routes(app, ctx) -> None:
         video_paths = []
         video_infos = []
 
-        # 处理上传的文件
-        for f in uploaded_files:
-            if f and f.filename:
-                save_path, original_name = _save_uploaded_video(f, session_id)
-                video_paths.append(save_path)
-                video_infos.append({'path': save_path, 'original_name': original_name})
+        try:
+            # 处理上传的文件
+            for f in uploaded_files:
+                if f and f.filename:
+                    save_path, original_name = _save_uploaded_video(f, session_id)
+                    video_paths.append(save_path)
+                    video_infos.append({'path': save_path, 'original_name': original_name})
 
-        # 处理本地路径
-        if local_paths_raw:
-            for line in local_paths_raw.split('\n'):
-                p = line.strip().strip('"').strip("'").strip('“”').strip('‘’').strip()
-                if not p:
-                    continue
-                p = Path(p).expanduser()
-                if p.is_file() and p.suffix.lower() in VALID_VIDEO_EXTS:
-                    staged_path, original_name = _stage_local_video_if_needed(
-                        p,
-                        session_id,
-                        original_name=_get_original_name_for_path(p) or p.name,
-                    )
-                    video_paths.append(staged_path)
-                    video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(p)})
-                elif p.is_dir():
-                    for vf in sorted(p.iterdir()):
-                        if vf.is_file() and vf.suffix.lower() in VALID_VIDEO_EXTS:
-                            staged_path, original_name = _stage_local_video_if_needed(vf, session_id, original_name=vf.name)
-                            video_paths.append(staged_path)
-                            video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(vf)})
+            # 处理本地路径
+            if local_paths_raw:
+                for line in local_paths_raw.split('\n'):
+                    p = line.strip().strip('"').strip("'").strip('“”').strip('‘’').strip()
+                    if not p:
+                        continue
+                    p = Path(p).expanduser()
+                    if p.is_file() and p.suffix.lower() in VALID_VIDEO_EXTS:
+                        staged_path, original_name = _stage_local_video_if_needed(
+                            p,
+                            session_id,
+                            original_name=_get_original_name_for_path(p) or p.name,
+                        )
+                        video_paths.append(staged_path)
+                        video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(p)})
+                    elif p.is_dir():
+                        for vf in sorted(p.iterdir()):
+                            if vf.is_file() and vf.suffix.lower() in VALID_VIDEO_EXTS:
+                                staged_path, original_name = _stage_local_video_if_needed(vf, session_id, original_name=vf.name)
+                                video_paths.append(staged_path)
+                                video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(vf)})
+        except UploadStorageError as exc:
+            _cleanup_session_artifacts(session_id)
+            app.logger.warning("Upload failed because storage is full: %s", exc)
+            flash(str(exc), 'error')
+            return redirect(url_for('upload_page'))
 
         if not video_paths:
             flash('请选择或输入至少一个视频文件', 'error')

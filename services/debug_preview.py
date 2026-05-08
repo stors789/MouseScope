@@ -33,6 +33,24 @@ def _now_ts() -> float:
     return time.time()
 
 
+def _nonnegative_int(value, label: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'{label} 参数必须是非负整数')
+    return max(0, parsed)
+
+
+def _session_total_frames(sess: dict[str, Any], video_idx: int) -> int:
+    infos = sess.get('video_infos') or []
+    if 0 <= video_idx < len(infos) and isinstance(infos[video_idx], dict):
+        try:
+            return int(infos[video_idx].get('total_frames') or 0)
+        except Exception:
+            return 0
+    return 0
+
+
 def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) -> None:
     for cache_key, entry in list(debug_static_bg_cache.items()):
         if isinstance(entry, dict):
@@ -463,17 +481,29 @@ def _forced_swim_debug_preview(frame, data, video_path):
     })
 
 def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: dict[str, Any]):
-    frame_idx = int(data.get('frame', 0))
-    video_idx = int(data.get('video', 0))
+    try:
+        frame_idx = _nonnegative_int(data.get('frame', 0), 'frame')
+        video_idx = _nonnegative_int(data.get('video', 0), 'video')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
-    video_path = sess['video_paths'][min(video_idx, len(sess['video_paths']) - 1)]
+    video_paths = sess.get('video_paths') or []
+    if not video_paths:
+        return jsonify({'error': '会话没有视频文件'}), 404
+
+    video_idx = min(video_idx, len(video_paths) - 1)
+    total_frames = _session_total_frames(sess, video_idx)
+    if total_frames > 0:
+        frame_idx = min(frame_idx, total_frames - 1)
+
+    video_path = video_paths[video_idx]
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ret, frame = cap.read()
     cap.release()
 
     if not ret:
-        return jsonify({'error': '无法读取帧'}), 500
+        return jsonify({'error': '无法读取帧'}), 400
 
     experiment_type = sess.get('experiment_type')
     if experiment_type == 'open_field':

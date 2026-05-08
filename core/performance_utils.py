@@ -63,13 +63,6 @@ def get_gpu_info() -> dict:
         if info['cuda_devices'] > 0:
             info['cuda_available'] = True
             info['current_device'] = cv2.cuda.getDevice()
-            # 尝试获取设备名称
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    info['device_name'] = torch.cuda.get_device_name(0)
-            except:
-                pass
     except:
         pass
     

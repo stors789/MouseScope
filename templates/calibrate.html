@@ -356,6 +356,17 @@
                                 <span data-i18n="calib.debug.gen.video">生成结果视频</span> <span class="text-muted small" data-i18n="calib.debug.gen.video.hint">(取消可加速约20%)</span>
                             </label>
                         </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="autoBehaviorThreshold" onchange="syncBehaviorThresholdUI()">
+                            <label class="form-check-label" for="autoBehaviorThreshold">
+                                <span data-i18n="calib.debug.auto.behavior">自动估计行为阈值（可选）</span>
+                            </label>
+                        </div>
+                        <div class="mb-3" id="behaviorSensitivityBox">
+                            <label class="form-label" data-i18n="calib.debug.behavior.sensitivity">行为阈值灵敏度</label>
+                            <input type="range" class="form-range" id="behaviorThresholdSensitivity" min="-3" max="3" step="0.5" value="0" oninput="syncBehaviorThresholdUI()">
+                            <div class="d-flex justify-content-between text-small"><span>-3</span><span id="behaviorThresholdSensitivityVal">0</span><span>3</span></div>
+                        </div>
                         <div class="toolbar-actions">
                             <button class="btn btn-secondary" onclick="previousStep()"><i class="fas fa-arrow-left me-2"></i><span data-i18n="calib.debug.btn.prev">上一步</span></button>
                             <button class="btn btn-info" onclick="updateDebugPreview()"><i class="fas fa-sync me-2"></i><span data-i18n="calib.debug.btn.refresh">刷新预览</span></button>
@@ -408,6 +419,8 @@
             dilation_kernel: 5,
             dilation_iter: 3,
             min_area: 100,
+            auto_behavior_threshold: false,
+            behavior_threshold_sensitivity: 0,
         };
     }
     function readDebugParamsFromControls() {
@@ -420,6 +433,8 @@
             dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
             dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '3', 10),
             min_area: parseInt(document.getElementById('minArea')?.value || '100', 10),
+            auto_behavior_threshold: document.getElementById('autoBehaviorThreshold')?.checked ?? false,
+            behavior_threshold_sensitivity: parseFloat(document.getElementById('behaviorThresholdSensitivity')?.value || '0'),
         };
     }
     function applyDebugParamsToControls(params) {
@@ -432,6 +447,8 @@
         const dilationKernel = document.getElementById('dilationKernel');
         const dilationIter = document.getElementById('dilationIter');
         const minArea = document.getElementById('minArea');
+        const autoBehaviorThreshold = document.getElementById('autoBehaviorThreshold');
+        const behaviorThresholdSensitivity = document.getElementById('behaviorThresholdSensitivity');
         if (bgMethod) bgMethod.value = merged.bg_method;
         if (bgType) bgType.value = merged.bg_type;
         if (grayThreshold) grayThreshold.value = String(merged.gray_threshold);
@@ -440,12 +457,23 @@
         if (dilationKernel) dilationKernel.value = String(merged.dilation_kernel);
         if (dilationIter) dilationIter.value = String(merged.dilation_iter);
         if (minArea) minArea.value = String(merged.min_area);
+        if (autoBehaviorThreshold) autoBehaviorThreshold.checked = Boolean(merged.auto_behavior_threshold);
+        if (behaviorThresholdSensitivity) behaviorThresholdSensitivity.value = String(merged.behavior_threshold_sensitivity ?? 0);
         toggleDetectionParams();
+        syncBehaviorThresholdUI();
         ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(id => {
             const el = document.getElementById(id);
             const valEl = document.getElementById(id + 'Val');
             if (el && valEl) valEl.textContent = el.value;
         });
+    }
+    function syncBehaviorThresholdUI() {
+        const autoBehaviorThreshold = document.getElementById('autoBehaviorThreshold');
+        const sensitivity = document.getElementById('behaviorThresholdSensitivity');
+        const sensitivityVal = document.getElementById('behaviorThresholdSensitivityVal');
+        const enabled = autoBehaviorThreshold?.checked ?? false;
+        if (sensitivity) sensitivity.disabled = !enabled;
+        if (sensitivityVal && sensitivity) sensitivityVal.textContent = sensitivity.value;
     }
     let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
         calib_points: [],
@@ -1214,6 +1242,8 @@
                 dilation_kernel: currentDebugParams.dilation_kernel,
                 dilation_iter: currentDebugParams.dilation_iter,
                 min_area: currentDebugParams.min_area,
+                auto_behavior_threshold: currentDebugParams.auto_behavior_threshold,
+                behavior_threshold_sensitivity: currentDebugParams.behavior_threshold_sensitivity,
                 pixel_to_mm: pixelToMm || 1.0,
                 rois: processedROIs,
                 per_video_configs: perVideoConfigs,
@@ -1290,7 +1320,8 @@
         // 禁用所有可能触发预览的控件
         const disableIds = [
             'frameSliderDebug', 'bgMethod', 'grayThreshold', 'bgType',
-            'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'
+            'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea',
+            'autoBehaviorThreshold', 'behaviorThresholdSensitivity'
         ];
         disableIds.forEach(id => {
             const el = document.getElementById(id);
