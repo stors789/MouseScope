@@ -45,7 +45,7 @@
 {% block content %}
 <div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
 
-<div class="fst-shell">
+<div class="fst-shell" data-calibration-module="forced_swim">
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
@@ -64,7 +64,7 @@
             <div class="text-secondary" data-fst-i18n="header.subtitle">侧视多圆筒 FST，使用圆筒直径线归一化运动评分，输出不动时间、ethogram 与活动曲线。</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='fst') }}" target="_blank">
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='fst') }}" target="_blank">
                 <i class="fas fa-book-open me-2"></i><span data-fst-i18n="header.manual">FST 使用手册</span>
             </a>
             <div class="fst-steps">
@@ -142,6 +142,11 @@
             <div class="fst-panel">
                 <h5 class="mb-3" data-fst-i18n="list.title">圆筒列表</h5>
                 <div class="fst-hint" data-fst-i18n="list.hint">每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。</div>
+                {% if project_context and project_context.project_id %}
+                <div class="alert alert-warning py-2 mb-3 project-subject-guide" data-tour-id="project-subject-required">
+                    <i class="fas fa-circle-info me-2"></i><span data-fst-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。</span>
+                </div>
+                {% endif %}
                 <div id="cylinderList" class="fst-card-list">
                     <div class="mini-note" data-fst-i18n="list.empty">还没有添加圆筒 ROI。</div>
                 </div>
@@ -300,6 +305,9 @@ const videoList = {{ video_list | tojson }};
 {% else %}
 const videoList = [];
 {% endif %}
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
 
 const FST_I18N = {
     zh: {
@@ -338,7 +346,10 @@ const FST_I18N = {
         'list.title': '圆筒列表',
         'list.hint': '每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。',
         'list.empty': '还没有添加圆筒 ROI。',
+        'project.subject_required': '项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。',
         'card.points': 'ROI 点',
+        'card.roi_complete': 'ROI 轮廓已完成',
+        'card.roi_drawing': '正在绘制 ROI 轮廓',
         'card.diameter_ready': '直径线已设置',
         'card.diameter_missing': '缺少直径线',
         'card.mask_default': '检测遮罩默认跟随 ROI',
@@ -427,7 +438,10 @@ const FST_I18N = {
         'list.title': 'Cylinder List',
         'list.hint': 'Each ROI needs a cylinder diameter line. Timing can follow global settings, first detection, or absolute video time.',
         'list.empty': 'No cylinder ROI has been added.',
+        'project.subject_required': 'In project mode, every complete ROI must be assigned to an existing project animal before you can tune or start analysis.',
         'card.points': 'ROI points',
+        'card.roi_complete': 'ROI shape set',
+        'card.roi_drawing': 'Drawing ROI shape',
         'card.diameter_ready': 'Diameter line set',
         'card.diameter_missing': 'Missing diameter line',
         'card.mask_default': 'Mask follows ROI',
@@ -493,6 +507,55 @@ let editIndex = null;
 let debounceTimers = {};
 const MIN_MASK_POINTS = 3;
 const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+function currentProjectAssignmentId() {
+    const map = projectContext && projectContext.video_assignment_map ? projectContext.video_assignment_map : {};
+    return map[String(currentVideoIdx)] || null;
+}
+function currentProjectUnits() {
+    const assignmentId = currentProjectAssignmentId();
+    const unitMap = projectContext && projectContext.unit_map ? projectContext.unit_map : {};
+    return assignmentId && Array.isArray(unitMap[assignmentId]) ? unitMap[assignmentId] : [];
+}
+function projectSubjectById(subjectId) {
+    return (projectSubjects || []).find(subject => subject.subject_id === subjectId) || null;
+}
+function clearProjectSubjectForROI(roi) {
+    if (!roi) return;
+    const previousAnimalCode = roi.animal_code;
+    delete roi.project_unit_id;
+    delete roi.subject_id;
+    delete roi.animal_code;
+    delete roi.group_id;
+    delete roi.group_name;
+    if (previousAnimalCode && roi.name === previousAnimalCode) roi.name = '';
+}
+function applyProjectSubjectToROI(roi, index, subjectId) {
+    if (!isProjectMode || !roi) return;
+    const subject = projectSubjectById(subjectId);
+    if (!subject) {
+        clearProjectSubjectForROI(roi);
+        return;
+    }
+    const units = currentProjectUnits();
+    const unit = units.find(unit => unit.subject_id === subject.subject_id) || null;
+    roi.project_unit_id = unit ? unit.unit_id : null;
+    roi.subject_id = subject.subject_id;
+    roi.animal_code = subject.animal_code;
+    roi.group_id = subject.group_id || '';
+    roi.group_name = subject.group_name || '';
+    roi.name = subject.animal_code || roi.name;
+}
+function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
+    if (!isProjectMode) {
+        return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
+    }
+    const selectedId = roi.subject_id || '';
+    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+        const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
+        return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    })).join('');
+    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateRoiProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+}
 
 function lang() { return (typeof getLang === 'function') ? getLang() : 'zh'; }
 function tr(key, fallback) { return (FST_I18N[lang()] && FST_I18N[lang()][key]) || fallback || key; }
@@ -517,6 +580,61 @@ function cloneState(value) { return JSON.parse(JSON.stringify(value)); }
 function currentVideoName(index) { return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`; }
 function frameLabelText(current, total) { return `${tr('frame', 'Frame')} ${current} / ${total}`; }
 function cylinderDefaultName(index) { return `Cylinder ${index + 1}`; }
+function isCompleteCylinderROI(roi) {
+    return Array.isArray(roi && roi.points)
+        && roi.points.length >= 3
+        && Array.isArray(roi.diameter_points)
+        && roi.diameter_points.length === 2
+        && Number(roi.cylinder_diameter_cm || 0) > 0;
+}
+function allCylinderRoisReady(sourceRois = rois) {
+    return Array.isArray(sourceRois) && sourceRois.length > 0 && sourceRois.every(isCompleteCylinderROI);
+}
+function projectSubjectRequiredMessage(noSubjects = false) {
+    const en = typeof getLang === 'function' && getLang() === 'en';
+    if (noSubjects) {
+        return en
+            ? 'Add animals in the project first, then choose one for every ROI.'
+            : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。';
+    }
+    return en
+        ? 'Please choose an existing project animal for every ROI.'
+        : '请为每个 ROI 选择项目中已有的小鼠。';
+}
+function projectRoiSubjectsReady(sourceRois = rois, completeFn = isCompleteCylinderROI) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) return false;
+    return (sourceRois || []).every(roi => !completeFn(roi) || !!projectSubjectById(roi.subject_id));
+}
+function validateProjectRoiSubjects(sourceRois = rois, completeFn = isCompleteCylinderROI) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) {
+        alert(projectSubjectRequiredMessage(true));
+        return false;
+    }
+    const missingIndex = (sourceRois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+    if (missingIndex >= 0) {
+        alert(projectSubjectRequiredMessage(false));
+        return false;
+    }
+    return true;
+}
+function addProjectSubjectBatchIssues(incomplete, configs, completeFn = isCompleteCylinderROI) {
+    if (!isProjectMode) return;
+    if (!(projectSubjects || []).length) {
+        incomplete.push(projectSubjectRequiredMessage(true));
+        return;
+    }
+    (configs || []).forEach((cfg, index) => {
+        const subjectIndex = (cfg.rois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+        if (subjectIndex >= 0) {
+            const en = typeof getLang === 'function' && getLang() === 'en';
+            incomplete.push(en
+                ? `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} has no project animal selected`
+                : `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} 未选择项目小鼠`);
+        }
+    });
+}
 function defaultTuningParams() {
     return {
         bg_method: 'threshold',
@@ -690,7 +808,7 @@ function syncVideoSelectors() {
     selector.value = String(currentVideoIdx);
     Array.from(selector.options).forEach((option, index) => {
         const cfg = ensureVideoConfig(index);
-        const ready = Array.isArray(cfg.rois) && cfg.rois.length > 0 && cfg.rois.every(roi => (roi.diameter_points || []).length === 2);
+        const ready = allCylinderRoisReady(cfg.rois || []);
         option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
     });
 }
@@ -772,7 +890,10 @@ function drawFstCanvas() {
     rois.forEach((roi, index) => {
         const hue = (index * 47) % 360;
         const color = `hsl(${hue}, 72%, 52%)`;
-        drawPoly(ctx, roi.points || [], color, `hsla(${hue}, 72%, 52%, 0.14)`);
+        const roiPoints = roi.points || [];
+        if (drawMode === 'roi' && editIndex === index) return;
+        if (!roiPoints.length) return;
+        drawPoly(ctx, roiPoints, color, `hsla(${hue}, 72%, 52%, 0.14)`);
         if ((roi.diameter_points || []).length === 2) {
             const p1 = roi.diameter_points[0];
             const p2 = roi.diameter_points[1];
@@ -798,8 +919,8 @@ function drawFstCanvas() {
         if ((roi.detection_points || []).length >= MIN_MASK_POINTS) {
             drawPoly(ctx, roi.detection_points, '#facc15', 'rgba(250,204,21,0.08)');
         }
-        const cx = (roi.points || []).reduce((sum, p) => sum + p.x, 0) / Math.max((roi.points || []).length, 1);
-        const cy = (roi.points || []).reduce((sum, p) => sum + p.y, 0) / Math.max((roi.points || []).length, 1);
+        const cx = roiPoints.reduce((sum, p) => sum + p.x, 0) / Math.max(roiPoints.length, 1);
+        const cy = roiPoints.reduce((sum, p) => sum + p.y, 0) / Math.max(roiPoints.length, 1);
         ctx.fillStyle = 'rgba(20,20,19,0.82)';
         ctx.fillRect(cx - 58, cy - 18, 116, 28);
         ctx.fillStyle = '#faf9f5';
@@ -828,20 +949,41 @@ function drawFstCanvas() {
     document.getElementById('currentPointText').textContent = drawMode === 'roi' ? String(currentROI.length) : String(currentEditPoints.length);
     document.getElementById('drawModeText').textContent = modeLabel();
     document.getElementById('finishRoiBtn').disabled = !(drawMode === 'roi' && currentROI.length >= 3);
-    document.getElementById('toDebugBtn').disabled = !allCurrentRoisReady();
+    document.getElementById('toDebugBtn').disabled = !allCurrentRoisReady() || !projectRoiSubjectsReady();
     const showSpecial = ['diameter', 'waterline', 'mask'].includes(drawMode);
     document.getElementById('cancelEditBtn').style.display = showSpecial ? '' : 'none';
     document.getElementById('finishMaskBtn').style.display = drawMode === 'mask' ? '' : 'none';
     document.getElementById('finishMaskBtn').disabled = !(drawMode === 'mask' && currentEditPoints.length >= MIN_MASK_POINTS);
 }
 
-function allCurrentRoisReady() {
-    return rois.length > 0 && rois.every(roi => (roi.points || []).length >= 3 && (roi.diameter_points || []).length === 2 && Number(roi.cylinder_diameter_cm || 0) > 0);
+function allCurrentRoisReady(sourceRois = rois) {
+    return allCylinderRoisReady(sourceRois);
 }
 function startNewCylinder() {
-    cancelSpecialEdit();
+    if (drawMode === 'roi' && currentROI.length >= 3) {
+        finishCurrentCylinder();
+    }
+    if (drawMode === 'roi' && editIndex != null && rois[editIndex] && !isCompleteCylinderROI(rois[editIndex])) {
+        updateCylinderList();
+        drawFstCanvas();
+        return;
+    }
+    if (drawMode !== 'roi') {
+        cancelSpecialEdit();
+    }
+    const defaultDiameter = parseFloat(document.getElementById('defaultDiameterCm')?.value || '10') || 10;
+    const newROI = {
+        points: [],
+        name: cylinderDefaultName(rois.length),
+        cylinder_diameter_cm: defaultDiameter,
+        diameter_points: [],
+        time_config: { mode: 'global', start: null, end: null }
+    };
+    rois.push(newROI);
+    editIndex = rois.length - 1;
     currentROI = [];
     drawMode = 'roi';
+    updateCylinderList();
     persistCurrentVideoState();
     drawFstCanvas();
 }
@@ -850,16 +992,22 @@ function finishCurrentCylinder() {
         alert(tr('alert.need_points', 'The current ROI needs at least 3 points.'));
         return;
     }
-    const defaultDiameter = parseFloat(document.getElementById('defaultDiameterCm')?.value || '10') || 10;
-    rois.push({
-        points: cloneState(currentROI),
-        name: cylinderDefaultName(rois.length),
-        cylinder_diameter_cm: defaultDiameter,
-        diameter_points: [],
-        time_config: { mode: 'global', start: null, end: null }
-    });
+    if (editIndex != null && rois[editIndex]) {
+        rois[editIndex].points = cloneState(currentROI);
+    } else {
+        const defaultDiameter = parseFloat(document.getElementById('defaultDiameterCm')?.value || '10') || 10;
+        const newROI = {
+            points: cloneState(currentROI),
+            name: cylinderDefaultName(rois.length),
+            cylinder_diameter_cm: defaultDiameter,
+            diameter_points: [],
+            time_config: { mode: 'global', start: null, end: null }
+        };
+        rois.push(newROI);
+    }
     currentROI = [];
     drawMode = 'view';
+    editIndex = null;
     updateCylinderList();
     persistCurrentVideoState();
     syncVideoSelectors();
@@ -903,8 +1051,13 @@ function cancelSpecialEdit() {
     drawFstCanvas();
 }
 function undoCurrentPoint() {
-    if (drawMode === 'roi' && currentROI.length) currentROI.pop();
-    else if (['diameter', 'waterline', 'mask'].includes(drawMode) && currentEditPoints.length) currentEditPoints.pop();
+    if (drawMode === 'roi' && currentROI.length) {
+        currentROI.pop();
+        if (editIndex != null && rois[editIndex]) {
+            rois[editIndex].points = cloneState(currentROI);
+        }
+        updateCylinderList();
+    } else if (['diameter', 'waterline', 'mask'].includes(drawMode) && currentEditPoints.length) currentEditPoints.pop();
     persistCurrentVideoState();
     drawFstCanvas();
 }
@@ -932,6 +1085,13 @@ function resetMask(index) {
 }
 function updateRoiName(index, value) {
     rois[index].name = value || cylinderDefaultName(index);
+    persistCurrentVideoState();
+    drawFstCanvas();
+}
+function updateRoiProjectSubject(index, subjectId) {
+    if (!rois[index]) return;
+    applyProjectSubjectToROI(rois[index], index, subjectId);
+    updateCylinderList();
     persistCurrentVideoState();
     drawFstCanvas();
 }
@@ -963,8 +1123,10 @@ function updateCylinderList() {
     list.innerHTML = rois.map((roi, index) => {
         const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
         const showTime = timeConfig.mode !== 'global' ? '' : 'display:none;';
+        const pointsReady = (roi.points || []).length >= 3;
         const diameterReady = (roi.diameter_points || []).length === 2;
         const maskReady = (roi.detection_points || []).length >= MIN_MASK_POINTS;
+        const drawState = pointsReady ? tr('card.roi_complete', 'ROI shape set') : tr('card.roi_drawing', 'Drawing ROI shape');
         return `
             <div class="fst-roi-card">
                 <div class="fst-card-head">
@@ -972,6 +1134,7 @@ function updateCylinderList() {
                         <div class="fst-card-title">ROI ${index + 1}</div>
                         <div class="fst-card-meta">
                             ${(roi.points || []).length} ${tr('card.points', 'ROI points')} ·
+                            ${drawState} ·
                             ${diameterReady ? tr('card.diameter_ready', 'Diameter line set') : tr('card.diameter_missing', 'Missing diameter line')} ·
                             ${maskReady ? tr('card.mask_custom', 'Custom detection mask') : tr('card.mask_default', 'Mask follows ROI')}
                         </div>
@@ -980,8 +1143,7 @@ function updateCylinderList() {
                 </div>
                 <div class="compact-grid">
                     <div>
-                        <label class="form-label">${tr('card.name', 'Name')}</label>
-                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateRoiName(${index}, this.value)">
+                        ${projectSubjectSelectMarkup(index, roi, 'updateRoiName', tr('card.name', 'Name'))}
                     </div>
                     <div>
                         <label class="form-label">${tr('card.diameter_cm', 'Diameter (cm)')}</label>
@@ -1007,9 +1169,9 @@ function updateCylinderList() {
                     </div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap mt-3">
-                    <button class="btn btn-sm btn-outline-success" type="button" onclick="editLine(${index}, 'diameter')">${tr('card.draw_diameter', 'Draw Diameter')}</button>
-                    <button class="btn btn-sm btn-outline-info" type="button" onclick="editLine(${index}, 'waterline')">${tr('card.draw_waterline', 'Draw Waterline')}</button>
-                    <button class="btn btn-sm btn-outline-warning" type="button" onclick="editMask(${index})">${tr('card.edit_mask', 'Edit Mask')}</button>
+                    <button class="btn btn-sm btn-outline-success" type="button" onclick="editLine(${index}, 'diameter')" ${pointsReady ? '' : 'disabled'}>${tr('card.draw_diameter', 'Draw Diameter')}</button>
+                    <button class="btn btn-sm btn-outline-info" type="button" onclick="editLine(${index}, 'waterline')" ${pointsReady ? '' : 'disabled'}>${tr('card.draw_waterline', 'Draw Waterline')}</button>
+                    <button class="btn btn-sm btn-outline-warning" type="button" onclick="editMask(${index})" ${pointsReady ? '' : 'disabled'}>${tr('card.edit_mask', 'Edit Mask')}</button>
                     <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetMask(${index})" ${maskReady ? '' : 'disabled'}>${tr('card.reset_mask', 'Reset Mask')}</button>
                 </div>
             </div>
@@ -1036,7 +1198,12 @@ function onVideoChange(value) {
 }
 function goToStep(step) {
     if (step === 2 && !allCurrentRoisReady()) {
-        alert(rois.length ? tr('alert.need_diameter', 'Every cylinder needs a diameter line.') : tr('alert.need_roi', 'Please finish at least one cylinder ROI.'));
+        const missingPoints = rois.some(roi => (roi.points || []).length < 3);
+        alert(!rois.length
+            ? tr('alert.need_roi', 'Please finish at least one cylinder ROI.')
+            : missingPoints
+                ? tr('alert.need_points', 'The current ROI needs at least 3 points.')
+                : tr('alert.need_diameter', 'Every cylinder needs a diameter line.'));
         return;
     }
     document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
@@ -1065,7 +1232,7 @@ function updateThresholdUI() {
     document.getElementById('manualThresholdBox').style.display = auto ? 'none' : '';
 }
 function normalizeRois(sourceRois) {
-    return cloneState(sourceRois || []).map(roi => {
+    return cloneState(sourceRois || []).filter(isCompleteCylinderROI).map(roi => {
         if (!roi.time_config) roi.time_config = { mode: 'global', start: null, end: null };
         if (roi.time_config.mode === 'global') {
             roi.time_config.start = null;
@@ -1133,9 +1300,15 @@ function updateDebugPreview(frameIdx) {
 }
 function startAnalysis() {
     if (!allCurrentRoisReady()) {
-        alert(tr('alert.need_diameter', 'Every cylinder needs a diameter line.'));
+        const missingPoints = rois.some(roi => (roi.points || []).length < 3);
+        alert(!rois.length
+            ? tr('alert.need_roi', 'Please finish at least one cylinder ROI.')
+            : missingPoints
+                ? tr('alert.need_points', 'The current ROI needs at least 3 points.')
+                : tr('alert.need_diameter', 'Every cylinder needs a diameter line.'));
         return;
     }
+    if (!validateProjectRoiSubjects()) return;
     if (launchMode === 'workspace') {
         document.getElementById('loading').style.display = 'flex';
         saveDraftPayload(true).catch(error => {
@@ -1151,6 +1324,7 @@ function startAnalysis() {
             const ready = (cfg.rois || []).length > 0 && (cfg.rois || []).every(roi => (roi.diameter_points || []).length === 2);
             if (!ready) incomplete.push(trFormat('alert.batch_missing', [index + 1, currentVideoName(index)], '{0}. {1}: missing cylinder ROI or diameter line'));
         });
+        addProjectSubjectBatchIssues(incomplete, body.per_video_configs);
         if (incomplete.length) {
             alert(trFormat('alert.batch_incomplete', [incomplete.join('\n')], 'Complete every FST batch video before starting:\n{0}'));
             return;
@@ -1206,6 +1380,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const point = canvasPointFromEvent(canvas, e);
         if (drawMode === 'roi') {
             currentROI.push(point);
+            if (editIndex != null && rois[editIndex]) {
+                rois[editIndex].points = cloneState(currentROI);
+            }
+            updateCylinderList();
         } else if (['diameter', 'waterline'].includes(drawMode) && editIndex != null) {
             currentEditPoints.push(point);
             if (currentEditPoints.length >= 2) {

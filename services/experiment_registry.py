@@ -220,14 +220,51 @@ def extract_per_video_configs(draft_payload: dict[str, Any] | None, total_videos
     return configs[:total_videos]
 
 
-def summarize_batch_state(experiment_type: str | None, draft_payload: dict[str, Any] | None, video_infos: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+def _project_subject_ids(project_context: dict[str, Any] | None) -> set[str] | None:
+    if not isinstance(project_context, dict) or not project_context.get("project_id"):
+        return None
+    subjects = project_context.get("subject_candidates") or []
+    return {
+        str(subject.get("subject_id") or "").strip()
+        for subject in subjects
+        if isinstance(subject, dict) and str(subject.get("subject_id") or "").strip()
+    }
+
+
+def _project_subject_binding_missing(config: dict[str, Any] | None, valid_subject_ids: set[str] | None) -> list[str]:
+    if valid_subject_ids is None:
+        return []
+    rois = (config or {}).get("rois") or []
+    if not rois:
+        return []
+    if not valid_subject_ids:
+        return ["项目中没有可绑定的小鼠"]
+    missing: list[str] = []
+    for idx, roi in enumerate(rois, start=1):
+        subject_id = str((roi or {}).get("subject_id") or "").strip() if isinstance(roi, dict) else ""
+        if not subject_id or subject_id not in valid_subject_ids:
+            missing.append(f"ROI {idx} 未绑定项目小鼠")
+    return missing
+
+
+def summarize_batch_state(
+    experiment_type: str | None,
+    draft_payload: dict[str, Any] | None,
+    video_infos: list[dict[str, Any]] | None,
+    project_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     spec = get_experiment_spec(experiment_type)
     video_infos = list(video_infos or [])
     per_video_configs = extract_per_video_configs(draft_payload, len(video_infos))
+    valid_subject_ids = _project_subject_ids(project_context)
     cards: list[dict[str, Any]] = []
     for idx, info in enumerate(video_infos):
         config = per_video_configs[idx] if idx < len(per_video_configs) else {}
         complete, missing_items = spec.validator(config)
+        subject_missing = _project_subject_binding_missing(config, valid_subject_ids)
+        if subject_missing:
+            complete = False
+            missing_items = list(missing_items) + subject_missing
         cards.append(
             {
                 "index": idx,

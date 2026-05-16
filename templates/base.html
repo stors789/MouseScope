@@ -8,9 +8,11 @@
     <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/tech-theme.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/tour.css') }}" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/i18n.js') }}" defer></script>
     <meta name="theme-color" content="#c96442">
     {% block extra_css %}{% endblock %}
+    <link href="{{ url_for('static', filename='css/calibration-workbench.css') }}" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-light">
@@ -25,25 +27,31 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto align-items-lg-center">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}"><span data-i18n="nav.home">首页</span></a>
+                        <a class="nav-link" data-tour-id="nav-home" href="{{ url_for('index') }}"><span data-i18n="nav.home">首页</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('upload_page') }}"><span data-i18n="nav.start">开始分析</span></a>
+                        <a class="nav-link" data-tour-id="nav-projects" href="{{ url_for('projects_page') }}"><span data-i18n="nav.projects">项目</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_page') }}">
+                        <a class="nav-link" data-tour-id="nav-quick" href="{{ url_for('upload_page') }}"><span data-i18n="nav.start">快速分析</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link d-inline-flex align-items-center gap-1" data-tour-id="nav-tasks" href="{{ url_for('tasks_page') }}">
                             <span data-i18n="nav.tasks">任务中心</span>
                             <span class="badge bg-light text-dark d-none" id="navTaskBadge">0</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ manual_nav_url }}"{% if manual_nav_target %} target="{{ manual_nav_target }}"{% endif %}{% if manual_nav_rel %} rel="{{ manual_nav_rel }}"{% endif %}><span data-i18n="nav.manual">使用手册</span></a>
+                        <a class="nav-link" data-tour-id="nav-manual" href="{{ manual_nav_url }}"{% if manual_nav_target %} target="{{ manual_nav_target }}"{% endif %}{% if manual_nav_rel %} rel="{{ manual_nav_rel }}"{% endif %}><span data-i18n="nav.manual">使用手册</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('license_page') }}"><span data-i18n="nav.license">许可协议</span></a>
+                        <a class="nav-link" data-tour-id="nav-license" href="{{ url_for('license_page') }}"><span data-i18n="nav.license">许可协议</span></a>
                     </li>
                     <li class="nav-item ms-lg-2 mt-2 mt-lg-0">
-                        <button onclick="toggleLang()" class="btn btn-outline-primary btn-sm lang-toggle-btn" title="Switch Language / 切换语言"><span data-i18n="lang.toggle">English</span></button>
+                        <button type="button" onclick="window.MouseScopeTour && MouseScopeTour.startCurrent({force:true})" class="btn btn-outline-primary btn-sm" data-tour-id="nav-tour"><i class="fas fa-circle-question me-1"></i><span data-i18n="nav.tour">新手引导</span></button>
+                    </li>
+                    <li class="nav-item ms-lg-2 mt-2 mt-lg-0">
+                        <button onclick="toggleLang()" class="btn btn-outline-primary btn-sm lang-toggle-btn" data-tour-id="nav-lang" title="Switch Language / 切换语言"><span data-i18n="lang.toggle">English</span></button>
                     </li>
                 </ul>
             </div>
@@ -65,10 +73,11 @@
     </div>
 
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tour.js') }}"></script>
 
     <footer class="text-center py-3 mt-5" style="border-top: 1px solid var(--border-card); color: var(--text-muted); font-size: 0.8rem;">
         <div class="container">
-            <p class="mb-1"><span data-i18n="footer.rights">MouseScope Desktop v2.3.0 © 2026 All Rights Reserved | 版权所有</span></p>
+            <p class="mb-1"><span data-i18n="footer.rights">MouseScope Desktop v3.0.0 © 2026 All Rights Reserved | 版权所有</span></p>
             <p class="mb-0"><span data-i18n="footer.academic">仅限学术研究使用 · 禁止商业用途 · 禁止二次分发</span>
                 <span class="mx-2">|</span>
                 <a href="{{ url_for('license_page') }}" style="color: var(--primary-color); text-decoration: none;" data-i18n="footer.viewlicense">查看完整许可协议</a>

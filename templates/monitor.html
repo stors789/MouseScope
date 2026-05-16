@@ -101,12 +101,12 @@
             <div class="monitor-card" id="downloadSection" style="display:none;">
                 <h5 class="mb-3" data-page-i18n="download.title">结果下载</h5>
                 <div class="download-grid">
-                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a>
+                    <button type="button" class="btn btn-success" onclick="openResultFolder()"><i class="fas fa-folder-open me-2"></i><span data-page-i18n="download.folder">打开结果目录</span></button>
+                    <a href="#" id="downloadAllBtn" class="btn btn-outline-primary"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a>
                     <a href="#" id="dlVideo" class="btn btn-outline-primary" data-page-i18n="download.video">标注视频</a>
                     <a href="#" id="dlCsv" class="btn btn-outline-primary" data-page-i18n="download.csv">详细日志 CSV</a>
                     <a href="#" id="dlImmCsv" class="btn btn-outline-primary" data-page-i18n="download.summary">统计 CSV</a>
                     <a href="#" id="dlReport" class="btn btn-outline-primary" data-page-i18n="download.report">TXT 报告</a>
-                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-page-i18n="download.folder">打开结果目录</button>
                 </div>
                 <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;"><span data-page-i18n="download.path">保存位置:</span> <code id="resultPathText"></code></div>
             </div>

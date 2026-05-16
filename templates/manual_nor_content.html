@@ -63,7 +63,7 @@
                             title: '边缘干扰',
                             icon: 'fas fa-mask',
                             items: [
-                                '镜头边缘的黑边、暗角或桶形畸变会影响前景分割，优先用检测遮罩隔离。',
+                                '当小鼠躯体可能超出 arena 边界时，用检测遮罩额外框定允许检测鼠体的范围。',
                                 '不要把人手、标记条、器材边框等放在 arena 检测区域附近。'
                             ]
                         }
@@ -110,7 +110,7 @@
                             title: '检测遮罩与时间窗',
                             icon: 'fas fa-clock',
                             items: [
-                                '检测遮罩只限制前景检测范围，不会改变 arena 尺寸和物体坐标。',
+                                '检测遮罩用于框定允许检测鼠体的范围，不会改变 arena 尺寸和物体坐标。',
                                 '可选时间模式包括 <code>global</code> 与 <code>precise</code>。',
                                 '精确时间窗只影响统计，逐帧轨迹 CSV 仍会记录哪些帧落在统计窗口内。'
                             ]
@@ -349,7 +349,7 @@
                             title: 'Edge interference',
                             icon: 'fas fa-mask',
                             items: [
-                                'Dark borders, vignetting, or barrel distortion near the image edge should be isolated with a detection mask whenever possible.',
+                                'When the mouse body may extend beyond the arena boundary, use a detection mask to define where the body is allowed to be detected.',
                                 'Keep hands, labels, and hardware borders away from the detection region.'
                             ]
                         }
@@ -396,7 +396,7 @@
                             title: 'Detection mask and time windows',
                             icon: 'fas fa-clock',
                             items: [
-                                'The detection mask only limits foreground detection. It does not change arena size or object coordinates.',
+                                'The detection mask defines where the mouse body is allowed to be detected. It does not change arena size or object coordinates.',
                                 'The available time modes are <code>global</code> and <code>precise</code>.',
                                 'Precise windows affect only statistics. Frame-level CSV still records which frames are inside or outside the active statistics window.'
                             ]

@@ -56,7 +56,7 @@
                             items: [
                                 '让鼠体和地面保持明显对比，减少中心区高光、阴影和反光。',
                                 '如果不同笼位亮度差异很大，虽然现在可以逐视频独立调参，但同一视频内多个 arena 仍共享参数，所以最好先改善采集。',
-                                '镜头边缘黑边、暗角或畸变明显时，优先用检测遮罩去掉脏区域，而不是把 arena 硬往外画。'
+                                '当小鼠躯体可能超出 arena 边界时，可用检测遮罩额外框定允许检测鼠体的范围，而不是把 arena 硬往外画。'
                             ]
                         },
                         {
@@ -64,7 +64,7 @@
                             icon: 'fas fa-eye-slash',
                             items: [
                                 '不要让人手、标签纸、线缆、风扇阴影或其他移动物体进入 arena 检测区域。',
-                                '如果 arena 旁边有固定但不属于场地的亮边或结构，推荐单独画检测遮罩。'
+                                '如果小鼠躯体会贴近或越过场地边界，推荐单独画检测遮罩来覆盖完整可检测范围。'
                             ]
                         }
                     ],
@@ -86,7 +86,7 @@
                 },
                 arena: {
                     title: 'arena、检测遮罩与时间窗',
-                    lead: 'OFT 的空间统计都围绕 arena 建立。你需要先给每个 arena 点 4 个角点；如果画面边缘有黑边或畸变，再额外给这个 arena 画检测遮罩。',
+                    lead: 'OFT 的空间统计都围绕 arena 建立。你需要先给每个 arena 点 4 个角点；当小鼠躯体可能超出 arena 边界时，再额外给这个 arena 画检测遮罩。',
                     blocks: [
                         {
                             title: '4 角点 arena 标定',
@@ -101,8 +101,8 @@
                             title: '检测遮罩 detection mask',
                             icon: 'fas fa-mask',
                             items: [
-                                '检测遮罩只限制“鼠体在哪些区域允许被检测”，不会改变 arena 的几何尺寸和中心区计算。',
-                                '推荐在边缘畸变、黑边、器材遮挡或 arena 外亮区会误检时使用。',
+                                '检测遮罩用于框定“鼠体在哪些区域允许被检测”，不会改变 arena 的几何尺寸和中心区计算。',
+                                '推荐在小鼠躯体可能贴近或超出 arena 边界，但统计仍应按原 arena 计算时使用。',
                                 '如果不单独画遮罩，系统默认直接用 arena 四边形作为检测区域。'
                             ]
                         },
@@ -124,7 +124,7 @@
                         ]
                     },
                     callouts: [
-                        ['warning', 'arena 和遮罩不要混为一谈', 'arena 决定厘米坐标、中心区和空间统计；遮罩只决定哪里允许做前景检测。arena 画错是空间结果错误，遮罩画错是检测结果错误。']
+                        ['warning', 'arena 和遮罩不要混为一谈', 'arena 决定厘米坐标、中心区和空间统计；遮罩只决定哪里允许检测鼠体。arena 画错是空间结果错误，遮罩画错是检测结果错误。']
                     ]
                 },
                 params: {
@@ -246,7 +246,7 @@
                     steps: [
                         '上传多个 OFT 视频，设置全局时间范围、FPS 覆盖和输出目录。',
                         '进入 arena 标定页后，逐个视频切换并分别输入 arena 边长，画完该视频里的所有 arena。',
-                        '如果某个视频边缘存在黑边、畸变或额外亮区，为对应 arena 单独画检测遮罩。',
+                        '如果某个视频中小鼠躯体可能超出 arena 边界，为对应 arena 单独画检测遮罩。',
                         '分别给每个 arena 命名，并设置该 arena 的时间模式和精确时间窗。',
                         '切到调参步骤，针对当前视频调好检测参数和统计参数，预览确认所有 arena 都稳定。',
                         '继续切到下一个视频，重复上述操作，直到每个视频都配置完成。',
@@ -264,7 +264,7 @@
                     lead: '如果 OFT 已经能跑出结果，但你怀疑某些图和数值不对，通常先从 arena 角点、遮罩和检测率看起，而不是先看最终 summary。',
                     items: [
                         '热图和轨迹图整体被拉歪：优先怀疑 arena 四角点顺序或位置偏差。',
-                        '边缘误检多：优先补检测遮罩，再考虑继续调阈值和形态学参数。',
+                        '边界附近检测不完整：优先补检测遮罩，再考虑继续调阈值和形态学参数。',
                         'summary 里检测率很低：说明跟踪本身不稳，这时总距离、中心区时间等空间指标都要谨慎解释。',
                         '多个 arena 中只有一个表现很差：先检查这个 arena 自己的角点、遮罩和光照，而不是马上改全视频参数。'
                     ],
@@ -327,7 +327,7 @@
                             items: [
                                 'Maintain strong contrast between the mouse and the arena floor, and avoid center-zone glare or harsh shadows.',
                                 'Even though videos now support per-video tuning, arenas inside one video still share parameters, so it is best to improve uneven lighting upstream.',
-                                'When lens edges contain dark borders or distortion, use a detection mask instead of forcing the arena polygon outward.'
+                                'When the mouse body may extend beyond the arena boundary, use a detection mask instead of forcing the arena polygon outward.'
                             ]
                         },
                         {
@@ -335,7 +335,7 @@
                             icon: 'fas fa-eye-slash',
                             items: [
                                 'Keep hands, labels, cables, fan shadows, and other moving objects out of the detection region.',
-                                'If fixed bright structures sit near the arena but are not part of it, use a dedicated detection mask.'
+                                'If the mouse body may touch or extend beyond the arena boundary, use a dedicated detection mask to cover the full allowed detection area.'
                             ]
                         }
                     ],
@@ -357,7 +357,7 @@
                 },
                 arena: {
                     title: 'Arena, detection mask, and time window',
-                    lead: 'All OFT spatial statistics are built around the arena geometry. First define the four arena corners. Then, if the image edges contain distortion or noise, add a separate detection mask for that arena.',
+                    lead: 'All OFT spatial statistics are built around the arena geometry. First define the four arena corners. Then, when the mouse body may extend beyond the arena boundary, add a separate detection mask for that arena.',
                     blocks: [
                         {
                             title: '4-corner arena calibration',
@@ -372,8 +372,8 @@
                             title: 'Detection mask',
                             icon: 'fas fa-mask',
                             items: [
-                                'The detection mask only limits where the mouse may be detected. It does not change arena geometry, center-zone size, or spatial coordinates.',
-                                'Use it when black borders, lens distortion, or extra bright structures near the arena would otherwise create false detections.',
+                                'The detection mask defines where the mouse body is allowed to be detected. It does not change arena geometry, center-zone size, or spatial coordinates.',
+                                'Use it when the mouse body may touch or extend beyond the arena boundary while statistics should still use the original arena.',
                                 'If no separate mask is drawn, the arena polygon itself is used as the default detection region.'
                             ]
                         },
@@ -395,7 +395,7 @@
                         ]
                     },
                     callouts: [
-                        ['warning', 'Do not confuse arena and mask', 'The arena defines geometry, centimeter coordinates, center zone, and spatial statistics. The mask only defines where foreground detection is allowed. Arena errors corrupt spatial outputs; mask errors corrupt detection outputs.']
+                        ['warning', 'Do not confuse arena and mask', 'The arena defines geometry, centimeter coordinates, center zone, and spatial statistics. The mask only defines where the mouse body is allowed to be detected. Arena errors corrupt spatial outputs; mask errors corrupt detection outputs.']
                     ]
                 },
                 params: {
@@ -517,7 +517,7 @@
                     steps: [
                         'Upload multiple OFT videos and set the global time range, FPS override, and output directory.',
                         'On the arena-calibration step, switch through videos one by one and enter the arena side length for each video, then finish all arenas in that video.',
-                        'If a video contains dark borders, distortion, or extra bright structures near the arena, add detection masks for the affected arenas.',
+                        'If the mouse body may extend beyond an arena boundary in a video, add detection masks for the affected arenas.',
                         'Name each arena and set the proper time mode or precise time window for it.',
                         'Move to the tuning step and adjust detection plus statistics parameters for the current video until all arenas in that video look stable on preview.',
                         'Repeat for every remaining video.',
@@ -535,7 +535,7 @@
                     lead: 'If OFT runs but you do not trust some numbers or figures, start with arena corners, masks, and detection rate rather than the final summary table.',
                     items: [
                         'A globally warped heatmap or trackmap usually points to incorrect arena corner placement or ordering.',
-                        'Frequent false positives near edges are usually better solved with a detection mask than with ever more aggressive threshold changes.',
+                        'Incomplete detection near arena boundaries is usually better solved with a detection mask than with ever more aggressive threshold changes.',
                         'A low detection rate in the summary means the tracker itself was unstable, so all spatial readouts should be interpreted cautiously.',
                         'If only one arena performs poorly inside a shared video, inspect that arena’s own corners, mask, and lighting before changing the full-video parameter set.'
                     ],

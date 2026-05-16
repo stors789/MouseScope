@@ -77,6 +77,43 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             'mean_alternation_percent': round(sum(valid_alt) / len(valid_alt), 3) if valid_alt else None,
         }
 
+    @staticmethod
+    def _live_row(tracker, result):
+        opportunities = max(tracker.total_arm_entries - 2, 0)
+        alternation_percent = None
+        if opportunities > 0:
+            alternation_percent = round(tracker.alternation_count / opportunities * 100.0, 2)
+        return {
+            'roi_id': tracker.roi_id,
+            'roi_name': tracker.roi_name,
+            'detected': bool(result.get('detected')),
+            'zone': result.get('zone_label', 'Unknown'),
+            'speed_cm_s': round(float(result.get('speed_cm_s', 0.0)), 3),
+            'distance_cm': round(float(tracker.total_distance_cm), 3),
+            'total_arm_entries': int(tracker.total_arm_entries),
+            'alternation_count': int(tracker.alternation_count),
+            'alternation_percent': alternation_percent,
+            'in_stats_window': bool(result.get('in_stats_window', True)),
+        }
+
+    def _create_trackers(self, roi_configs, vision_config, fps, global_start_time_s):
+        return [
+            YMazeTracker(
+                zone_polygons=roi['zones'],
+                detection_polygon=roi.get('detection_points'),
+                arm_length_cm=float(vision_config.get('arm_length_cm', 30.0)),
+                arm_width_cm=float(vision_config.get('arm_width_cm', 10.0)),
+                fps=fps,
+                movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
+                entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
+                roi_id=roi['roi_id'],
+                roi_name=roi['name'],
+                time_config=roi.get('time_config'),
+                global_start_time_s=global_start_time_s,
+            )
+            for roi in roi_configs
+        ]
+
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
         video_index = 0 if batch_index is None else int(batch_index)
@@ -102,7 +139,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             self._log(f"Unable to open video: {video_path}")
-            return
+            raise RuntimeError(f"Unable to open video: {video_path}")
 
         detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         fps_override = vision_config.get('fps_override')
@@ -112,68 +149,36 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._log(f"Y-maze video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
 
-        bg_method = vision_config.get('bg_method', 'threshold')
-        if bg_method == 'threshold':
-            bg_subtractor = BackgroundSubtractor(
-                method='threshold',
-                threshold=vision_config.get('gray_threshold', 127),
-                invert=vision_config.get('invert', False),
-            )
-        elif bg_method == 'static':
-            bg = create_static_background(video_path, num_frames=15)
-            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
-            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
-        else:
-            bg_subtractor = BackgroundSubtractor(method=bg_method)
-
-        morph_processor = MorphologyProcessor(
-            erosion_kernel=vision_config.get('erosion_kernel', 3),
-            erosion_iterations=vision_config.get('erosion_iter', 1),
-            dilation_kernel=vision_config.get('dilation_kernel', 5),
-            dilation_iterations=vision_config.get('dilation_iter', 2),
+        sampling = self._resolve_video_sampling(
+            width,
+            height,
+            fps,
+            vision_config,
+            label='Y-maze',
+            temporal_default=True,
+            max_dim_default=960,
+            target_fps_default=30.0,
         )
-        detector = MouseDetector(
-            min_area=vision_config.get('min_area', 120),
-            max_area=vision_config.get('max_area', 50000),
+        self._log_video_sampling(sampling)
+
+        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
+            video_path,
+            vision_config,
+            sampling,
+            static_frames=15,
+            erosion_default=1,
+            dilation_default=2,
+            min_area_default=120,
         )
 
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
         global_start_time_s = float(start_sec) if start_sec is not None else 0.0
-        roi_configs = self._parse_rois(vision_config)
+        source_roi_configs = self._parse_rois(vision_config)
+        roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
 
-        trackers = []
-        for roi in roi_configs:
-            trackers.append(
-                YMazeTracker(
-                    zone_polygons=roi['zones'],
-                    detection_polygon=roi.get('detection_points'),
-                    arm_length_cm=float(vision_config.get('arm_length_cm', 30.0)),
-                    arm_width_cm=float(vision_config.get('arm_width_cm', 10.0)),
-                    fps=fps,
-                    movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
-                    entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
-                    roi_id=roi['roi_id'],
-                    roi_name=roi['name'],
-                    time_config=roi.get('time_config'),
-                    global_start_time_s=global_start_time_s,
-                )
-            )
+        trackers = self._create_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
         self._log(f"Configured {len(trackers)} Y-maze arenas")
-
-        writer = None
-        if generate_video:
-            for codec in ('avc1', 'H264', 'mp4v'):
-                try:
-                    fourcc = cv2.VideoWriter_fourcc(*codec)
-                    test_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
-                    if test_writer.isOpened():
-                        writer = test_writer
-                        self._log(f"Y-maze video codec: {codec}")
-                        break
-                    test_writer.release()
-                except Exception:
-                    pass
 
         start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
         end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
@@ -185,6 +190,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
 
         frames_to_process = max(0, end_frame - start_frame + 1)
         frame_idx = 0
+        source_frames_done = 0
 
         while self.is_running:
             ret, frame = cap.read()
@@ -194,61 +200,51 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             try:
                 current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             except Exception:
-                current_frame_no = start_frame + frame_idx
+                current_frame_no = start_frame + source_frames_done
 
             if current_frame_no > end_frame:
                 break
 
             current_time = current_frame_no / max(fps, 1e-6)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            results = [tracker.update(frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+            analysis_frame = self._resize_for_sampling(frame, sampling)
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+            begin_frame_cache(bg_subtractor, current_frame_no)
+            results = [tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+            for result in results:
+                self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
 
             if frame_idx % 15 == 0:
-                rows = []
-                for tracker, result in zip(trackers, results):
-                    summary = tracker.build_summary()
-                    rows.append({
-                        'roi_id': tracker.roi_id,
-                        'roi_name': tracker.roi_name,
-                        'detected': bool(result.get('detected')),
-                        'zone': result.get('zone_label', 'Unknown'),
-                        'speed_cm_s': round(float(result.get('speed_cm_s', 0.0)), 3),
-                        'distance_cm': summary['total_distance_cm'],
-                        'total_arm_entries': summary.get('total_arm_entries'),
-                        'alternation_count': summary.get('alternation_count'),
-                        'alternation_percent': summary.get('alternation_percent'),
-                        'in_stats_window': bool(result.get('in_stats_window', True)),
-                    })
+                rows = [self._live_row(tracker, result) for tracker, result in zip(trackers, results)]
                 self.realtime_data = rows
                 self.live_metrics = self._build_live_metrics(rows)
 
-            if generate_video and writer is not None:
-                result_frame = draw_y_maze_results(frame, list(zip(trackers, results)))
-                writer.write(result_frame)
-                if frame_idx % 10 == 0:
-                    self.current_frame = result_frame
+            if frame_idx % 30 == 0:
+                self.current_frame = analysis_frame
 
             frame_idx += 1
-            self.processed_frames += 1
+            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+            covered = 1 + skipped
+            source_frames_done += covered
+            self._advance_frame_counters(covered)
 
             if frame_idx % 20 == 0:
+                analysis_fraction = source_frames_done / max(frames_to_process, 1)
+                analysis_phase = 0.82 if generate_video else 0.94
                 if batch_index is not None:
-                    batch_progress = int(batch_index / len(self.video_paths) * 100)
-                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
-                    self.progress = batch_progress + video_progress
+                    per_video = 100.0 / max(len(self.video_paths), 1)
+                    self.progress = int(batch_index * per_video + analysis_fraction * analysis_phase * per_video)
                 else:
-                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
-                self.message = f'Frame {frame_idx}/{frames_to_process} ({self.progress}%)'
+                    self.progress = int(analysis_fraction * analysis_phase * 100)
+                self.message = f'Frame {source_frames_done}/{frames_to_process} ({self.progress}%)'
 
         cap.release()
-        if writer is not None:
-            writer.release()
 
         summary_rows = []
         track_rows = []
         bins_rows = []
         for tracker in trackers:
             summary = tracker.build_summary()
+            self._add_sampling_summary_fields(summary, sampling)
             summary['video_name'] = video_info.get('original_name', video_name)
             summary_rows.append(summary)
 
@@ -338,6 +334,23 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 else:
                     self._log(f"Failed to save Y-maze trackmap grid: {trackmap_grid_final_path}")
 
+        if generate_video and self.is_running:
+            self._render_annotated_video(
+                video_path,
+                output_video_path,
+                vision_config,
+                roi_configs,
+                sampling['effective_fps'],
+                sampling['analysis_width'],
+                sampling['analysis_height'],
+                start_frame,
+                end_frame,
+                frames_to_process,
+                global_start_time_s,
+                sampling,
+                batch_index=batch_index,
+            )
+
         if generate_video and os.path.exists(output_video_path):
             exported_video = _export_result_file(output_video_path, final_output_video_path)
             self._append_result_file(exported_video, 'video')
@@ -368,10 +381,100 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             self.message = 'Y-maze analysis completed.'
 
         elapsed = time.time() - video_start_time
-        self._log(f"Y-maze video processed in {elapsed:.1f}s, {frame_idx} frames")
+        self._log(f"Y-maze video processed in {elapsed:.1f}s, {source_frames_done} source frames ({frame_idx} analyzed samples)")
 
         import gc
         gc.collect()
+
+    def _render_annotated_video(
+        self,
+        video_path,
+        output_video_path,
+        vision_config,
+        roi_configs,
+        fps,
+        width,
+        height,
+        start_frame,
+        end_frame,
+        frames_to_process,
+        global_start_time_s,
+        sampling,
+        batch_index=None,
+    ):
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            self._log(f"Unable to reopen Y-maze video for rendering: {video_path}")
+            return False
+
+        writer = create_annotated_video_writer(
+            output_video_path,
+            fps,
+            width,
+            height,
+            label='Y-maze video',
+            source_video_path=video_path,
+            logger=self._log,
+            async_write=True,
+        )
+        if writer is None:
+            cap.release()
+            self._log("Y-maze annotated video disabled because no writer is available.")
+            return False
+
+        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
+            video_path,
+            vision_config,
+            sampling,
+            static_frames=15,
+            erosion_default=1,
+            dilation_default=2,
+            min_area_default=120,
+        )
+        render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        frame_idx = 0
+        source_frames_done = 0
+        try:
+            while self.is_running:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                try:
+                    current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+                except Exception:
+                    current_frame_no = start_frame + source_frames_done
+                if current_frame_no > end_frame:
+                    break
+
+                current_time = current_frame_no / max(float(sampling.get('source_fps', fps)), 1e-6)
+                analysis_frame = self._resize_for_sampling(frame, sampling)
+                gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+                begin_frame_cache(bg_subtractor, current_frame_no)
+                results = [
+                    tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector)
+                    for tracker in render_trackers
+                ]
+                result_frame = draw_y_maze_results(analysis_frame, list(zip(render_trackers, results)))
+                writer.write(result_frame)
+                if frame_idx % 30 == 0:
+                    self.current_frame = result_frame
+                frame_idx += 1
+                skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+                covered = 1 + skipped
+                source_frames_done += covered
+                self._advance_frame_counters(covered, processed=False)
+                if frame_idx % 60 == 0:
+                    if batch_index is not None:
+                        per_video = 100.0 / max(len(self.video_paths), 1)
+                        self.progress = int(batch_index * per_video + (0.82 + 0.16 * source_frames_done / max(frames_to_process, 1)) * per_video)
+                    else:
+                        self.progress = max(self.progress, int(82 + 16 * source_frames_done / max(frames_to_process, 1)))
+                    self.message = f'Rendering Y-maze video {source_frames_done}/{frames_to_process}'
+        finally:
+            cap.release()
+            writer.release()
+        return os.path.exists(output_video_path)
 
     def _generate_txt_report(self, summaries, txt_path):
         try:

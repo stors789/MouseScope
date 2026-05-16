@@ -51,7 +51,7 @@
     <div class="spinner"></div>
 </div>
 
-<div class="oft-shell">
+<div class="oft-shell" data-calibration-module="open_field">
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
@@ -69,7 +69,7 @@
             <div class="text-secondary" data-i18n="oft.calib.header.subtitle">多 arena 四角点标定、逐 ROI 命名和精确统计时间设置</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='oft') }}" target="_blank">
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='oft') }}" target="_blank">
                 <i class="fas fa-book-open me-2"></i><span data-i18n="oft.calib.header.manual">OFT 使用手册</span>
             </a>
             <div class="oft-steps">
@@ -99,7 +99,7 @@
                     {% endif %}
                 </div>
 
-                <div class="oft-hint" data-i18n="oft.calib.hint">每个 ROI 对应一个旷场。先点击 4 个角点完成 arena 标定；如果镜头畸变明显，可在右侧 ROI 卡片里额外绘制“检测遮罩”，让检测区域贴合真实边界。</div>
+                <div class="oft-hint" data-i18n="oft.calib.hint">每个 ROI 对应一个旷场。先点击 4 个角点完成 arena 标定；当小鼠躯体可能超出场地边界时，可在右侧 ROI 卡片里额外绘制“检测遮罩”，用于框定允许检测鼠体的范围。</div>
 
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -148,7 +148,12 @@
 
             <div class="oft-panel">
                 <h5 class="mb-3" data-i18n="oft.calib.roi_list.title">ROI 列表</h5>
-                <div class="oft-hint" data-i18n="oft.calib.roi_list.hint">每个 ROI 都可以单独命名、设置精确统计时间段，也可以追加一个单独的检测遮罩多边形。默认检测遮罩跟随 arena 四边形。</div>
+                <div class="oft-hint" data-i18n="oft.calib.roi_list.hint">每个 ROI 都可以单独命名、设置精确统计时间段；当小鼠躯体可能超出 arena 四边形时，也可以追加检测遮罩多边形。统计边界仍以 arena 为准。</div>
+                {% if project_context and project_context.project_id %}
+                <div class="alert alert-warning py-2 mb-3 project-subject-guide" data-tour-id="project-subject-required">
+                    <i class="fas fa-circle-info me-2"></i><span data-i18n="project.calib.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。</span>
+                </div>
+                {% endif %}
                 <div id="arenaList" class="arena-list">
                     <div class="mini-note" data-i18n="oft.calib.roi_list.empty">还没有添加 arena。</div>
                 </div>
@@ -303,6 +308,9 @@ const videoList = {{ video_list | tojson }};
 {% else %}
 const videoList = [];
 {% endif %}
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
 
 let baseFrame = null;
 let currentVideoIdx = parseInt(currentVideoIndexFromServer || 0, 10) || 0;
@@ -310,6 +318,7 @@ let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
 let rois = [];
 let currentROI = [];
 let isDrawingArena = false;
+let activeArenaIndex = null;
 let currentMaskPoints = [];
 let isDrawingMask = false;
 let maskEditArenaIndex = null;
@@ -318,6 +327,55 @@ const MIN_MASK_POINTS = 3;
 const MAX_MASK_POINTS = 32;
 const MASK_SNAP_RADIUS_PX = 14;
 const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+function currentProjectAssignmentId() {
+    const map = projectContext && projectContext.video_assignment_map ? projectContext.video_assignment_map : {};
+    return map[String(currentVideoIdx)] || null;
+}
+function currentProjectUnits() {
+    const assignmentId = currentProjectAssignmentId();
+    const unitMap = projectContext && projectContext.unit_map ? projectContext.unit_map : {};
+    return assignmentId && Array.isArray(unitMap[assignmentId]) ? unitMap[assignmentId] : [];
+}
+function projectSubjectById(subjectId) {
+    return (projectSubjects || []).find(subject => subject.subject_id === subjectId) || null;
+}
+function clearProjectSubjectForROI(roi) {
+    if (!roi) return;
+    const previousAnimalCode = roi.animal_code;
+    delete roi.project_unit_id;
+    delete roi.subject_id;
+    delete roi.animal_code;
+    delete roi.group_id;
+    delete roi.group_name;
+    if (previousAnimalCode && roi.name === previousAnimalCode) roi.name = '';
+}
+function applyProjectSubjectToROI(roi, index, subjectId) {
+    if (!isProjectMode || !roi) return;
+    const subject = projectSubjectById(subjectId);
+    if (!subject) {
+        clearProjectSubjectForROI(roi);
+        return;
+    }
+    const units = currentProjectUnits();
+    const unit = units.find(unit => unit.subject_id === subject.subject_id) || null;
+    roi.project_unit_id = unit ? unit.unit_id : null;
+    roi.subject_id = subject.subject_id;
+    roi.animal_code = subject.animal_code;
+    roi.group_id = subject.group_id || '';
+    roi.group_name = subject.group_name || '';
+    roi.name = subject.animal_code || roi.name;
+}
+function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
+    if (!isProjectMode) {
+        return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
+    }
+    const selectedId = roi.subject_id || '';
+    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+        const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
+        return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    })).join('');
+    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateArenaProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+}
 function defaultTuningParams() {
     return {
         bg_method: 'threshold',
@@ -415,6 +473,68 @@ function arenaDefaultName(index) {
     return `${tr('oft.calib.roi.default_name', 'Arena')} ${index + 1}`;
 }
 
+function isCompleteArena(roi) {
+    return Array.isArray(roi && roi.points) && roi.points.length === 4;
+}
+
+function allArenasReady(sourceRois = rois) {
+    return Array.isArray(sourceRois) && sourceRois.length > 0 && sourceRois.every(isCompleteArena);
+}
+
+function projectSubjectRequiredMessage(noSubjects = false) {
+    const en = typeof getLang === 'function' && getLang() === 'en';
+    if (noSubjects) {
+        return en
+            ? 'Add animals in the project first, then choose one for every ROI.'
+            : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。';
+    }
+    return en
+        ? 'Please choose an existing project animal for every ROI.'
+        : '请为每个 ROI 选择项目中已有的小鼠。';
+}
+
+function projectRoiSubjectsReady(sourceRois = rois, completeFn = isCompleteArena) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) return false;
+    return (sourceRois || []).every(roi => !completeFn(roi) || !!projectSubjectById(roi.subject_id));
+}
+
+function validateProjectRoiSubjects(sourceRois = rois, completeFn = isCompleteArena) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) {
+        alert(projectSubjectRequiredMessage(true));
+        return false;
+    }
+    const missingIndex = (sourceRois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+    if (missingIndex >= 0) {
+        alert(projectSubjectRequiredMessage(false));
+        return false;
+    }
+    return true;
+}
+
+function addProjectSubjectBatchIssues(incomplete, configs, completeFn = isCompleteArena) {
+    if (!isProjectMode) return;
+    if (!(projectSubjects || []).length) {
+        incomplete.push(projectSubjectRequiredMessage(true));
+        return;
+    }
+    (configs || []).forEach((cfg, index) => {
+        const subjectIndex = (cfg.rois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+        if (subjectIndex >= 0) {
+            const en = typeof getLang === 'function' && getLang() === 'en';
+            incomplete.push(en
+                ? `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} has no project animal selected`
+                : `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} 未选择项目小鼠`);
+        }
+    });
+}
+
+function updateArenaReadinessUI() {
+    const toDebugBtn = document.getElementById('toDebugBtn');
+    if (toDebugBtn) toDebugBtn.disabled = !allArenasReady() || !projectRoiSubjectsReady();
+}
+
 function currentVideoName(index) {
     return (videoList[index] && videoList[index].name) ? videoList[index].name : `Video ${index + 1}`;
 }
@@ -442,6 +562,7 @@ function persistCurrentVideoState() {
     config.rois = cloneState(rois);
     config.current_roi = cloneState(currentROI);
     config.is_drawing_arena = Boolean(isDrawingArena);
+    config.active_arena_index = activeArenaIndex == null ? null : Number(activeArenaIndex);
     config.current_mask_points = cloneState(currentMaskPoints);
     config.is_drawing_mask = Boolean(isDrawingMask);
     config.mask_edit_arena_index = maskEditArenaIndex == null ? null : Number(maskEditArenaIndex);
@@ -454,7 +575,7 @@ function syncVideoSelectors() {
     selector.value = String(currentVideoIdx);
     Array.from(selector.options).forEach((option, index) => {
         const config = ensureVideoConfig(index);
-        const ready = Array.isArray(config.rois) && config.rois.length > 0;
+        const ready = allArenasReady(config.rois || []);
         option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
     });
 }
@@ -464,6 +585,14 @@ function applyCurrentVideoState() {
     rois = cloneState(config.rois || []);
     currentROI = cloneState(config.current_roi || []);
     isDrawingArena = Boolean(config.is_drawing_arena);
+    activeArenaIndex = config.active_arena_index == null ? null : Number(config.active_arena_index);
+    if (isDrawingArena && (activeArenaIndex == null || !rois[activeArenaIndex])) {
+        activeArenaIndex = rois.findIndex(roi => !isCompleteArena(roi));
+        if (activeArenaIndex < 0) activeArenaIndex = null;
+    }
+    if (isDrawingArena && activeArenaIndex != null && rois[activeArenaIndex]) {
+        currentROI = cloneState(rois[activeArenaIndex].points || currentROI || []);
+    }
     currentMaskPoints = cloneState(config.current_mask_points || []);
     isDrawingMask = Boolean(config.is_drawing_mask);
     maskEditArenaIndex = config.mask_edit_arena_index == null ? null : Number(config.mask_edit_arena_index);
@@ -473,7 +602,7 @@ function applyCurrentVideoState() {
     }
     applyTuningParamsToControls(config.tuning_params);
     updateArenaList();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateArenaReadinessUI();
     syncFrameControls();
     syncVideoSelectors();
 }
@@ -494,6 +623,7 @@ function hydrateFromDraftPayload() {
             target.rois = cloneState(workspaceCfg.rois || []);
             target.current_roi = cloneState(workspaceCfg.current_roi || []);
             target.is_drawing_arena = Boolean(workspaceCfg.is_drawing_arena);
+            target.active_arena_index = workspaceCfg.active_arena_index ?? null;
             target.current_mask_points = cloneState(workspaceCfg.current_mask_points || []);
             target.is_drawing_mask = Boolean(workspaceCfg.is_drawing_mask);
             target.mask_edit_arena_index = workspaceCfg.mask_edit_arena_index ?? null;
@@ -548,6 +678,7 @@ function refreshLocalizedState() {
     if (!rois.length) {
         document.getElementById('previewStatus').textContent = tr('oft.calib.preview.waiting', 'Waiting for preview');
     }
+    updateArenaReadinessUI();
 }
 
 function currentDrawModeLabel() {
@@ -645,6 +776,7 @@ function drawArenaCanvas() {
     rois.forEach((roi, index) => {
         const hue = (index * 53) % 360;
         const points = roi.points;
+        if (!Array.isArray(points) || points.length === 0 || (isDrawingArena && index === activeArenaIndex)) return;
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
         points.forEach(p => ctx.lineTo(p.x, p.y));
@@ -780,6 +912,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!isDrawingArena) return;
         if (currentROI.length < 4) {
             currentROI.push({ x, y });
+            if (activeArenaIndex != null && rois[activeArenaIndex]) {
+                rois[activeArenaIndex].points = cloneState(currentROI);
+            }
+            updateArenaList();
             persistCurrentVideoState();
             syncVideoSelectors();
             if (currentROI.length === 4) {
@@ -806,8 +942,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function startNewArena() {
     cancelDetectionMaskEdit();
+    if (isDrawingArena && currentROI.length >= 4) {
+        finishCurrentArena();
+    }
+    if (isDrawingArena && activeArenaIndex != null && rois[activeArenaIndex] && !isCompleteArena(rois[activeArenaIndex])) {
+        updateArenaList();
+        drawArenaCanvas();
+        return;
+    }
+    const newROI = {
+        points: [],
+        name: arenaDefaultName(rois.length),
+        time_config: { mode: 'global', start: null, end: null }
+    };
+    rois.push(newROI);
+    activeArenaIndex = rois.length - 1;
     currentROI = [];
     isDrawingArena = true;
+    updateArenaList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -815,23 +967,30 @@ function startNewArena() {
 
 function finishCurrentArena() {
     if (currentROI.length !== 4) return;
-    rois.push({
-        points: cloneState(currentROI),
-        name: arenaDefaultName(rois.length),
-        time_config: { mode: 'global', start: null, end: null }
-    });
+    if (activeArenaIndex != null && rois[activeArenaIndex]) {
+        rois[activeArenaIndex].points = cloneState(currentROI);
+    } else {
+        const newROI = {
+            points: cloneState(currentROI),
+            name: arenaDefaultName(rois.length),
+            time_config: { mode: 'global', start: null, end: null }
+        };
+        rois.push(newROI);
+    }
     currentROI = [];
     isDrawingArena = false;
+    activeArenaIndex = null;
     updateArenaList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateArenaReadinessUI();
 }
 
 function startDetectionMaskEdit(index) {
     currentROI = [];
     isDrawingArena = false;
+    activeArenaIndex = null;
     isDrawingMask = true;
     maskEditArenaIndex = index;
     currentMaskPoints = cloneState(rois[index].detection_points || []);
@@ -906,7 +1065,11 @@ function clearCurrentArena() {
         currentMaskPoints = [];
     } else {
         currentROI = [];
+        if (activeArenaIndex != null && rois[activeArenaIndex]) {
+            rois[activeArenaIndex].points = [];
+        }
     }
+    updateArenaList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -916,6 +1079,7 @@ function clearAllArenas() {
     rois = [];
     currentROI = [];
     isDrawingArena = false;
+    activeArenaIndex = null;
     isDrawingMask = false;
     maskEditArenaIndex = null;
     currentMaskPoints = [];
@@ -923,7 +1087,7 @@ function clearAllArenas() {
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = true;
+    updateArenaReadinessUI();
 }
 
 function deleteArena(index) {
@@ -933,22 +1097,35 @@ function deleteArena(index) {
         maskEditArenaIndex -= 1;
     }
     rois.splice(index, 1);
+    if (activeArenaIndex === index) {
+        activeArenaIndex = null;
+        currentROI = [];
+        isDrawingArena = false;
+    } else if (activeArenaIndex != null && index < activeArenaIndex) {
+        activeArenaIndex -= 1;
+    }
     updateArenaList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateArenaReadinessUI();
 }
 
 function updateArenaList() {
     const list = document.getElementById('arenaList');
     if (!rois.length) {
         list.innerHTML = `<div class="mini-note">${tr('oft.calib.roi_list.empty', 'No arena added yet.')}</div>`;
+        updateArenaReadinessUI();
         return;
     }
     list.innerHTML = rois.map((roi, index) => {
         const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
         const preciseStyle = timeConfig.mode === 'precise' ? '' : 'display:none;';
+        const pointCount = (roi.points || []).length;
+        const complete = isCompleteArena(roi);
+        const completeText = (typeof getLang === 'function' && getLang() === 'en')
+            ? (complete ? 'Complete' : 'Drawing')
+            : (complete ? '已完成' : '绘制中');
         const detectionCount = (roi.detection_points || []).length;
         const isEditingMask = isDrawingMask && maskEditArenaIndex === index;
         return `
@@ -956,7 +1133,7 @@ function updateArenaList() {
                 <div class="arena-card-head">
                     <div>
                         <div class="arena-card-title">ROI ${index + 1}</div>
-                        <small>${tr('oft.calib.roi.corner_points', '4 corner points')} · ${detectionCount >= MIN_MASK_POINTS ? `已自定义检测遮罩 (${detectionCount} 点)` : '检测遮罩默认跟随 arena'}</small>
+                        <small>${pointCount} / 4 ${tr('oft.calib.roi.corner_points', 'corner points')} · ${completeText} · ${detectionCount >= MIN_MASK_POINTS ? `已自定义检测遮罩 (${detectionCount} 点)` : '检测遮罩默认跟随 arena'}</small>
                     </div>
                     <button class="btn btn-sm btn-outline-danger" type="button" onclick="deleteArena(${index})">
                         <i class="fas fa-trash"></i>
@@ -964,8 +1141,7 @@ function updateArenaList() {
                 </div>
                 <div class="compact-grid">
                     <div>
-                        <label class="form-label">${tr('oft.calib.roi.name', 'Name')}</label>
-                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateArenaName(${index}, this.value)">
+                        ${projectSubjectSelectMarkup(index, roi, 'updateArenaName', tr('oft.calib.roi.name', 'Name'))}
                     </div>
                     <div>
                         <label class="form-label">${tr('oft.calib.roi.time_mode', 'Time Mode')}</label>
@@ -993,14 +1169,24 @@ function updateArenaList() {
                         <i class="fas fa-rotate-left me-1"></i>恢复默认遮罩
                     </button>
                 </div>
-                <div class="mini-note mt-2">统计仍使用 4 点 arena；检测时会优先使用这里的遮罩多边形。</div>
+                <div class="mini-note mt-2">当小鼠躯体超出场地边界时，可用遮罩框定允许检测鼠体的范围；统计仍使用 4 点 arena。</div>
             </div>
         `;
     }).join('');
+    updateArenaReadinessUI();
 }
 
 function updateArenaName(index, value) {
     rois[index].name = value || arenaDefaultName(index);
+    persistCurrentVideoState();
+    syncVideoSelectors();
+    drawArenaCanvas();
+}
+
+function updateArenaProjectSubject(index, subjectId) {
+    if (!rois[index]) return;
+    applyProjectSubjectToROI(rois[index], index, subjectId);
+    updateArenaList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -1052,7 +1238,7 @@ function onVideoChange(value) {
 }
 
 function goToStep(step) {
-    if (step === 2 && rois.length === 0) {
+    if (step === 2 && !allArenasReady()) {
         alert(tr('oft.calib.alert.need_arena', 'Please complete at least one arena calibration.'));
         return;
     }
@@ -1087,7 +1273,7 @@ function syncRangeLabel(id) {
 }
 
 function normalizeArenaRois(sourceRois) {
-    return cloneState(sourceRois || []).map(roi => {
+    return cloneState(sourceRois || []).filter(isCompleteArena).map(roi => {
         if (!roi.time_config) {
             roi.time_config = { mode: 'global', start: null, end: null };
         }
@@ -1152,7 +1338,7 @@ async function saveDraftPayload(redirectToWorkspace = false) {
 }
 
 function updateDebugPreview(frameIdx) {
-    if (!rois.length) return;
+    if (!allArenasReady()) return;
     fetch(`/api/debug_preview/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1177,10 +1363,11 @@ function updateDebugPreview(frameIdx) {
 }
 
 function startAnalysis() {
-    if (!rois.length) {
+    if (!allArenasReady()) {
         alert(tr('oft.calib.alert.finish_arena', 'Please finish arena calibration first.'));
         return;
     }
+    if (!validateProjectRoiSubjects()) return;
     const invalidMask = rois.findIndex(roi => roi.detection_points && roi.detection_points.length < MIN_MASK_POINTS);
     if (invalidMask !== -1) {
         alert(trFormat('oft.calib.alert.mask_invalid', [invalidMask + 1], 'ROI {0} needs at least 3 detection-mask points.'));
@@ -1218,6 +1405,7 @@ function startAnalysis() {
                 );
             }
         });
+        addProjectSubjectBatchIssues(incomplete, body.per_video_configs);
         if (incomplete.length > 0) {
             alert(
                 trFormat(

@@ -341,6 +341,43 @@ code, pre, .font-monospace {
     font-family: "Consolas", "SFMono-Regular", monospace !important;
 }
 
+/* Shared guardrails for monitor/task pages with long English labels and paths. */
+body .monitor-grid > *,
+body .monitor-card,
+body .metric-box,
+body .task-card > *,
+body .tasks-toolbar > * {
+    min-width: 0;
+}
+
+body .metric-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+}
+
+body .monitor-card {
+    overflow: hidden;
+}
+
+body .metric-label,
+body .metric-value,
+body .log-box,
+body .task-title,
+body .task-message {
+    overflow-wrap: anywhere;
+}
+
+body .task-buttons {
+    min-width: 0;
+    max-width: 100%;
+}
+
+body .task-buttons .btn,
+body .task-topline .badge,
+body .status-pill {
+    max-width: 100%;
+    white-space: normal;
+}
+
 .stat-icon {
     font-size: 1.5rem;
     color: var(--accent-cyan);

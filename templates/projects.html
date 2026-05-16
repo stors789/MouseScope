@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}项目工作台 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.projects-shell { max-width: 1440px; margin: 0 auto; }
+.projects-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; }
+.projects-subtitle { color:var(--text-secondary); line-height:1.7; max-width:760px; }
+.project-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:1rem; }
+.project-card { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1rem; box-shadow:var(--shadow-card); }
+.project-card-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; margin-bottom:.75rem; }
+.project-title { font-weight:800; color:var(--text-primary); font-size:1.05rem; }
+.project-path { color:var(--text-muted); font-size:.82rem; word-break:break-all; }
+.project-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin:.9rem 0; }
+.project-stat { border:1px solid var(--border-card); background:var(--bg-page); border-radius:12px; padding:.55rem; text-align:center; }
+.project-stat strong { display:block; font-size:1.1rem; color:var(--primary-color); }
+.project-stat span { font-size:.78rem; color:var(--text-muted); }
+.create-panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1rem; margin-bottom:1rem; box-shadow:var(--shadow-card); }
+.project-toolbar { display:flex; justify-content:space-between; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem; }
+.project-card.archived { opacity:.78; }
+@media (max-width: 640px) { .project-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="projects-shell" data-tour-page="projects">
+    <div class="projects-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-i18n="projects.title">项目工作台</h1>
+            <div class="projects-subtitle" data-i18n="projects.subtitle">按课题组织组别、小鼠、视频和分析结果。快速分析入口仍然保留，项目模式用于正式实验和长期数据整理。</div>
+        </div>
+    </div>
+
+    <div class="create-panel" data-tour-id="projects-create">
+        <form id="createProjectForm" class="row g-3 align-items-end">
+            <div class="col-lg-8">
+                <label class="form-label" data-i18n="projects.form.name">项目名称</label>
+                <input class="form-control" id="projectName" data-i18n="projects.form.name_ph" data-i18n-attr="placeholder" placeholder="例如 MemoryStudy_2026" required>
+            </div>
+            <div class="col-lg-4 d-grid">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-plus me-2"></i><span data-i18n="projects.form.create">新建项目</span></button>
+            </div>
+        </form>
+    </div>
+
+    <div id="projectStatus" class="alert alert-info" data-i18n="projects.loading">正在读取项目列表...</div>
+    <div class="project-toolbar">
+        <button class="btn btn-outline-primary btn-sm" type="button" id="toggleArchivedBtn" data-tour-id="projects-archive">
+            <i class="fas fa-box-archive me-1"></i><span data-i18n="projects.show_archived">查看已归档项目</span>
+        </button>
+    </div>
+    <div id="projectGrid" class="project-grid" data-tour-id="projects-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusEl = document.getElementById('projectStatus');
+const gridEl = document.getElementById('projectGrid');
+const toggleArchivedBtn = document.getElementById('toggleArchivedBtn');
+let latestProjects = [];
+let showArchived = false;
+
+function currentLang() {
+    return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh');
+}
+
+function tr(key, fallback = '') {
+    const dict = (typeof I18N !== 'undefined' && I18N[currentLang()]) || {};
+    return dict[key] ?? fallback;
+}
+
+function tf(key, values = {}, fallback = '') {
+    return tr(key, fallback).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function formatTime(ts) {
+    if (!ts) return '-';
+    try { return new Date(Number(ts) * 1000).toLocaleString(currentLang() === 'zh' ? 'zh-CN' : 'en-US'); } catch (_) { return '-'; }
+}
+
+function setStatus(message, type = 'info') {
+    statusEl.className = `alert alert-${type}`;
+    statusEl.textContent = message;
+    statusEl.style.display = message ? 'block' : 'none';
+}
+
+function renderProjects(projects) {
+    latestProjects = projects || [];
+    if (toggleArchivedBtn) {
+        toggleArchivedBtn.querySelector('span').textContent = showArchived
+            ? tr('projects.hide_archived', '返回项目列表')
+            : tr('projects.show_archived', '查看已归档项目');
+    }
+    if (!latestProjects.length) {
+        gridEl.innerHTML = '';
+        setStatus(showArchived ? tr('projects.empty_archived', '还没有已归档项目。') : tr('projects.empty', '还没有项目。先新建一个项目，再录入组别和小鼠。'), 'warning');
+        return;
+    }
+    setStatus('', 'info');
+    gridEl.innerHTML = latestProjects.map(project => `
+        <div class="project-card ${project.archived ? 'archived' : ''}">
+            <div class="project-card-head">
+                <div>
+                    <div class="project-title">${escapeHtml(project.name)}</div>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" title="${escapeHtml(project.archived ? tr('projects.restore_title', '恢复项目') : tr('projects.archive_title', '归档项目'))}" onclick="setProjectArchived('${escapeHtml(project.project_id)}', ${project.archived ? 'false' : 'true'})">
+                    <i class="fas ${project.archived ? 'fa-box-open' : 'fa-box-archive'}"></i>
+                </button>
+            </div>
+            <div class="project-path">${escapeHtml(project.project_dir)}</div>
+            <div class="project-stats">
+                <div class="project-stat"><strong>${project.group_count || 0}</strong><span>${escapeHtml(tr('projects.stat.groups', '组别'))}</span></div>
+                <div class="project-stat"><strong>${project.subject_count || 0}</strong><span>${escapeHtml(tr('projects.stat.subjects', '小鼠'))}</span></div>
+                <div class="project-stat"><strong>${project.video_count || 0}</strong><span>${escapeHtml(tr('projects.stat.videos', '视频'))}</span></div>
+                <div class="project-stat"><strong>${project.completed_assignment_count || 0}</strong><span>${escapeHtml(tr('projects.stat.completed', '完成'))}</span></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div class="small text-muted">${escapeHtml(tf('projects.last_opened', {time: formatTime(project.last_opened_at || project.updated_at)}, '最近打开：{time}'))}</div>
+                <div class="d-flex gap-2 flex-wrap">
+                    ${project.archived ? `<button class="btn btn-outline-primary btn-sm" type="button" onclick="setProjectArchived('${escapeHtml(project.project_id)}', false)"><i class="fas fa-box-open me-1"></i>${escapeHtml(tr('projects.restore', '恢复项目'))}</button>` : ''}
+                    <a class="btn btn-primary btn-sm" href="/projects/${encodeURIComponent(project.project_id)}">
+                        <i class="fas fa-folder-open me-1"></i>${escapeHtml(tr('projects.open', '打开项目'))}
+                    </a>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function loadProjects() {
+    fetch(`/api/projects${showArchived ? '?include_archived=1' : ''}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.error || tr('projects.load_failed', '读取失败'));
+            const projects = data.projects || [];
+            renderProjects(showArchived ? projects.filter(project => project.archived) : projects);
+        })
+        .catch(error => setStatus(error.message || String(error), 'danger'));
+}
+
+function setProjectArchived(projectId, archived) {
+    if (archived && !confirm(tr('projects.archive_confirm', '归档后项目不会出现在默认列表中，但不会删除项目文件。继续吗？'))) return;
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/archive`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({archived})
+    }).then(r => r.json()).then(data => {
+        if (!data.success) throw new Error(data.error || (archived ? tr('projects.archive_failed', '归档失败') : tr('projects.restore_failed', '恢复失败')));
+        loadProjects();
+    }).catch(error => alert(error.message || String(error)));
+}
+
+toggleArchivedBtn.addEventListener('click', () => {
+    showArchived = !showArchived;
+    loadProjects();
+});
+
+document.getElementById('createProjectForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const payload = {
+        name: document.getElementById('projectName').value.trim(),
+        description: ''
+    };
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(data => {
+        if (!data.success) throw new Error(data.error || tr('projects.create_failed', '创建失败'));
+        window.location.href = data.project_url;
+    }).catch(error => alert(error.message || String(error)));
+});
+
+document.addEventListener('mousescope:langchange', () => renderProjects(latestProjects));
+document.addEventListener('DOMContentLoaded', loadProjects);
+MouseScopeTour.register('projects', {
+    version: 'v1',
+    steps: [
+        {target: '[data-tour-id="projects-create"]', titleKey: 'tour.projects.create.title', bodyKey: 'tour.projects.create.body'},
+        {target: '[data-tour-id="projects-list"]', titleKey: 'tour.projects.list.title', bodyKey: 'tour.projects.list.body'},
+        {target: '[data-tour-id="projects-archive"]', titleKey: 'tour.projects.archive.title', bodyKey: 'tour.projects.archive.body'}
+    ]
+});
+</script>
+{% endblock %}

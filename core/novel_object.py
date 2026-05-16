@@ -256,6 +256,8 @@ class NovelObjectTracker:
         use_head_direction: bool = True,
         head_angle_threshold_deg: float = 50.0,
         head_confidence_threshold: float = 0.35,
+        body_gray_threshold: int = 95,
+        mouse_is_light: bool = False,
         movement_threshold_cm_s: float = 2.0,
         min_valid_exploration_s: float = 20.0,
     ) -> None:
@@ -290,6 +292,8 @@ class NovelObjectTracker:
         self.use_head_direction = bool(use_head_direction)
         self.head_angle_threshold_deg = float(np.clip(head_angle_threshold_deg, 5.0, 180.0))
         self.head_confidence_threshold = _clip01(head_confidence_threshold)
+        self.body_gray_threshold = int(np.clip(int(body_gray_threshold), 0, 255))
+        self.mouse_is_light = bool(mouse_is_light)
         self.movement_threshold_cm_s = max(0.0, float(movement_threshold_cm_s))
         self.min_valid_exploration_s = max(0.0, float(min_valid_exploration_s))
 
@@ -306,6 +310,9 @@ class NovelObjectTracker:
         self.h_cm_to_img = cv2.getPerspectiveTransform(dst_rect, self.arena_points.astype(np.float32))
 
         self.objects = self._normalize_objects(object_points)
+        self._center_rect_cm_cache: Optional[Tuple[float, float, float, float]] = None
+        self._center_polygon_px_cache: Optional[np.ndarray] = None
+        self._object_circle_polygon_cache: Dict[Tuple[float, float, float, int], np.ndarray] = {}
 
         self.detection_mask: Optional[np.ndarray] = None
         self.detection_bbox: Optional[Tuple[int, int, int, int]] = None
@@ -350,7 +357,7 @@ class NovelObjectTracker:
         self.current_exploring_idx: Optional[int] = None
         self.first_explored_object_idx: Optional[int] = None
 
-        self.trajectory_px_live: deque[Tuple[float, float]] = deque(maxlen=1200)
+        self.trajectory_px_live: deque[Tuple[float, float]] = deque(maxlen=450)
         self.trajectory_cm_stats: List[Tuple[float, float]] = []
         self.frame_records: List[Dict[str, Any]] = []
 
@@ -437,18 +444,30 @@ class NovelObjectTracker:
         return (x_cm, y_cm)
 
     def get_center_rect_cm(self) -> Tuple[float, float, float, float]:
+        if self._center_rect_cm_cache is not None:
+            return self._center_rect_cm_cache
         center_w = self.arena_width_cm * self.center_ratio_x
         center_h = self.arena_height_cm * self.center_ratio_y
         x0 = (self.arena_width_cm - center_w) / 2.0
         y0 = (self.arena_height_cm - center_h) / 2.0
-        return (x0, y0, x0 + center_w, y0 + center_h)
+        self._center_rect_cm_cache = (x0, y0, x0 + center_w, y0 + center_h)
+        return self._center_rect_cm_cache
 
     def cm_rect_to_image_polygon(self, rect_cm: Tuple[float, float, float, float]) -> np.ndarray:
         x0, y0, x1, y1 = rect_cm
         pts = np.array([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]], dtype=np.float32)
         return cv2.perspectiveTransform(pts, self.h_cm_to_img)[0].astype(np.int32)
 
+    def get_center_polygon_px(self) -> np.ndarray:
+        if self._center_polygon_px_cache is None:
+            self._center_polygon_px_cache = self.cm_rect_to_image_polygon(self.get_center_rect_cm())
+        return self._center_polygon_px_cache
+
     def object_circle_to_image_polygon(self, center_cm: Tuple[float, float], radius_cm: float, samples: int = 40) -> np.ndarray:
+        key = (round(float(center_cm[0]), 6), round(float(center_cm[1]), 6), round(float(radius_cm), 6), int(samples))
+        cached = self._object_circle_polygon_cache.get(key)
+        if cached is not None:
+            return cached
         angles = np.linspace(0.0, 2.0 * math.pi, num=max(16, samples), endpoint=False, dtype=np.float32)
         circle = np.stack(
             [
@@ -460,7 +479,8 @@ class NovelObjectTracker:
         circle[:, 0] = np.clip(circle[:, 0], 0.0, self.arena_width_cm)
         circle[:, 1] = np.clip(circle[:, 1], 0.0, self.arena_height_cm)
         poly = cv2.perspectiveTransform(circle.reshape(1, -1, 2), self.h_cm_to_img)[0]
-        return poly.astype(np.int32)
+        self._object_circle_polygon_cache[key] = poly.astype(np.int32)
+        return self._object_circle_polygon_cache[key]
 
     def _zone_flags(self, arena_xy_cm: Tuple[float, float]) -> Dict[str, bool]:
         x_cm, y_cm = arena_xy_cm
@@ -579,49 +599,452 @@ class NovelObjectTracker:
         angle = float(math.degrees(math.acos(cos_theta)))
         return _clip01((180.0 - angle) / 180.0)
 
-    def _estimate_head_direction(
-        self,
-        contour: Optional[np.ndarray],
-        centroid_px: Optional[Tuple[float, float]],
-        arena_xy_cm: Optional[Tuple[float, float]],
-        motion_vector_cm: Optional[Tuple[float, float]],
-    ) -> Dict[str, Any]:
-        empty = {
-            "point_px": None,
-            "point_cm": None,
-            "vector_cm": None,
-            "confidence": 0.0,
-            "estimated": False,
-            "axis_ratio": None,
-            "nose_distances_cm": [None for _ in self.objects],
-            "object_angles_deg": [None for _ in self.objects],
+    @staticmethod
+    def _largest_mask_component(mask: np.ndarray, min_area: int = 1) -> Optional[Dict[str, Any]]:
+        if mask is None or mask.size == 0:
+            return None
+        binary = (mask > 0).astype(np.uint8)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, 8)
+        best_label = None
+        best_area = 0
+        for label in range(1, num_labels):
+            area = int(stats[label, cv2.CC_STAT_AREA])
+            if area >= int(min_area) and area > best_area:
+                best_label = label
+                best_area = area
+        if best_label is None:
+            return None
+
+        component = np.zeros_like(mask, dtype=np.uint8)
+        component[labels == best_label] = 255
+        contours, _ = cv2.findContours(component, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        contour = max(contours, key=cv2.contourArea)
+        return {
+            "mask": component,
+            "contour": contour,
+            "area": best_area,
+            "centroid": (float(centroids[best_label][0]), float(centroids[best_label][1])),
+            "bbox": tuple(int(v) for v in stats[best_label, :4]),
         }
 
-        if contour is None or centroid_px is None or arena_xy_cm is None:
-            return empty
+    @staticmethod
+    def _mask_contour_axis_ratio(contour: np.ndarray) -> float:
+        points = contour.reshape(-1, 2).astype(np.float32)
+        if points.shape[0] < 4:
+            return 1.0
+        centered = points - np.mean(points, axis=0)
+        if float(np.max(np.linalg.norm(centered, axis=1))) < 1e-3:
+            return 1.0
+        try:
+            cov = np.cov(centered.T)
+            eigvals, _ = np.linalg.eigh(cov)
+            eigvals = np.sort(eigvals)[::-1]
+            return float((eigvals[0] + 1e-6) / (eigvals[1] + 1e-6)) if eigvals.size > 1 else 999.0
+        except Exception:
+            return 1.0
 
+    @staticmethod
+    def _radial_concentration(points: np.ndarray, origin: np.ndarray) -> float:
+        vectors = points.astype(np.float32) - origin.astype(np.float32)
+        norms = np.linalg.norm(vectors, axis=1)
+        valid = norms > 1e-3
+        if int(np.count_nonzero(valid)) < 3:
+            return 0.0
+        units = vectors[valid] / norms[valid, None]
+        return _clip01(float(np.linalg.norm(np.mean(units, axis=0))))
+
+    def _select_body_component(self, local_gray: np.ndarray, whole_mask: np.ndarray) -> Optional[Dict[str, Any]]:
+        whole_area = int(cv2.countNonZero(whole_mask))
+        if whole_area < 20:
+            return None
+
+        whole_moments = cv2.moments(whole_mask)
+        if whole_moments["m00"] == 0:
+            return None
+        whole_centroid = np.array(
+            [whole_moments["m10"] / whole_moments["m00"], whole_moments["m01"] / whole_moments["m00"]],
+            dtype=np.float32,
+        )
+
+        close_size = int(np.clip(round(math.sqrt(float(whole_area)) * 0.055), 3, 11))
+        if close_size % 2 == 0:
+            close_size += 1
+        close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+        open_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+
+        candidates: List[Dict[str, Any]] = []
+        threshold_specs = (("light_body", cv2.THRESH_BINARY),) if self.mouse_is_light else (("dark_body", cv2.THRESH_BINARY_INV),)
+        for polarity, threshold_type in threshold_specs:
+            _, raw = cv2.threshold(local_gray, self.body_gray_threshold, 255, threshold_type)
+            body_mask = cv2.bitwise_and(raw, whole_mask)
+            body_mask = cv2.morphologyEx(body_mask, cv2.MORPH_CLOSE, close_kernel)
+            body_mask = cv2.morphologyEx(body_mask, cv2.MORPH_OPEN, open_kernel)
+            body_mask = cv2.bitwise_and(body_mask, whole_mask)
+            component = self._largest_mask_component(body_mask, min_area=max(12, int(round(whole_area * 0.12))))
+            if component is None:
+                continue
+
+            body_area = int(component["area"])
+            body_ratio = body_area / max(float(whole_area), 1.0)
+            if body_ratio < 0.16 or body_ratio > 0.98:
+                continue
+
+            centroid = np.asarray(component["centroid"], dtype=np.float32)
+            center_distance = float(np.linalg.norm(centroid - whole_centroid))
+            body_radius = max(math.sqrt(body_area / math.pi), 1.0)
+            central_score = _clip01(1.0 - center_distance / max(body_radius * 1.8, 1.0))
+            ratio_score = _clip01(1.0 - abs(body_ratio - 0.74) / 0.50)
+            if body_ratio > 0.94:
+                ratio_score *= 0.45
+            axis_ratio = self._mask_contour_axis_ratio(component["contour"])
+            axis_score = _clip01((axis_ratio - 1.0) / 2.5)
+            score = 0.58 * ratio_score + 0.28 * central_score + 0.14 * axis_score
+
+            component.update(
+                {
+                    "polarity": polarity,
+                    "body_ratio": body_ratio,
+                    "whole_area": whole_area,
+                    "axis_ratio": axis_ratio,
+                    "score": score,
+                }
+            )
+            candidates.append(component)
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item["score"], reverse=True)
+        return candidates[0]
+
+    def _select_tail_component(
+        self,
+        tail_region: np.ndarray,
+        body_mask: np.ndarray,
+        body_contour: np.ndarray,
+        body_centroid: np.ndarray,
+        body_radius: float,
+        whole_area: int,
+    ) -> Optional[Dict[str, Any]]:
+        if tail_region is None or int(cv2.countNonZero(tail_region)) < 3:
+            return None
+
+        dist_to_body = cv2.distanceTransform(cv2.bitwise_not(body_mask), cv2.DIST_L2, 5)
+        root_band_px = float(np.clip(round(body_radius * 0.30), 4.0, 10.0))
+
+        tail_core = np.zeros_like(tail_region, dtype=np.uint8)
+        tail_core[(tail_region > 0) & (dist_to_body >= root_band_px)] = 255
+        if int(cv2.countNonZero(tail_core)) < 3:
+            return None
+
+        body_points = body_contour.reshape(-1, 2).astype(np.float32)
+        if body_points.shape[0] < 4:
+            return None
+
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats((tail_core > 0).astype(np.uint8), 8)
+        candidates: List[Dict[str, Any]] = []
+        min_area = max(4, int(round(whole_area * 0.002)))
+        max_area = max(20, int(round(whole_area * 0.28)))
+
+        for label in range(1, num_labels):
+            area = int(stats[label, cv2.CC_STAT_AREA])
+            if area < min_area or area > max_area:
+                continue
+
+            component_mask = np.zeros_like(tail_core, dtype=np.uint8)
+            component_mask[labels == label] = 255
+            ys, xs = np.where(component_mask > 0)
+            if xs.size < 3:
+                continue
+
+            points = np.stack([xs, ys], axis=1).astype(np.float32)
+            dist_values = dist_to_body[ys, xs]
+            proximal = points[int(np.argmin(dist_values))]
+            tail_side_unit = _unit_vector(proximal - body_centroid)
+            if tail_side_unit is None:
+                continue
+
+            body_projections = (body_points - body_centroid) @ tail_side_unit
+            max_body_projection = float(np.max(body_projections))
+            root_pool = body_points[body_projections >= max_body_projection - max(2.0, body_radius * 0.20)]
+            if root_pool.size == 0:
+                root_pool = body_points
+            root = root_pool[int(np.argmin(np.linalg.norm(root_pool - proximal, axis=1)))]
+
+            tip = points[int(np.argmax(np.linalg.norm(points - root, axis=1)))]
+            tail_length = float(np.linalg.norm(tip - root))
+            if tail_length < max(12.0, body_radius * 0.65):
+                continue
+            tail_unit = _unit_vector(tip - root)
+            root_unit = _unit_vector(root - body_centroid)
+            if tail_unit is None or root_unit is None:
+                continue
+
+            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+            tail_contour = max(contours, key=cv2.contourArea)
+
+            axis_ratio = self._mask_contour_axis_ratio(tail_contour)
+            bbox_w = max(1, int(stats[label, cv2.CC_STAT_WIDTH]))
+            bbox_h = max(1, int(stats[label, cv2.CC_STAT_HEIGHT]))
+            bbox_aspect = max(bbox_w, bbox_h) / max(1.0, float(min(bbox_w, bbox_h)))
+            area_ratio = area / max(float(whole_area), 1.0)
+
+            directional_score = _clip01((self._radial_concentration(points, body_centroid) - 0.38) / 0.52)
+            length_score = _clip01((tail_length / max(body_radius, 1e-6) - 0.30) / 1.20)
+            slenderness = (tail_length * tail_length) / max(float(area), 1.0)
+            thin_score = max(
+                _clip01((axis_ratio - 1.7) / 5.5),
+                _clip01((bbox_aspect - 1.7) / 5.5),
+                _clip01((slenderness - 3.0) / 22.0),
+            )
+            area_score = _clip01(1.0 - abs(area_ratio - 0.07) / 0.18)
+            away_score = _clip01(
+                (
+                    float(np.linalg.norm(tip - body_centroid))
+                    - float(np.linalg.norm(root - body_centroid))
+                )
+                / max(body_radius * 1.2, 1.0)
+            )
+            outward_score = _clip01((float(np.dot(tail_unit, root_unit)) + 0.15) / 1.15)
+
+            score = (
+                0.24 * length_score
+                + 0.23 * thin_score
+                + 0.21 * directional_score
+                + 0.18 * outward_score
+                + 0.08 * away_score
+                + 0.06 * area_score
+            )
+            candidates.append(
+                {
+                    "mask": component_mask,
+                    "contour": tail_contour,
+                    "area": area,
+                    "area_ratio": area_ratio,
+                    "axis_ratio": axis_ratio,
+                    "root": root.astype(np.float32),
+                    "tip": tip.astype(np.float32),
+                    "length": tail_length,
+                    "score": score,
+                    "touch_score": 1.0,
+                    "length_score": length_score,
+                    "thin_score": thin_score,
+                    "area_score": area_score,
+                    "directional_score": directional_score,
+                    "away_score": away_score,
+                    "outward_score": outward_score,
+                    "root_band_px": root_band_px,
+                }
+            )
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item["score"], reverse=True)
+        return candidates[0]
+
+    def _segment_body_tail_from_gray(
+        self,
+        contour: np.ndarray,
+        gray: Optional[np.ndarray],
+    ) -> Optional[Dict[str, Any]]:
+        if gray is None or contour is None:
+            return None
+
+        x, y, w, h = cv2.boundingRect(contour)
+        if w <= 2 or h <= 2:
+            return None
+        pad = 2
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(gray.shape[1], x + w + pad)
+        y1 = min(gray.shape[0], y + h + pad)
+        if x1 <= x0 or y1 <= y0:
+            return None
+
+        local_gray = gray[y0:y1, x0:x1]
+        shifted_contour = contour.astype(np.int32) - np.array([[[x0, y0]]], dtype=np.int32)
+        whole_mask = np.zeros(local_gray.shape[:2], dtype=np.uint8)
+        cv2.drawContours(whole_mask, [shifted_contour], -1, 255, thickness=-1)
+        whole_area = int(cv2.countNonZero(whole_mask))
+        if whole_area < 20:
+            return None
+
+        body = self._select_body_component(local_gray, whole_mask)
+        if body is None:
+            return None
+
+        body_mask = body["mask"]
+        body_contour_local = body["contour"]
+        body_centroid_local = np.asarray(body["centroid"], dtype=np.float32)
+        body_area = int(body["area"])
+        body_radius = max(math.sqrt(body_area / math.pi), 1.0)
+
+        tail_region = cv2.bitwise_and(whole_mask, cv2.bitwise_not(body_mask))
+        if cv2.countNonZero(tail_region) > 0:
+            tail_region = cv2.bitwise_and(tail_region, whole_mask)
+
+        tail = self._select_tail_component(
+            tail_region,
+            body_mask,
+            body_contour_local,
+            body_centroid_local,
+            body_radius,
+            whole_area,
+        )
+
+        def _to_global_point(point: Sequence[float]) -> Tuple[float, float]:
+            return (float(point[0]) + float(x0), float(point[1]) + float(y0))
+
+        body_contour_global = body_contour_local + np.array([[[x0, y0]]], dtype=np.int32)
+        body_centroid_px = _to_global_point(body_centroid_local)
+        body_centroid_cm = self.project_point_to_cm(body_centroid_px)
+
+        result: Dict[str, Any] = {
+            "body_contour": body_contour_global,
+            "body_centroid_px": body_centroid_px,
+            "body_centroid_cm": body_centroid_cm,
+            "body_area_px": body_area,
+            "body_ratio": float(body["body_ratio"]),
+            "body_threshold_polarity": body["polarity"],
+            "body_axis_ratio": float(body["axis_ratio"]),
+            "whole_area_px": whole_area,
+        }
+
+        if tail is None:
+            return result
+
+        tail_tip_px = _to_global_point(tail["tip"])
+        tail_root_px = _to_global_point(tail["root"])
+        tail_contour_global = tail["contour"] + np.array([[[x0, y0]]], dtype=np.int32)
+        head_unit = _unit_vector(body_centroid_local - tail["root"])
+        if head_unit is None:
+            return result
+
+        body_points = body_contour_local.reshape(-1, 2).astype(np.float32)
+        projections = (body_points - body_centroid_local) @ head_unit
+        if projections.size == 0:
+            return result
+        nose_local = body_points[int(np.argmax(projections))]
+        nose_projection = float(np.max(projections))
+        if nose_projection < max(3.0, body_radius * 0.18):
+            return result
+
+        nose_px = _to_global_point(nose_local)
+        nose_cm = self.project_point_to_cm(nose_px)
+        vector_cm = (
+            float(nose_cm[0] - body_centroid_cm[0]),
+            float(nose_cm[1] - body_centroid_cm[1]),
+        )
+        if _unit_vector(vector_cm) is None:
+            return result
+
+        body_score = _clip01(0.65 * body["score"] + 0.35 * _clip01((body["body_ratio"] - 0.18) / 0.55))
+        nose_score = _clip01((nose_projection / max(body_radius, 1e-6) - 0.18) / 0.75)
+        tail_score = _clip01(
+            0.30 * tail["length_score"]
+            + 0.30 * tail["thin_score"]
+            + 0.18 * tail["area_score"]
+            + 0.12 * tail["touch_score"]
+            + 0.10 * tail["score"]
+        )
+        confidence = _clip01(0.18 + 0.34 * tail_score + 0.26 * body_score + 0.22 * nose_score)
+
+        result.update(
+            {
+                "nose_point_px": nose_px,
+                "nose_point_cm": nose_cm,
+                "vector_cm": vector_cm,
+                "tail_point_px": tail_tip_px,
+                "tail_root_px": tail_root_px,
+                "tail_contour": tail_contour_global,
+                "tail_confidence": tail_score,
+                "tail_area_ratio": float(tail["area_ratio"]),
+                "tail_axis_ratio": float(tail["axis_ratio"]),
+                "tail_length_px": float(tail["length"]),
+                "confidence": confidence,
+            }
+        )
+        return result
+
+    def _head_state_from_body_tail_segment(self, segment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not segment or segment.get("nose_point_px") is None or segment.get("vector_cm") is None:
+            return None
+
+        body_centroid_cm = segment.get("body_centroid_cm")
+        nose_cm = segment.get("nose_point_cm")
+        if body_centroid_cm is None or nose_cm is None:
+            return None
+
+        nose_distances_cm: List[Optional[float]] = []
+        object_angles_deg: List[Optional[float]] = []
+        for obj in self.objects:
+            nose_vec = (
+                float(obj["point_cm"][0] - nose_cm[0]),
+                float(obj["point_cm"][1] - nose_cm[1]),
+            )
+            nose_distances_cm.append(float(math.hypot(nose_vec[0], nose_vec[1])))
+            body_vec = (
+                float(obj["point_cm"][0] - body_centroid_cm[0]),
+                float(obj["point_cm"][1] - body_centroid_cm[1]),
+            )
+            object_angles_deg.append(_angle_deg(segment["vector_cm"], body_vec))
+
+        return {
+            "point_px": segment["nose_point_px"],
+            "point_cm": nose_cm,
+            "vector_cm": segment["vector_cm"],
+            "tail_point_px": segment.get("tail_point_px"),
+            "tail_point_cm": self.project_point_to_cm(segment["tail_point_px"]) if segment.get("tail_point_px") is not None else None,
+            "tail_root_px": segment.get("tail_root_px"),
+            "confidence": float(segment.get("confidence") or 0.0),
+            "estimated": True,
+            "axis_ratio": segment.get("body_axis_ratio"),
+            "method": "body_tail_threshold",
+            "body_contour": segment.get("body_contour"),
+            "body_centroid": segment.get("body_centroid_px"),
+            "body_centroid_cm": body_centroid_cm,
+            "body_threshold_polarity": segment.get("body_threshold_polarity"),
+            "tail_contour": segment.get("tail_contour"),
+            "tail_confidence": segment.get("tail_confidence"),
+            "nose_distances_cm": nose_distances_cm,
+            "object_angles_deg": object_angles_deg,
+        }
+
+    def _estimate_head_direction_pca_endpoints(
+        self,
+        contour: np.ndarray,
+        centroid_px: Tuple[float, float],
+        origin_cm: Tuple[float, float],
+        motion_vector_cm: Optional[Tuple[float, float]],
+        body_segment: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         points_px = contour.reshape(-1, 2).astype(np.float32)
         if points_px.shape[0] < 10:
-            return empty
+            return None
 
         centroid_arr = np.asarray(centroid_px, dtype=np.float32)
         centered = points_px - centroid_arr
         if float(np.max(np.linalg.norm(centered, axis=1))) < 1e-3:
-            return empty
+            return None
 
-        cov = np.cov(centered.T)
-        eigvals, eigvecs = np.linalg.eigh(cov)
+        try:
+            cov = np.cov(centered.T)
+            eigvals, eigvecs = np.linalg.eigh(cov)
+        except Exception:
+            return None
         order = np.argsort(eigvals)[::-1]
         eigvals = eigvals[order]
-        major_axis = eigvecs[:, order[0]]
-        major_axis = _unit_vector(major_axis)
+        major_axis = _unit_vector(eigvecs[:, order[0]])
         if major_axis is None:
-            return empty
+            return None
 
         axis_ratio = float((eigvals[0] + 1e-6) / (eigvals[1] + 1e-6)) if eigvals.size > 1 else 999.0
         projections = centered @ major_axis
         if float(np.max(projections) - np.min(projections)) < 1e-3:
-            return empty
+            return None
 
         candidate_count = int(np.clip(points_px.shape[0] // 12, 4, 12))
         sorted_idx = np.argsort(projections)
@@ -634,13 +1057,17 @@ class NovelObjectTracker:
         body_to_object_distances = []
         for obj in self.objects:
             vec = (
-                float(obj["point_cm"][0] - arena_xy_cm[0]),
-                float(obj["point_cm"][1] - arena_xy_cm[1]),
+                float(obj["point_cm"][0] - origin_cm[0]),
+                float(obj["point_cm"][1] - origin_cm[1]),
             )
             body_to_object_vectors.append(vec)
             body_to_object_distances.append(float(math.hypot(vec[0], vec[1])))
 
-        def _support_score(unit_head: np.ndarray, obj_vec: Optional[Tuple[float, float]] = None, obj_distance: Optional[float] = None) -> Tuple[float, float, float]:
+        def _support_score(
+            unit_head: np.ndarray,
+            obj_vec: Optional[Tuple[float, float]] = None,
+            obj_distance: Optional[float] = None,
+        ) -> Tuple[float, float, float]:
             continuity = 0.5
             if previous_head_unit is not None:
                 continuity = (float(np.dot(unit_head, previous_head_unit)) + 1.0) * 0.5
@@ -658,14 +1085,14 @@ class NovelObjectTracker:
             return continuity, motion, object_align
 
         def _pick_candidate(indices: np.ndarray) -> Optional[Dict[str, Any]]:
-            best: Optional[Dict[str, Any]] = None
+            best = None
             for raw_idx in indices.tolist():
                 idx = int(raw_idx)
                 point_px = (float(points_px[idx][0]), float(points_px[idx][1]))
                 point_cm = self.project_point_to_cm(point_px)
                 vector_cm = (
-                    float(point_cm[0] - arena_xy_cm[0]),
-                    float(point_cm[1] - arena_xy_cm[1]),
+                    float(point_cm[0] - origin_cm[0]),
+                    float(point_cm[1] - origin_cm[1]),
                 )
                 unit_head = _unit_vector(vector_cm)
                 if unit_head is None:
@@ -673,7 +1100,6 @@ class NovelObjectTracker:
 
                 pointiness = self._contour_pointiness(points_px, idx, step)
                 extremeness = abs(float(projections[idx])) / projection_scale
-
                 nearest_idx = int(
                     min(
                         range(len(self.objects)),
@@ -695,14 +1121,12 @@ class NovelObjectTracker:
                     + 0.15 * motion
                     + 0.10 * object_align
                 )
-
                 candidate = {
                     "idx": idx,
                     "point_px": point_px,
                     "point_cm": point_cm,
                     "vector_cm": vector_cm,
                     "pointiness": pointiness,
-                    "extremeness": extremeness,
                     "continuity": continuity,
                     "motion": motion,
                     "object_align": object_align,
@@ -715,7 +1139,7 @@ class NovelObjectTracker:
         forward = _pick_candidate(sorted_idx[-candidate_count:])
         backward = _pick_candidate(sorted_idx[:candidate_count])
         if forward is None and backward is None:
-            return empty
+            return None
         if backward is None:
             winner = forward
             other = None
@@ -724,8 +1148,9 @@ class NovelObjectTracker:
             other = None
         else:
             winner, other = (forward, backward) if forward["score"] >= backward["score"] else (backward, forward)
+        if winner is None:
+            return None
 
-        assert winner is not None
         score_margin = winner["score"] - (other["score"] if other is not None else 0.0)
         support_strength = max(winner["continuity"], winner["motion"], winner["object_align"])
         elongation = _clip01((axis_ratio - 1.2) / 2.0)
@@ -745,8 +1170,8 @@ class NovelObjectTracker:
             )
             nose_distances_cm.append(float(math.hypot(nose_vec[0], nose_vec[1])))
             body_vec = (
-                float(obj["point_cm"][0] - arena_xy_cm[0]),
-                float(obj["point_cm"][1] - arena_xy_cm[1]),
+                float(obj["point_cm"][0] - origin_cm[0]),
+                float(obj["point_cm"][1] - origin_cm[1]),
             )
             object_angles_deg.append(_angle_deg(winner["vector_cm"], body_vec))
 
@@ -754,12 +1179,76 @@ class NovelObjectTracker:
             "point_px": winner["point_px"],
             "point_cm": winner["point_cm"],
             "vector_cm": winner["vector_cm"],
+            "tail_point_px": None,
+            "tail_point_cm": None,
+            "tail_root_px": None,
             "confidence": confidence,
             "estimated": True,
             "axis_ratio": axis_ratio,
+            "method": "body_pca_legacy" if body_segment is not None else "pca_legacy",
+            "body_contour": body_segment.get("body_contour") if body_segment is not None else None,
+            "body_centroid": body_segment.get("body_centroid_px") if body_segment is not None else None,
+            "body_centroid_cm": body_segment.get("body_centroid_cm") if body_segment is not None else None,
+            "body_threshold_polarity": body_segment.get("body_threshold_polarity") if body_segment is not None else None,
+            "tail_contour": body_segment.get("tail_contour") if body_segment is not None else None,
+            "tail_confidence": body_segment.get("tail_confidence") if body_segment is not None else None,
             "nose_distances_cm": nose_distances_cm,
             "object_angles_deg": object_angles_deg,
         }
+
+    def _estimate_head_direction(
+        self,
+        contour: Optional[np.ndarray],
+        centroid_px: Optional[Tuple[float, float]],
+        arena_xy_cm: Optional[Tuple[float, float]],
+        motion_vector_cm: Optional[Tuple[float, float]],
+        gray: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
+        empty = {
+            "point_px": None,
+            "point_cm": None,
+            "vector_cm": None,
+            "tail_point_px": None,
+            "tail_point_cm": None,
+            "tail_root_px": None,
+            "confidence": 0.0,
+            "estimated": False,
+            "axis_ratio": None,
+            "method": None,
+            "body_contour": None,
+            "body_centroid": None,
+            "body_centroid_cm": None,
+            "body_threshold_polarity": None,
+            "tail_contour": None,
+            "tail_confidence": None,
+            "nose_distances_cm": [None for _ in self.objects],
+            "object_angles_deg": [None for _ in self.objects],
+        }
+
+        if contour is None or centroid_px is None or arena_xy_cm is None:
+            return empty
+
+        body_segment = self._segment_body_tail_from_gray(contour, gray)
+        body_tail_state = self._head_state_from_body_tail_segment(body_segment) if body_segment is not None else None
+        if body_tail_state is not None:
+            return body_tail_state
+
+        if body_segment is not None and body_segment.get("body_contour") is not None:
+            contour = body_segment["body_contour"]
+            centroid_px = tuple(float(v) for v in body_segment.get("body_centroid_px", centroid_px))
+            arena_xy_cm = tuple(float(v) for v in body_segment.get("body_centroid_cm", arena_xy_cm))
+
+        legacy_state = self._estimate_head_direction_pca_endpoints(
+            contour,
+            centroid_px,
+            arena_xy_cm,
+            motion_vector_cm,
+            body_segment=body_segment,
+        )
+        if legacy_state is not None:
+            return legacy_state
+
+        return empty
 
     def update(
         self,
@@ -769,6 +1258,7 @@ class NovelObjectTracker:
         bg_subtractor,
         morph_processor,
         detector,
+        include_trajectory: bool = True,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
@@ -859,7 +1349,7 @@ class NovelObjectTracker:
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
-        head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm)
+        head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm, gray=gray)
         head_confidence = float(head_state.get("confidence") or 0.0)
         head_confident = bool(
             self.use_head_direction
@@ -975,8 +1465,13 @@ class NovelObjectTracker:
             "current_object": self.objects[exploring_idx]["name"] if exploring_idx is not None else None,
             "nose_x_cm": round(float(head_state["point_cm"][0]), 3) if head_state.get("point_cm") is not None else None,
             "nose_y_cm": round(float(head_state["point_cm"][1]), 3) if head_state.get("point_cm") is not None else None,
+            "body_x_cm": round(float(head_state["body_centroid_cm"][0]), 3) if head_state.get("body_centroid_cm") is not None else None,
+            "body_y_cm": round(float(head_state["body_centroid_cm"][1]), 3) if head_state.get("body_centroid_cm") is not None else None,
             "head_direction_confidence": round(head_confidence, 3) if head_state.get("estimated") else None,
             "head_direction_confident": bool(head_confident) if in_stats_window else False,
+            "head_direction_method": head_state.get("method") if head_state.get("estimated") else None,
+            "body_threshold_polarity": head_state.get("body_threshold_polarity"),
+            "tail_confidence": round(float(head_state["tail_confidence"]), 3) if head_state.get("tail_confidence") is not None else None,
             "exploration_mode": exploration_mode,
         }
 
@@ -1007,7 +1502,7 @@ class NovelObjectTracker:
             "cumulative_distance_cm": self.total_distance_cm,
             "zone_flags": zone_flags,
             "zone_label": proximity_label,
-            "trajectory_px": list(self.trajectory_px_live),
+            "trajectory_px": list(self.trajectory_px_live) if include_trajectory else [],
             "in_stats_window": bool(in_stats_window),
             "object_distances_cm": distances_cm,
             "object_nose_distances_cm": nose_distances_cm,
@@ -1019,8 +1514,14 @@ class NovelObjectTracker:
             "current_object_role": self.objects[exploring_idx]["role"] if exploring_idx is not None else None,
             "head_point": head_state.get("point_px"),
             "head_point_cm": head_state.get("point_cm"),
+            "body_contour": head_state.get("body_contour"),
+            "body_centroid": head_state.get("body_centroid"),
+            "tail_contour": head_state.get("tail_contour"),
+            "tail_point": head_state.get("tail_point_px"),
+            "tail_root_point": head_state.get("tail_root_px"),
             "head_direction_confidence": head_confidence if head_state.get("estimated") else None,
             "head_direction_confident": bool(head_confident),
+            "head_direction_method": head_state.get("method"),
             "exploration_mode": exploration_mode,
             "record": record,
         }
@@ -1060,6 +1561,7 @@ class NovelObjectTracker:
             "use_head_direction": self.use_head_direction,
             "head_angle_threshold_deg": self.head_angle_threshold_deg,
             "head_confidence_threshold": self.head_confidence_threshold,
+            "body_gray_threshold": self.body_gray_threshold,
             "head_estimated_rate_percent": round(head_estimated_rate, 2),
             "head_confident_rate_percent": round(head_confident_rate, 2),
             "movement_threshold_cm_s": self.movement_threshold_cm_s,
@@ -1291,7 +1793,7 @@ def draw_novel_object_results(
     for tracker, result in tracker_results:
         arena_poly = tracker.arena_points.astype(np.int32)
         detection_poly = tracker.detection_points.astype(np.int32)
-        center_poly = tracker.cm_rect_to_image_polygon(tracker.get_center_rect_cm())
+        center_poly = tracker.get_center_polygon_px()
         current_idx = result.get("current_object_idx")
 
         cv2.polylines(output, [arena_poly], True, (96, 165, 250), 2)
@@ -1312,25 +1814,47 @@ def draw_novel_object_results(
         centroid = result.get("centroid")
         if contour is not None:
             cv2.drawContours(output, [contour], -1, (34, 197, 94), 2)
+        tail_contour = result.get("tail_contour")
+        if tail_contour is not None:
+            cv2.drawContours(output, [tail_contour], -1, (249, 121, 232), 2, cv2.LINE_AA)
+        body_contour = result.get("body_contour")
+        if body_contour is not None:
+            cv2.drawContours(output, [body_contour], -1, (241, 185, 16), 2, cv2.LINE_AA)
         if centroid is not None:
             cx, cy = int(centroid[0]), int(centroid[1])
             cv2.circle(output, (cx, cy), 4, (34, 197, 94), -1)
+        body_centroid = result.get("body_centroid")
+        if body_centroid is not None:
+            cv2.circle(output, (int(body_centroid[0]), int(body_centroid[1])), 4, (241, 185, 16), -1)
+        tail_point = result.get("tail_point")
+        if tail_point is not None:
+            cv2.circle(output, (int(tail_point[0]), int(tail_point[1])), 4, (36, 36, 239), -1, cv2.LINE_AA)
+        tail_root = result.get("tail_root_point")
+        if tail_root is not None:
+            cv2.circle(output, (int(tail_root[0]), int(tail_root[1])), 4, (249, 121, 232), -1, cv2.LINE_AA)
 
         head_point = result.get("head_point")
         head_confidence = float(result.get("head_direction_confidence") or 0.0)
         if tracker.use_head_direction and centroid is not None and head_point is not None:
             head_pt = (int(head_point[0]), int(head_point[1]))
-            center_pt = (int(centroid[0]), int(centroid[1]))
+            line_origin = body_centroid if body_centroid is not None else centroid
+            center_pt = (int(line_origin[0]), int(line_origin[1]))
             if head_confidence >= tracker.head_confidence_threshold:
-                line_color = (255, 214, 10) if result.get("exploration_mode") == "head" else (16, 185, 241)
+                line_color = (21, 204, 250)
                 thickness = 2
             else:
                 line_color = (148, 163, 184)
                 thickness = 1
             cv2.line(output, center_pt, head_pt, line_color, thickness, cv2.LINE_AA)
-            cv2.circle(output, head_pt, 3, line_color, -1)
+            cv2.circle(output, head_pt, 5, (21, 204, 250), -1, cv2.LINE_AA)
 
         traj = result.get("trajectory_px") or []
+        if len(traj) > 360:
+            stride = max(1, int(math.ceil(len(traj) / 360)))
+            sampled_traj = list(traj[::stride])
+            if sampled_traj and sampled_traj[-1] != traj[-1]:
+                sampled_traj.append(traj[-1])
+            traj = sampled_traj
         for idx in range(1, len(traj)):
             pt1 = (int(traj[idx - 1][0]), int(traj[idx - 1][1]))
             pt2 = (int(traj[idx][0]), int(traj[idx][1]))

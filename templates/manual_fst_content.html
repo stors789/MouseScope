@@ -58,7 +58,7 @@
                             items: [
                                 '让鼠体和背景有明显对比。深色鼠配浅背景通常选择 <code>light</code> 背景类型，浅色鼠配深背景选择 <code>dark</code>。',
                                 '尽量减少水面高光、玻璃壁反光、标签纸反光和气泡造成的闪烁。',
-                                '如果某些固定反光不可避免，优先用检测遮罩排除它们，而不是把 ROI 缩得过小。',
+                                '当小鼠躯体可能贴近或超出圆筒/ROI 边界时，优先用检测遮罩框定允许检测鼠体的范围，而不是把 ROI 缩得过小。',
                                 '避免人手、计时器闪烁、线缆晃动或其他移动物体进入圆筒 ROI。'
                             ]
                         },
@@ -120,8 +120,8 @@
                             icon: 'fas fa-mask',
                             items: [
                                 '水线是可选项，用于结果视频中的视觉参考，帮助复核者判断水面位置和 ROI 是否合理。',
-                                '检测遮罩也是可选项，只限制前景检测允许出现的区域，不改变 ROI 名称、时间窗和直径标定。',
-                                '当圆筒外有固定标签、高光、黑边或边缘畸变时，建议画检测遮罩来排除这些干扰。',
+                                '检测遮罩也是可选项，用于框定允许检测鼠体的范围，不改变 ROI 名称、时间窗和直径标定。',
+                                '当小鼠躯体可能贴近或超出圆筒/ROI 边界时，建议画检测遮罩覆盖完整可检测范围。',
                                 '检测遮罩不要裁掉鼠体可能出现的头部、尾部或贴壁动作，否则检测率会下降。'
                             ]
                         }
@@ -225,7 +225,7 @@
                             ['<code>immobility_threshold</code> / <code>active_threshold</code>', '最终使用的不动阈值和活动阈值。', '自动阈值开启时，每个 ROI 可不同。'],
                             ['<code>auto_threshold</code> / <code>threshold_sensitivity</code>', '阈值来源和灵敏度设置。', '便于追溯当时是否自动估计。'],
                             ['<code>cylinder_diameter_cm</code> / <code>diameter_px</code> / <code>cm_per_px</code>', '圆筒真实直径、像素直径和厘米换算比例。', '跨视频比较时非常重要。'],
-                            ['<code>has_custom_detection_mask</code>', '是否使用了自定义检测遮罩。', '帮助解释检测率和误检差异。']
+                            ['<code>has_custom_detection_mask</code>', '是否使用了自定义检测遮罩。', '帮助解释检测覆盖范围和检测率差异。']
                         ]
                     },
                     binsTable: {
@@ -264,7 +264,7 @@
                         '批量 ZIP 下载会保留每个视频的子文件夹结构，方便按原始视频回溯结果。'
                     ],
                     callouts: [
-                        ['info', '多圆筒的一致性建议', '如果同一画面左右两侧亮度差别明显，先用检测遮罩和曝光改善来解决。因为基础检测参数仍按视频共享，单靠每个 ROI 的自动阈值不能修复严重的分割不一致。']
+                        ['info', '多圆筒的一致性建议', '如果同一画面左右两侧亮度差别明显，先改善曝光和机位；检测遮罩只用于鼠体可能贴近或超出圆筒/ROI 边界时框定允许检测范围。']
                     ]
                 },
                 troubleshooting: {
@@ -272,7 +272,7 @@
                     lead: '如果 FST 能跑完但结果和人工观察不一致，建议按“检测轮廓 → ROI / 直径线 → 阈值图 → 时间窗”的顺序排查。',
                     items: [
                         '检测不到鼠体或检测率低：检查背景类型、灰度阈值、ROI 是否裁掉鼠体、水面反光是否过强，以及检测遮罩是否过窄。',
-                        '经常把反光或圆筒边缘当成鼠体：先缩小 ROI 到圆筒有效区域，或用检测遮罩排除固定反光和标签，再调高 min_area 或调整形态学参数。',
+                        '经常把反光或圆筒边缘当成鼠体：先检查曝光、背景和 ROI 边界，再调高 min_area 或调整形态学参数。',
                         '明显漂浮却被判为 active：查看活动曲线，如果漂浮段 motion score 长期高于阈值，可适当提高 threshold_sensitivity 或手动提高不动阈值；同时检查是否有水面噪声导致光流虚高。',
                         '明显游动却被判为 immobile：降低 threshold_sensitivity 或手动降低阈值，并检查 smoothing_window_s、gap_merge_s 是否过大。',
                         '状态频繁抖动：适当增大 smoothing_window_s、min_immobility_duration_s 或 gap_merge_s，但每次只改一个参数并重新查看 ethogram。',
@@ -341,7 +341,7 @@
                             items: [
                                 'Keep strong contrast between animal and background. Dark animals on light backgrounds usually use <code>light</code>; light animals on dark backgrounds usually use <code>dark</code>.',
                                 'Minimize water highlights, cylinder-wall reflections, label reflections, and flickering bubbles.',
-                                'If fixed reflections cannot be removed, use a detection mask to exclude them instead of shrinking the ROI too aggressively.',
+                                'When the mouse body may touch or extend beyond the cylinder/ROI boundary, use a detection mask to define the allowed detection area instead of shrinking the ROI too aggressively.',
                                 'Keep hands, timer flicker, moving cables, and other moving objects outside the cylinder ROI.'
                             ]
                         },
@@ -403,8 +403,8 @@
                             icon: 'fas fa-mask',
                             items: [
                                 'The waterline is optional and is used as a visual reference in annotated videos.',
-                                'The detection mask is also optional. It restricts allowed foreground detection but does not change ROI name, timing, or diameter calibration.',
-                                'Use a detection mask when fixed labels, highlights, black borders, or lens distortion cause false detections.',
+                                'The detection mask is also optional. It defines where the mouse body is allowed to be detected but does not change ROI name, timing, or diameter calibration.',
+                                'Use a detection mask when the mouse body may touch or extend beyond the cylinder/ROI boundary.',
                                 'Do not let the mask crop possible head, tail, or wall-adjacent movements, or detection rate will drop.'
                             ]
                         }
@@ -508,7 +508,7 @@
                             ['<code>immobility_threshold</code> / <code>active_threshold</code>', 'Final immobility and active thresholds.', 'With auto thresholding, each ROI may have a different value.'],
                             ['<code>auto_threshold</code> / <code>threshold_sensitivity</code>', 'Threshold source and sensitivity setting.', 'Records whether the threshold was estimated automatically.'],
                             ['<code>cylinder_diameter_cm</code> / <code>diameter_px</code> / <code>cm_per_px</code>', 'Real diameter, pixel diameter, and cm-per-pixel scale.', 'Very important for cross-video comparison.'],
-                            ['<code>has_custom_detection_mask</code>', 'Whether a custom detection mask was used.', 'Helps explain detection-rate and false-positive differences.']
+                            ['<code>has_custom_detection_mask</code>', 'Whether a custom detection mask was used.', 'Helps explain detection-area and detection-rate differences.']
                         ]
                     },
                     binsTable: {
@@ -555,7 +555,7 @@
                     lead: 'If FST finishes but does not match manual observation, troubleshoot in this order: contour detection, ROI / diameter, threshold figure, then time window.',
                     items: [
                         'Animal is missed or detection rate is low: check background type, grayscale threshold, whether ROI crops the animal, water-surface highlights, and whether the detection mask is too narrow.',
-                        'Reflections or cylinder edges are detected as animal: tighten the ROI to the cylinder effective region or use a detection mask to exclude fixed highlights and labels, then adjust min_area or morphology.',
+                        'Reflections or cylinder edges are detected as animal: check exposure, background, and ROI boundaries first, then adjust min_area or morphology.',
                         'Clear floating is labeled active: inspect the activity curve. If true floating sits above the threshold, increase threshold_sensitivity or use a higher manual threshold. Also check for water-surface noise inflating optical flow.',
                         'Clear swimming is labeled immobile: reduce threshold_sensitivity or manual threshold, and check whether smoothing_window_s or gap_merge_s is too large.',
                         'State flickers frequently: slightly increase smoothing_window_s, min_immobility_duration_s, or gap_merge_s, changing one parameter at a time and rechecking the ethogram.',

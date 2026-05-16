@@ -101,32 +101,23 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             'mean_immobility_percent': round(sum(valid_percent) / max(len(valid_percent), 1), 3),
         }
 
-    def _build_processors(self, video_path, vision_config):
-        bg_method = vision_config.get('bg_method', 'threshold')
-        if bg_method == 'threshold':
-            bg_subtractor = BackgroundSubtractor(
-                method='threshold',
-                threshold=vision_config.get('gray_threshold', 127),
-                invert=vision_config.get('invert', False),
-            )
-        elif bg_method == 'static':
-            bg = create_static_background(video_path, num_frames=15)
-            bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR) if len(bg.shape) == 2 else bg
-            bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
-        else:
-            bg_subtractor = BackgroundSubtractor(method=bg_method)
-
-        morph_processor = MorphologyProcessor(
-            erosion_kernel=vision_config.get('erosion_kernel', 3),
-            erosion_iterations=vision_config.get('erosion_iter', 1),
-            dilation_kernel=vision_config.get('dilation_kernel', 5),
-            dilation_iterations=vision_config.get('dilation_iter', 2),
+    def _build_processors(self, video_path, vision_config, sampling=None):
+        if sampling is None:
+            sampling = {
+                'analysis_width': 0,
+                'analysis_height': 0,
+                'scale_x': 1.0,
+                'scale_y': 1.0,
+            }
+        return self._build_processors_for_sampling(
+            video_path,
+            vision_config,
+            sampling,
+            static_frames=15,
+            erosion_default=1,
+            dilation_default=2,
+            min_area_default=80,
         )
-        detector = MouseDetector(
-            min_area=vision_config.get('min_area', 80),
-            max_area=vision_config.get('max_area', 50000),
-        )
-        return bg_subtractor, morph_processor, detector
 
     def _set_video_phase_progress(self, batch_index, phase_fraction, message):
         phase_fraction = max(0.0, min(1.0, float(phase_fraction or 0.0)))
@@ -137,18 +128,17 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             self.progress = int(phase_fraction * 100)
         self.message = message
 
-    def _open_video_writer(self, output_video_path, fps, width, height, label='FST video'):
-        for codec in ('avc1', 'H264', 'mp4v'):
-            try:
-                fourcc = cv2.VideoWriter_fourcc(*codec)
-                writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
-                if writer.isOpened():
-                    self._log(f"{label} codec: {codec}")
-                    return writer
-                writer.release()
-            except Exception:
-                pass
-        return None
+    def _open_video_writer(self, output_video_path, fps, width, height, label='FST video', source_video_path=None):
+        return create_annotated_video_writer(
+            output_video_path,
+            fps,
+            width,
+            height,
+            label=label,
+            source_video_path=source_video_path,
+            logger=self._log,
+            async_write=True,
+        )
 
     def _render_final_annotated_video(
         self,
@@ -164,6 +154,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
         frames_to_process,
         source_trackers,
         global_start_time_s,
+        sampling,
         batch_index=None,
     ):
         self._log("Rendering FST annotated video with final scored states...")
@@ -172,7 +163,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             self._log(f"Unable to reopen video for FST annotated rendering: {video_path}")
             return None
 
-        writer = self._open_video_writer(output_video_path, fps, width, height)
+        writer = self._open_video_writer(output_video_path, fps, width, height, source_video_path=video_path)
         if writer is None:
             cap.release()
             self._log("Unable to create FST annotated video writer.")
@@ -184,9 +175,10 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             render_tracker.immobility_high_threshold = source_tracker.immobility_high_threshold
             render_tracker.auto_threshold = source_tracker.auto_threshold
 
-        bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config)
+        bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config, sampling)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         render_idx = 0
+        source_frames_done = 0
         while self.is_running:
             ret, frame = cap.read()
             if not ret:
@@ -194,16 +186,18 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             try:
                 current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             except Exception:
-                current_frame_no = start_frame + render_idx
+                current_frame_no = start_frame + source_frames_done
             if current_frame_no > end_frame:
                 break
 
-            current_time = current_frame_no / max(fps, 1e-6)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            current_time = current_frame_no / max(float(sampling.get('source_fps', fps)), 1e-6)
+            analysis_frame = self._resize_for_sampling(frame, sampling)
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+            begin_frame_cache(bg_subtractor, current_frame_no)
             results = []
             for render_tracker, source_tracker in zip(render_trackers, source_trackers):
                 result = render_tracker.update(
-                    frame,
+                    analysis_frame,
                     current_time,
                     gray,
                     bg_subtractor,
@@ -229,18 +223,22 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                         result['centroid'] = (float(final_row['centroid_x']), float(final_row['centroid_y']))
                 results.append(result)
 
-            result_frame = draw_forced_swim_results(frame, list(zip(render_trackers, results)))
+            result_frame = draw_forced_swim_results(analysis_frame, list(zip(render_trackers, results)))
             writer.write(result_frame)
             if render_idx % 10 == 0:
                 self.current_frame = result_frame
             render_idx += 1
+            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+            covered = 1 + skipped
+            source_frames_done += covered
+            self._advance_frame_counters(covered, processed=False)
 
             if render_idx % 30 == 0:
-                fraction = 0.78 + min(render_idx / max(frames_to_process, 1), 1.0) * 0.20
+                fraction = 0.78 + min(source_frames_done / max(frames_to_process, 1), 1.0) * 0.20
                 self._set_video_phase_progress(
                     batch_index,
                     fraction,
-                    f'Rendering FST video {render_idx}/{frames_to_process}',
+                    f'Rendering FST video {source_frames_done}/{frames_to_process}',
                 )
 
         cap.release()
@@ -302,7 +300,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             self._log(f"Unable to open video: {video_path}")
-            return
+            raise RuntimeError(f"Unable to open video: {video_path}")
 
         detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         fps_override = vision_config.get('fps_override')
@@ -311,6 +309,17 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._log(f"FST video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+        sampling = self._resolve_video_sampling(
+            width,
+            height,
+            fps,
+            vision_config,
+            label='FST',
+            temporal_default=False,
+            max_dim_default=960,
+            target_fps_default=30.0,
+        )
+        self._log_video_sampling(sampling)
 
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
@@ -321,17 +330,19 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
         end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
         frames_to_process = max(0, end_frame - start_frame + 1)
 
-        roi_configs = self._parse_rois(vision_config)
-        trackers = self._build_trackers(roi_configs, vision_config, fps, global_start_time_s)
+        source_roi_configs = self._parse_rois(vision_config)
+        roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
+        trackers = self._build_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
         self._log(f"Configured {len(trackers)} FST cylinders")
 
         needs_auto = any(tracker.auto_threshold and tracker.immobility_threshold is None for tracker in trackers)
         if needs_auto and self.is_running:
             self._log("Estimating FST immobility thresholds from this video...")
             self._set_video_phase_progress(batch_index, 0.0, 'Estimating FST immobility thresholds...')
-            bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config)
+            bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config, sampling)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             prepass_idx = 0
+            prepass_source_frames_done = 0
             while self.is_running:
                 ret, frame = cap.read()
                 if not ret:
@@ -339,14 +350,16 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                 try:
                     current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
                 except Exception:
-                    current_frame_no = start_frame + prepass_idx
+                    current_frame_no = start_frame + prepass_source_frames_done
                 if current_frame_no > end_frame:
                     break
                 current_time = current_frame_no / max(fps, 1e-6)
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                analysis_frame = self._resize_for_sampling(frame, sampling)
+                gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+                begin_frame_cache(bg_subtractor, current_frame_no)
                 for tracker in trackers:
                     tracker.update(
-                        frame,
+                        analysis_frame,
                         current_time,
                         gray,
                         bg_subtractor,
@@ -354,14 +367,18 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                         detector,
                         record=False,
                         frame_index=current_frame_no,
-                    )
+                )
                 prepass_idx += 1
+                skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+                covered = 1 + skipped
+                prepass_source_frames_done += covered
+                self._advance_frame_counters(covered, processed=False)
                 if prepass_idx % 90 == 0:
-                    fraction = min(prepass_idx / max(frames_to_process, 1), 1.0) * 0.18
+                    fraction = min(prepass_source_frames_done / max(frames_to_process, 1), 1.0) * 0.18
                     self._set_video_phase_progress(
                         batch_index,
                         fraction,
-                        f'FST threshold estimation {prepass_idx}/{frames_to_process}',
+                        f'FST threshold estimation {prepass_source_frames_done}/{frames_to_process}',
                     )
 
             for tracker in trackers:
@@ -373,10 +390,11 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                 tracker.reset_runtime(clear_threshold=False)
             self._set_video_phase_progress(batch_index, 0.18, 'FST immobility thresholds estimated.')
 
-        bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config)
+        bg_subtractor, morph_processor, detector = self._build_processors(video_path, vision_config, sampling)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
         frame_idx = 0
+        source_frames_done = 0
         analysis_start_fraction = 0.18 if needs_auto else 0.0
         analysis_end_fraction = 0.78 if generate_video else 0.94
         while self.is_running:
@@ -386,15 +404,17 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             try:
                 current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             except Exception:
-                current_frame_no = start_frame + frame_idx
+                current_frame_no = start_frame + source_frames_done
             if current_frame_no > end_frame:
                 break
 
             current_time = current_frame_no / max(fps, 1e-6)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            analysis_frame = self._resize_for_sampling(frame, sampling)
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+            begin_frame_cache(bg_subtractor, current_frame_no)
             results = [
                 tracker.update(
-                    frame,
+                    analysis_frame,
                     current_time,
                     gray,
                     bg_subtractor,
@@ -409,7 +429,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             if frame_idx % 15 == 0:
                 rows = []
                 for tracker, result in zip(trackers, results):
-                    summary = tracker.build_summary()
+                    summary = tracker.build_live_summary()
                     rows.append({
                         'roi_id': tracker.roi_id,
                         'roi_name': tracker.roi_name,
@@ -429,11 +449,14 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                 self.live_metrics = self._build_live_metrics(rows)
 
             frame_idx += 1
-            self.processed_frames += 1
+            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+            covered = 1 + skipped
+            source_frames_done += covered
+            self._advance_frame_counters(covered)
             if frame_idx % 20 == 0:
-                local = min(frame_idx / max(frames_to_process, 1), 1.0)
+                local = min(source_frames_done / max(frames_to_process, 1), 1.0)
                 fraction = analysis_start_fraction + local * (analysis_end_fraction - analysis_start_fraction)
-                self._set_video_phase_progress(batch_index, fraction, f'FST scoring {frame_idx}/{frames_to_process}')
+                self._set_video_phase_progress(batch_index, fraction, f'FST scoring {source_frames_done}/{frames_to_process}')
 
         cap.release()
 
@@ -445,6 +468,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
         bins_rows = []
         for tracker in trackers:
             summary = tracker.build_summary()
+            self._add_sampling_summary_fields(summary, sampling)
             summary['video_name'] = video_info.get('original_name', video_name)
             summary_rows.append(summary)
 
@@ -495,14 +519,15 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
                 output_video_path,
                 roi_configs,
                 vision_config,
-                fps,
-                width,
-                height,
+                sampling['effective_fps'],
+                sampling['analysis_width'],
+                sampling['analysis_height'],
                 start_frame,
                 end_frame,
                 frames_to_process,
                 trackers,
                 global_start_time_s,
+                sampling,
                 batch_index=batch_index,
             )
             if rendered_video and os.path.exists(rendered_video):
@@ -538,7 +563,7 @@ class ForcedSwimAnalysisSession(AnalysisSessionBase):
             self.message = 'Forced swim analysis completed.'
 
         elapsed = time.time() - video_start_time
-        self._log(f"FST video processed in {elapsed:.1f}s, {frame_idx} frames")
+        self._log(f"FST video processed in {elapsed:.1f}s, {source_frames_done} source frames ({frame_idx} analyzed samples)")
 
         import gc
         gc.collect()

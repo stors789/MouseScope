@@ -1,94 +1,156 @@
-﻿# MouseScope
+# MouseScope
 
 <p align="center">
   <img src="static/img/logo.png" alt="MouseScope logo" width="112"/>
 </p>
 
 <p align="center">
-  <strong>面向真实实验流程的小鼠行为学视频分析桌面平台</strong><br/>
-  <strong>Desktop platform for practical mouse behavioral video analysis in real lab workflows.</strong>
+  <strong>面向小鼠行为学视频分析的桌面软件平台</strong><br/>
+  <strong>Desktop software platform for mouse behavioral video analysis.</strong>
 </p>
 
 <p align="center">
-  支持悬尾实验 TST、强迫游泳 FST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM 与 Y 迷宫 Y-Maze<br/>
-  Supports Tail Suspension Test (TST), Forced Swim Test (FST), Open Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze (EPM), and Y-Maze.
+  支持悬尾实验 TST、强迫游泳 FST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM 与 Y 迷宫<br/>
+  Supports Tail Suspension Test, Forced Swim Test, Open Field Test, Novel Object Recognition, Elevated Plus Maze, and Y-Maze.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v2.3.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v3.0.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
-  <img src="https://img.shields.io/badge/UI-Desktop%20Workbench-f59e0b" alt="UI"/>
+  <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
   <img src="https://img.shields.io/badge/Modules-6%20Assays-16a34a" alt="Modules"/>
   <img src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%20%7C%20English-0f766e" alt="Language"/>
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v2.3.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v3.0.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope v2.3.0 当前首页界面 · Current home interface</sub>
+  <sub>MouseScope Desktop v3.0.0 首页 · Project Workspace and Quick Analysis entry points</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
 
-MouseScope 是一套面向实验室日常工作的桌面分析平台，用来把小鼠行为学视频从上传、标定、ROI 或迷宫区域设置、参数调整、批量检查、正式分析到结果复核串成一条统一流程。它尽量让不同实验模块共用一致的操作逻辑，方便直接交给实验人员使用。  
+MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程。v3.0.0 的核心变化是新增 `项目工作台 Project Workspace`，让正式实验可以按项目、组别、小鼠、视频和结果来管理，而临时任务仍然可以通过 `快速分析 Quick Analysis` 保持原有轻量流程。
 
-MouseScope is a desktop analysis platform built for everyday lab use. It turns mouse behavioral video processing into one unified workflow, from upload and calibration to ROI or maze setup, parameter tuning, batch review, final analysis, and result checking. The goal is to keep the workflow consistent enough to hand over directly to lab users.
+MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. In v3.0.0, the major addition is the `Project Workspace`: formal studies can now be organized by project, group, animal, video, and result, while one-off work still uses the lightweight `Quick Analysis` flow.
 
-## 平台特点 | Highlights
+## v3.0.0 主要更新 | What Is New
 
-- 一个桌面工作台支持 `TST / FST / OFT / NOR / EPM / Y-Maze` 六类实验。
-  One desktop workbench supports six common assays: `TST / FST / OFT / NOR / EPM / Y-Maze`.
-- 支持单视频分析，也支持按视频独立配置的批量工作流。  
-  Supports both single-video analysis and per-video configuration in batch sessions.
-- ROI、迷宫区域、目标物、时间窗和检测遮掩框均可视化设置。  
-  ROI, maze zones, objects, time windows, and detection masks can all be configured visually.
-- 输出核心行为学指标、结果视频、热图和轨迹图，便于复核与汇报。  
-  Exports core behavioral metrics, annotated videos, heatmaps, and trackmaps for review and reporting.
-- 提供中英双语界面、手册与 TXT 报告字段。
-  Provides bilingual Chinese/English UI text, manuals, and TXT report labels.
-- 新增任务中心与本地历史记录，可搜索、恢复查看、打开结果目录并清理旧记录。
-  Adds a Task Center with local history, searchable run records, result-folder access, and record cleanup.
+- 新增项目工作台：创建项目，管理组别、小鼠、视频库、实验记录和项目分析结果。
+  Adds Project Workspace for projects, groups, animals, video library, experiment assignments, and project run records.
+- 保留快速分析入口：临时视频或小批量分析不需要先创建项目。
+  Keeps Quick Analysis for temporary videos and small batch work without project setup.
+- 项目分析与现有 6 个实验模块打通：从项目选择同类实验记录后进入原有标定、ROI、参数和监控流程。
+  Connects project analysis to the existing six assay workflows.
+- 项目模式支持 ROI/arena/cylinder/maze unit 与项目小鼠绑定，便于后续结果归档和汇总。
+  Allows each ROI, arena, cylinder, or maze unit to bind to a registered project animal.
+- 任务中心升级：合并项目任务、快速分析任务和历史记录，支持搜索、筛选、聚合、打开结果目录和批量清理记录。
+  Upgrades Task Center with project runs, quick runs, history search, filtering, grouping, result-folder access, and bulk record cleanup.
+- 分析管线新增快速评分采样、批量并行、线程安全状态更新和更稳的结果视频编码。
+  Adds fast scoring, batch parallelism, thread-safe runtime status, and more robust annotated-video encoding.
+- NOR 头向判断增强：增加第二灰度阈值、躯干/尾巴分割、尾尖/尾根辅助判断和可视化调参提示。
+  Improves NOR head-direction scoring with a second threshold, body/tail segmentation, tail-tip/root cues, and richer preview overlays.
 
-## 为什么用 MouseScope | Why MouseScope
+## 两种入口 | Two Entry Points
 
-MouseScope 更适合真实实验室场景，而不是只适合作者本人使用的脚本流程。它的重点不只是“能算出结果”，而是尽量减少手工整理、脚本切换和重复配置带来的时间成本，同时让结果更方便交接、复核和汇报。  
+### 项目工作台 | Project Workspace
 
-MouseScope is meant for real lab workflows rather than author-only scripts. The goal is not only to produce results, but also to reduce repetitive setup, manual file handling, and script switching, while making outputs easier to review, share, and hand over to other lab members.
+适合正式实验、长期课题和需要按动物/组别整理结果的场景。
 
-<a id="workflow-demo"></a>
+Use this for formal studies, long-term projects, and workflows where results must be organized by animal and group.
 
-## 统一工作流演示 | Workflow Demo
+- 项目列表与项目文件夹管理。
+  Project list and local project-folder management.
+- 组别管理和小鼠编号批量生成。
+  Group management and bulk animal-code generation.
+- 视频导入、视频元数据索引和实验类型绑定。
+  Video import, metadata indexing, and experiment-type assignment.
+- 同一实验类型的视频记录可批量进入配置与分析。
+  Records of the same assay type can be configured and analyzed together.
+- 项目运行记录会回写到项目结果页，并可直接打开结果目录。
+  Project run records are written back to the project result page with direct folder access.
 
-<p align="center">
-  <img src="docs/assets/workflow_v2.gif" alt="MouseScope workflow demo" width="960"/>
-  <br/>
-  <sub>统一流程：选择实验 → 上传视频 → 配置 ROI / 迷宫 → 预览与调参 → 分析与导出</sub><br/>
-  <sub>Unified workflow: choose assay → upload video → configure ROI / maze → preview and tune → analyze and export</sub>
-</p>
+### 快速分析 | Quick Analysis
+
+适合临时分析、试跑参数、单个视频或不需要项目归档的小批量任务。
+
+Use this for temporary runs, parameter trials, single videos, or small batches that do not need project-level organization.
+
+- 支持拖拽上传或填写本机视频/文件夹路径。
+  Supports drag-and-drop upload or local file/folder paths.
+- 保留原有上传 -> 标定 -> ROI/区域 -> 参数预览 -> 分析流程。
+  Keeps the original upload -> calibration -> ROI/zone setup -> preview -> analysis workflow.
+- 支持多视频批量工作台，为每个视频独立保存配置。
+  Supports batch workspace with per-video configuration.
 
 ## 支持实验模块 | Supported Assays
 
 | 实验模块 Assay | 典型用途 Typical Use | 核心设置 Core Setup | 主要指标 Main Metrics |
 |---|---|---|---|
 | `TST` 悬尾实验 / Tail Suspension Test | 不动与挣扎状态分析 / immobility and struggling analysis | 身长标定、ROI、时间窗 / body-length calibration, ROI, time windows | 不动时间、挣扎时间、不动比例、首次不动潜伏期 / immobility time, struggling time, immobility percent, latency |
-| `FST` 强迫游泳 / Forced Swim Test | 漂浮不动与活动状态分析 / immobility and active-state analysis | 圆筒 ROI、直径线、时间窗 / cylinder ROI, diameter line, time windows | 不动时间、不动比例、片段数、潜伏期、ethogram、活动曲线 / immobility time, percent, bouts, latency, ethogram, activity curve |
-| `OFT` 旷场实验 / Open Field Test | 自主活动与中心区偏好 / locomotion and center preference | 4 角场地、可选遮掩框、时间窗 / 4-corner arena, optional mask, time windows | 总路程、速度、中心区时间与比例、壁区时间与比例 / distance, speed, center metrics, wall metrics |
-| `NOR` 新奇物体识别 / Novel Object Recognition | 新奇与熟悉物体探索差异 / novel vs familiar object exploration | 场地 4 角、2 个物体中心、可选遮掩框 / arena corners, 2 object centers, optional mask | 新奇探索时间、熟悉探索时间、辨别指数、偏好指数 / novel exploration, familiar exploration, discrimination index, preference index |
-| `EPM` 高架十字迷宫 / Elevated Plus Maze | 开放臂与封闭臂探索 / open-arm vs closed-arm exploration | 中心区 + 2 开放臂 + 2 封闭臂手动画区 / manual center + 2 open arms + 2 closed arms | 开放臂时间、开放臂进入次数、开放臂进入占比、首次进入开放臂潜伏期 / open-arm time, open entries, open-entry ratio, first open-entry latency |
-| `Y-Maze` Y 迷宫 / Y-Maze | 入臂序列与自发交替 / arm sequence and spontaneous alternation | 三角形中心区 + 3 条臂手动画区 / triangular center + 3 manual arm zones | 各臂停留、总入臂数、交替次数、交替率 / arm occupancy, total entries, alternation count, alternation rate |
+| `FST` 强迫游泳 / Forced Swim Test | 漂浮不动与活动状态分析 / immobility and active-state analysis | 圆筒 ROI、直径线、检测遮掩框、时间窗 / cylinder ROI, diameter line, detection mask, time windows | 不动时间、不动比例、片段数、潜伏期、ethogram、活动曲线 / immobility time, percent, bouts, latency, ethogram, activity curve |
+| `OFT` 旷场实验 / Open Field Test | 自主活动与中心区偏好 / locomotion and center preference | 4 角场地、可选检测遮掩框、时间窗 / 4-corner arena, optional detection mask, time windows | 总路程、速度、中心区时间与比例、壁区时间与比例 / distance, speed, center metrics, wall metrics |
+| `NOR` 新奇物体识别 / Novel Object Recognition | 新奇与熟悉物体探索差异 / novel vs familiar object exploration | 场地 4 角、2 个物体中心、第二灰度阈值、可选检测遮掩框 / arena corners, two objects, body/tail threshold, optional mask | 新奇探索时间、熟悉探索时间、辨别指数、偏好指数、头向质量字段 / exploration time, discrimination, preference, head-direction quality fields |
+| `EPM` 高架十字迷宫 / Elevated Plus Maze | 开放臂与封闭臂探索 / open-arm vs closed-arm exploration | 中心区 + 2 开放臂 + 2 封闭臂手动画区 / center, two open arms, two closed arms | 开放臂时间、开放臂进入次数、开放臂进入占比、首次进入开放臂潜伏期 / open-arm time, open entries, open-entry ratio, first open-entry latency |
+| `Y-Maze` Y 迷宫 / Y-Maze | 入臂序列与自发交替 / arm sequence and spontaneous alternation | 三角形中心区 + 3 条臂手动画区 / triangular center and three arms | 各臂停留、总入臂数、交替次数、交替率 / arm occupancy, total entries, alternation count, alternation rate |
+
+## 工作流 | Workflow
+
+### 项目模式 | Project Mode
+
+1. 创建项目并进入项目首页。
+   Create a project and open the project page.
+2. 添加组别，批量生成或录入小鼠编号。
+   Add groups and create or enter animal codes.
+3. 导入视频，并为每个视频选择实验类型。
+   Import videos and assign an experiment type to each video.
+4. 在分析页选择同一种实验类型的记录，进入配置流程。
+   Select records of the same assay type and enter setup.
+5. 在 ROI/arena/cylinder/maze unit 中选择对应项目小鼠。
+   Bind each ROI, arena, cylinder, or maze unit to a project animal.
+6. 完成参数预览、启动分析，并在项目结果页查看运行记录。
+   Tune parameters, start analysis, and review runs from the project result page.
+
+### 快速分析模式 | Quick Analysis Mode
+
+1. 选择实验模块并上传一个或多个视频。
+   Choose an assay and upload one or more videos.
+2. 根据实验类型完成标定、ROI、迷宫区域或目标物设置。
+   Configure calibration, ROI, maze zones, or objects.
+3. 设置时间窗、检测遮掩框和关键参数，并用预览检查检测质量。
+   Set time windows, detection masks, and key parameters, then check preview quality.
+4. 多视频时进入批量工作台，逐个确认配置完整性。
+   For multi-video sessions, use the batch workspace to confirm each video's setup.
+5. 启动分析，并在任务中心或监控页查看进度与结果。
+   Start analysis and review progress or results in Monitor and Task Center.
+
+## 结果输出 | Outputs
+
+MouseScope 输出的不只是原始表格，也包括便于复核和汇报的材料。
+
+MouseScope exports not only raw tables, but also review-friendly materials.
+
+- 逐帧日志和 summary CSV。
+  Framewise logs and summary CSV files.
+- TXT 报告，包含中英双语指标标签。
+  TXT reports with bilingual metric labels.
+- 标注结果视频，优先使用 FFmpeg H.264 编码，无法使用时回退到 OpenCV writer。
+  Annotated videos, preferably encoded with FFmpeg H.264 and falling back to OpenCV writer when needed.
+- TST/FST ethogram 与活动曲线。
+  TST/FST ethograms and activity curves.
+- OFT/NOR/EPM/Y-Maze 轨迹图、热图或区域统计图。
+  Trackmaps, heatmaps, or zone summaries for OFT, NOR, EPM, and Y-Maze.
+- 项目分析结果会进入项目目录下的 `results/`，便于按课题归档。
+  Project runs are saved under the project's `results/` directory for study-level organization.
 
 ## 结果示例 | Featured Results
 
-### 1. 悬尾实验 TST | Tail Suspension Test
-
-TST 模块用于记录每个 ROI 的不动与挣扎状态，并输出便于回看的结果视频与统计结果。  
-
-The TST module records immobility and struggling states for each ROI and exports both review-friendly videos and summary metrics.
+### TST 悬尾实验 | Tail Suspension Test
 
 <p align="center">
   <img src="static/img/demo_result.gif" alt="TST annotated result" width="960"/>
   <br/>
-  <sub>TST 结果演示 · TST result preview</sub>
+  <sub>TST 标注结果视频 · TST annotated result video</sub>
 </p>
 
 <table>
@@ -106,16 +168,12 @@ The TST module records immobility and struggling states for each ROI and exports
   </tr>
 </table>
 
-### 2. 强迫游泳 FST | Forced Swim Test
-
-FST 模块用于分析侧视圆筒视频中的不动与活动状态，支持同屏多圆筒、圆筒直径标定、自动阈值、ethogram 和活动曲线复核。
-
-The FST module analyzes immobility and active states in side-view cylinder videos, with multi-cylinder setup, cylinder-diameter calibration, automatic thresholding, ethogram review, and activity curves.
+### FST 强迫游泳 | Forced Swim Test
 
 <p align="center">
   <img src="docs/assets/fst_demo.gif" alt="FST annotated result" width="960"/>
   <br/>
-  <sub>FST 结果视频演示 · FST annotated result preview</sub>
+  <sub>FST 标注结果视频 · FST annotated result video</sub>
 </p>
 
 <p align="center">
@@ -124,16 +182,12 @@ The FST module analyzes immobility and active states in side-view cylinder video
   <sub>FST 状态时序图 · FST ethogram</sub>
 </p>
 
-### 3. 旷场实验 OFT | Open Field Test
-
-OFT 模块关注自主活动、中心区偏好与空间占据情况，适合快速获得常用的运动学和空间统计指标。  
-
-The OFT module focuses on locomotion, center preference, and spatial occupancy, making it useful for routine kinematic and arena-based summaries.
+### OFT 旷场实验 | Open Field Test
 
 <p align="center">
   <img src="docs/assets/oft_demo.gif" alt="Open Field demo" width="960"/>
   <br/>
-  <sub>OFT 演示 · OFT demo</sub>
+  <sub>OFT 分析演示 · OFT analysis demo</sub>
 </p>
 
 <table>
@@ -151,11 +205,13 @@ The OFT module focuses on locomotion, center preference, and spatial occupancy, 
   </tr>
 </table>
 
-### 4. 新奇物体识别 NOR | Novel Object Recognition
+### NOR 新奇物体识别 | Novel Object Recognition
 
-NOR 模块用于量化小鼠对熟悉物体和新奇物体的探索差异，支持探索时间、偏好与辨别指标输出。  
-
-The NOR module quantifies exploration differences between familiar and novel objects, including exploration time, preference, and discrimination metrics.
+<p align="center">
+  <img src="docs/assets/nor_preview.png" alt="NOR preview" width="900"/>
+  <br/>
+  <sub>NOR 预览与头向调参 · NOR preview and head-direction tuning</sub>
+</p>
 
 <table>
   <tr>
@@ -172,77 +228,41 @@ The NOR module quantifies exploration differences between familiar and novel obj
   </tr>
 </table>
 
-### 5. 高架十字迷宫 EPM | Elevated Plus Maze
+### EPM 与 Y-Maze
 
-EPM 模块用于量化开放臂、封闭臂与中心区的停留和进入情况，适合观察开放空间探索偏好与相关焦虑样行为指标。  
-
-The EPM module quantifies occupancy and entries across open arms, closed arms, and the center, making it useful for open-space exploration and related anxiety-like measures.
-
-<p align="center">
-  <img src="docs/assets/epm_trackmap.png" alt="EPM trackmap" width="700"/>
-  <br/>
-  <sub>高架十字迷宫 EPM 轨迹图 · EPM trackmap</sub>
-</p>
-
-### 6. Y 迷宫 Y-Maze
-
-Y 迷宫模块用于量化各臂停留、入臂序列和自发交替情况，适合快速查看探索模式与交替率。  
-
-The Y-Maze module quantifies arm occupancy, entry sequence, and spontaneous alternation, making it useful for quick inspection of exploration patterns and alternation rate.
-
-<p align="center">
-  <img src="docs/assets/ymaze_trackmap.png" alt="Y-Maze trackmap" width="700"/>
-  <br/>
-  <sub>Y 迷宫 Y-Maze 轨迹图 · Y-Maze trackmap</sub>
-</p>
-
-## 可以得到什么结果 | Outputs
-
-MouseScope 的输出重点不是文件名本身，而是对实验更有意义的行为学指标与复核材料。  
-
-MouseScope is designed to output meaningful behavioral metrics and review materials, rather than just a collection of raw files.
-
-- 核心行为学指标：如不动时间、中心区时间、开放臂进入比例、交替率、辨别指数等。  
-  Core behavioral metrics: such as immobility time, center time, open-entry ratio, alternation rate, and discrimination index.
-- 逐帧与分箱统计：便于查看实验过程中行为随时间的变化。  
-  Framewise and binned summaries: useful for tracking how behavior changes over time.
-- 标注结果视频：适合回看 ROI、区域切换和事件判定。  
-  Annotated result videos: useful for checking ROI logic, zone switching, and event calls.
-- 空间可视化结果：包括热图和轨迹图，便于展示空间占据与探索路径。  
-  Spatial visualizations: including heatmaps and trackmaps for occupancy and exploration patterns.
-
-## 统一使用路径 | Unified Workflow
-
-1. 选择实验模块并上传一个或多个视频。  
-   Choose an assay and upload one or more videos.
-2. 根据实验类型完成场地、ROI、迷宫分区或目标物设置。  
-   Configure the arena, ROI, maze zones, or objects depending on the assay.
-3. 设置时间窗、检测遮掩框与关键参数，并用预览检查是否稳定。  
-   Set time windows, detection masks, and key parameters, then validate them with preview.
-4. 多视频时先进入批量工作台，为每个视频单独保存配置。  
-   For multi-video sessions, enter the batch workspace and save settings separately for each video.
-5. 统一启动分析。  
-   Start analysis after all required setups are complete.
-6. 查看结果视频、统计指标和空间可视化结果。  
-   Review result videos, behavioral metrics, and spatial visualizations.
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/epm_trackmap.png" alt="EPM trackmap" width="430"/>
+      <br/>
+      <sub>高架十字迷宫轨迹图 · EPM trackmap</sub>
+    </td>
+    <td align="center">
+      <img src="docs/assets/ymaze_trackmap.png" alt="Y-Maze trackmap" width="430"/>
+      <br/>
+      <sub>Y 迷宫轨迹图 · Y-Maze trackmap</sub>
+    </td>
+  </tr>
+</table>
 
 ## 快速开始 | Quick Start
 
-### 方式一：直接下载打包版本 | Option 1: Download the packaged build
+### 方式一：下载打包版本 | Option 1: Download the Packaged Build
 
-1. 打开 [Releases](https://github.com/fujiacheng3/MouseScope/releases)。  
+1. 打开 [Releases](https://github.com/fujiacheng3/MouseScope/releases)。
    Open the [Releases](https://github.com/fujiacheng3/MouseScope/releases) page.
-2. 下载最新压缩包并解压。  
-   Download the latest archive and extract it.
-3. 运行 `MouseScope.exe`。  
+2. 下载最新压缩包并解压。
+   Download and extract the latest archive.
+3. 运行 `MouseScope.exe`。
    Run `MouseScope.exe`.
-4. 软件会在本机浏览器中打开 `http://localhost:8080`。  
-   The app will open `http://localhost:8080` in your local browser.
+4. 软件会在本机浏览器中打开本地界面。
+   The local interface will open in your browser.
 
-大多数实验室用户建议直接使用打包版本。  
-For most lab users, the packaged desktop build is the recommended option.
+大多数实验室用户建议使用打包版本。
 
-### 方式二：从源码运行 | Option 2: Run from source
+For most lab users, the packaged build is recommended.
+
+### 方式二：从源码运行 | Option 2: Run from Source
 
 ```bash
 git clone https://github.com/fujiacheng3/MouseScope.git
@@ -251,29 +271,38 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## 适用场景 | Typical Use Cases
+默认运行后访问本机 Web 界面。不同版本或打包环境中端口可能以实际启动提示为准。
 
-- 日常神经科学与行为学实验视频后处理。  
-  Routine post-processing for neuroscience and behavioral videos.
-- 多视频、多 arena 或多 ROI 的批量分析。  
-  Batch analysis across multiple videos, arenas, or ROIs.
-- 需要统一配置、减少人工整理错误的实验室工作流。  
-  Lab workflows that need more standardized setup and fewer manual mistakes.
-- 需要快速生成组会汇报或论文前检查用结果图的场景。  
-  Scenarios that require quick figures for lab meetings or pre-publication checks.
-- 希望把分析流程交接给非程序背景同学的场景。  
-  Cases where the workflow should be handed over to non-programmer lab members.
+After startup, open the local web interface. The exact port may follow the startup message in your environment.
 
-## 局限与说明 | Limitations and Notes
+## 依赖 | Dependencies
 
-- MouseScope 是研究辅助工具，正式统计分析前仍建议抽查原始视频与结果视频。  
-  MouseScope is a research-assistance tool, and raw videos should still be reviewed before formal statistical interpretation.
-- 跟踪效果会受到光照、背景、阴影、反光、视角稳定性和视频质量影响。  
-  Tracking quality depends on lighting, background, shadows, glare, camera stability, and video quality.
-- 当前 OFT / NOR 仍以经典计算机视觉方法为主，并非完整的姿态估计级别行为解析。  
-  Current OFT / NOR analysis is still mainly based on classical computer vision rather than full pose-estimation-grade behavior parsing.
-- NOR 的探索判定包含头部方向启发式逻辑，不能完全替代人工专业判断。  
-  NOR exploration scoring includes heuristic head-direction logic and should not fully replace expert review.
+核心依赖记录在 `requirements.txt` 中：
+
+Core dependencies are listed in `requirements.txt`:
+
+- `flask`
+- `opencv-python`
+- `numpy`
+- `pandas`
+- `imageio-ffmpeg`
+
+`imageio-ffmpeg` 用于在打包版或无系统 FFmpeg 的环境中提供更稳定的标注视频编码能力。
+
+`imageio-ffmpeg` helps provide more stable annotated-video encoding in packaged builds or environments without a system FFmpeg.
+
+## 本地数据与隐私 | Local Data and Privacy
+
+MouseScope Desktop 默认在本机保存运行数据，不引入账号、云同步或服务器端协作。
+
+MouseScope Desktop stores runtime data locally by default. It does not introduce accounts, cloud sync, or server-side collaboration.
+
+- 快速分析上传与结果通常位于 `data/uploads/`、`data/results/` 和 `data/history/`。
+  Quick-analysis uploads and outputs are usually under `data/uploads/`, `data/results/`, and `data/history/`.
+- 项目工作台数据位于 `data/projects/`，每个项目包含本地 SQLite 数据库、视频索引和项目结果目录。
+  Project Workspace data is stored under `data/projects/`, including local SQLite databases, video indexes, and project result folders.
+- 不建议把 `data/` 下的实验数据、数据库、密钥或视频文件提交到 Git。
+  Do not commit experimental data, local databases, secrets, or videos under `data/`.
 
 ## 仓库结构 | Repository Structure
 
@@ -282,7 +311,9 @@ MouseScope/
 |- app.py
 |- routes/
 |  |- pages.py
-|  \- api.py
+|  |- api.py
+|  |- projects.py
+|  \- project_api.py
 |- core/
 |  |- vision_tracker.py
 |  |- forced_swim.py
@@ -290,30 +321,65 @@ MouseScope/
 |  |- novel_object.py
 |  |- elevated_plus.py
 |  |- y_maze.py
-|  |- maze_zone_utils.py
 |  \- spatial_render.py
 |- services/
-|  |- experiment_registry.py
 |  |- analysis_builders.py
 |  |- analysis_history.py
+|  |- analysis_runtime.py
 |  |- analysis_sessions.py
 |  |- debug_preview.py
-|  |- payload_geometry.py
-|  \- session_store.py
+|  |- experiment_registry.py
+|  |- project_store.py
+|  |- session_store.py
+|  |- video_export.py
+|  \- video_frame_reader.py
 |- templates/
+|  |- projects.html
+|  |- project_home.html
+|  |- upload.html
+|  |- tasks.html
+|  \- calibrate*.html
 |- static/
-|- tools/
-|  |- smoke_routes_v2.py
-|  \- smoke_short_analyses_v2.py
+|  |- css/
+|  |- js/
+|  \- img/
 |- docs/
-|  |- releases/
-|  \- system_design.md
-\- MouseScope.spec
+|  |- assets/
+|  |- plans/
+|  \- releases/
+|- tests/
+|- MouseScope.spec
+\- requirements.txt
 ```
+
+## 适用场景 | Typical Use Cases
+
+- 正式实验项目中按组别、小鼠、实验类型和视频整理数据。
+  Organizing formal studies by group, animal, assay type, and video.
+- 多视频、多 arena、多 ROI 或多迷宫单元的批量分析。
+  Batch analysis across multiple videos, arenas, ROIs, or maze units.
+- 需要统一配置、减少手工整理错误的实验室工作流。
+  Lab workflows that need standardized setup and fewer manual file-handling errors.
+- 需要快速导出标注视频、CSV、TXT 报告、轨迹图和热图用于复核或组会汇报。
+  Quickly exporting annotated videos, CSV files, TXT reports, trackmaps, and heatmaps for review or lab meetings.
+- 希望把分析流程交接给非程序背景同学使用。
+  Handing the workflow over to lab members without programming backgrounds.
+
+## 局限与说明 | Limitations and Notes
+
+- MouseScope 是研究辅助工具，正式统计分析前仍建议抽查原始视频与标注结果视频。
+  MouseScope is a research-assistance tool. Raw videos and annotated outputs should still be checked before formal interpretation.
+- 跟踪效果会受到光照、背景、阴影、反光、视角稳定性和视频质量影响。
+  Tracking quality depends on lighting, background, shadows, glare, camera stability, and video quality.
+- 当前系统主要基于经典计算机视觉方法，不等同于完整姿态估计。
+  The current system mainly uses classical computer vision and is not equivalent to full pose estimation.
+- NOR 探索判定包含头向和尾部证据的启发式逻辑，不能完全替代人工专业判断。
+  NOR exploration scoring uses heuristic head-direction and tail-evidence logic and should not fully replace expert review.
 
 ## 引用 | Citation
 
-如果 MouseScope 对你的工作有帮助，欢迎按平台版本引用。  
+如果 MouseScope 对你的工作有帮助，欢迎按平台版本引用。
+
 If MouseScope helps your work, please cite the platform version below.
 
 ```bibtex
@@ -322,13 +388,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {2.3.0}
+  version = {3.0.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 2.3.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.0.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 
@@ -338,6 +404,6 @@ Plain text:
 - GitHub: https://github.com/fujiacheng3/MouseScope
 
 <p align="center">
-  为真实实验流程而设计，而不是为了展示脚本本身。<br/>
-  Built for real lab workflows rather than for showcasing scripts alone.
+  为真实实验流程而设计，从临时分析走向项目化数据整理。<br/>
+  Built for real lab workflows, from quick analysis to project-level organization.
 </p>

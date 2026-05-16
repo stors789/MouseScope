@@ -3,13 +3,13 @@
 
 {% block extra_css %}
 <style>
-.home-shell { max-width: 1440px; margin: 0 auto; }
+.home-shell { max-width: 1180px; margin: 0 auto; }
 .hero-banner {
     position: relative;
     overflow: hidden;
-    padding: 3rem;
-    border-radius: 32px;
-    margin-bottom: 2rem;
+    padding: 2.15rem 2.55rem;
+    border-radius: 26px;
+    margin-bottom: 1.35rem;
     border: 1px solid rgba(201, 100, 66, 0.16);
     background:
         radial-gradient(circle at top left, rgba(217, 119, 87, 0.18), transparent 28%),
@@ -19,15 +19,15 @@
 }
 .hero-grid {
     display: grid;
-    grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.85fr);
-    gap: 2rem;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+    gap: 1.6rem;
     align-items: center;
-    min-height: 520px;
+    min-height: 360px;
 }
 .hero-copy {
     width: 100%;
-    max-width: 620px;
-    margin-left: auto;
+    max-width: 560px;
+    margin-left: 0;
     padding-right: 0.75rem;
 }
 .hero-kicker {
@@ -43,7 +43,7 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
-.hero-banner h1 { font-size: clamp(3rem, 5vw, 4.8rem); line-height: 1.02; margin-bottom: 0.8rem; }
+.hero-banner h1 { font-size: clamp(2.8rem, 4.4vw, 4.1rem); line-height: 1.02; margin-bottom: 0.7rem; }
 .hero-subtitle { font-size: 1.08rem; max-width: 640px; margin: 0 0 1rem; line-height: 1.8; color: var(--text-secondary); }
 .hero-version {
     display: inline-flex;
@@ -57,11 +57,10 @@
     margin-bottom: 1rem;
     color: #6b4a35;
 }
-.hero-note { color: var(--text-muted); line-height: 1.7; max-width: 620px; margin-bottom: 1.35rem; }
-.hero-actions { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+.hero-note { color: var(--text-muted); line-height: 1.7; max-width: 580px; margin-bottom: 0; }
 .hero-visual {
     position: relative;
-    min-height: 430px;
+    min-height: 330px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -78,9 +77,9 @@
 }
 .hero-stage {
     position: relative;
-    width: min(100%, 470px);
+    width: min(100%, 340px);
     aspect-ratio: 1 / 1;
-    border-radius: 40px;
+    border-radius: 34px;
     border: 1px solid rgba(201, 100, 66, 0.14);
     background:
         radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.94), rgba(255, 246, 238, 0.7) 45%, transparent 74%),
@@ -99,8 +98,8 @@
     position: absolute;
     inset: 50%;
     transform: translate(-50%, -50%);
-    width: 210px;
-    height: 210px;
+    width: 156px;
+    height: 156px;
     border-radius: 50%;
     background:
         linear-gradient(180deg, rgba(255,255,255,0.95), rgba(252, 244, 236, 0.86));
@@ -113,11 +112,11 @@
     justify-content: center;
 }
 .hero-core-logo {
-    width: 108px;
-    height: 108px;
-    border-radius: 28px;
+    width: 84px;
+    height: 84px;
+    border-radius: 22px;
     background: rgba(255,255,255,0.92);
-    padding: 0.75rem;
+    padding: 0.58rem;
     box-shadow: 0 12px 24px rgba(92, 60, 36, 0.12);
 }
 .module-pill {
@@ -160,6 +159,7 @@
 @media (max-width: 1100px) {
     .hero-grid,
     .feature-cards { grid-template-columns: 1fr; }
+    .hero-grid { min-height: 0; }
     .hero-copy {
         max-width: 720px;
         margin: 0 auto;
@@ -168,11 +168,10 @@
     }
     .hero-subtitle,
     .hero-note { margin-left: auto; margin-right: auto; }
-    .hero-actions { justify-content: center; }
 }
 @media (max-width: 576px) {
-    .hero-banner { padding: 2rem 1.2rem; border-radius: 26px; }
-    .hero-visual { min-height: 320px; }
+    .hero-banner { padding: 1.6rem 1.15rem; border-radius: 22px; }
+    .hero-visual { min-height: 280px; }
     .hero-core {
         width: 170px;
         height: 170px;
@@ -190,7 +189,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="home-shell">
+<div class="home-shell" data-tour-page="home">
     <section class="hero-banner">
         <div class="hero-grid">
             <div class="hero-copy">
@@ -200,12 +199,8 @@
                     面向小鼠行为学视频分析的桌面软件平台<br>
                     当前支持悬尾实验、强迫游泳、旷场实验、新奇物体识别、高架十字迷宫与 Y 迷宫
                 </p>
-                <div class="hero-version"><span data-i18n="home.version">Desktop Edition v2.3.0 · 学术研究专用</span></div>
-                <div class="hero-note" data-i18n="home.note">选择实验模块并上传视频后，按页面提示完成标定、ROI 和参数设置，即可导出结果视频、统计表、轨迹图与热图。</div>
-                <div class="hero-actions">
-                    <a href="{{ url_for('upload_page') }}" class="btn btn-primary btn-lg"><span data-i18n="home.btn.start">开始分析</span></a>
-                    <a href="{{ url_for('manual') }}" class="btn btn-outline-primary btn-lg"><span data-i18n="home.btn.manual">查看手册</span></a>
-                </div>
+                <div class="hero-version"><span data-i18n="home.version">Desktop Edition v3.0.0 · 学术研究专用</span></div>
+                <div class="hero-note" data-i18n="home.note">正式实验可进入项目工作台管理组别、小鼠、视频和结果；临时或单次任务可使用快速分析入口，仍保留原有配置流程。</div>
             </div>
             <div class="hero-visual" aria-hidden="true">
                 <div class="hero-stage">
@@ -243,4 +238,19 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+MouseScopeTour.register('home', {
+    version: 'v1',
+    steps: [
+        {target: '[data-tour-id="nav-projects"]', titleKey: 'tour.home.projects.title', bodyKey: 'tour.home.projects.body'},
+        {target: '[data-tour-id="nav-quick"]', titleKey: 'tour.home.quick.title', bodyKey: 'tour.home.quick.body'},
+        {target: '[data-tour-id="nav-tasks"]', titleKey: 'tour.home.tasks.title', bodyKey: 'tour.home.tasks.body'},
+        {target: '[data-tour-id="nav-manual"]', titleKey: 'tour.home.manual.title', bodyKey: 'tour.home.manual.body'},
+        {target: '[data-tour-id="nav-lang"]', titleKey: 'tour.home.lang.title', bodyKey: 'tour.home.lang.body'}
+    ]
+});
+</script>
 {% endblock %}

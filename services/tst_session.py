@@ -39,35 +39,23 @@ class VisionAnalysisSession(AnalysisSessionBase):
             return [float(point['x']), float(point['y'])]
         return [float(point[0]), float(point[1])]
 
-    def _build_processors(self, video_path, vision_config):
-        bg_method = vision_config.get('bg_method', 'threshold')
-        if bg_method == 'threshold':
-            bg_subtractor = BackgroundSubtractor(
-                method='threshold',
-                threshold=vision_config.get('gray_threshold', 127),
-                invert=vision_config.get('invert', False)
-            )
-        elif bg_method == 'static':
-            try:
-                bg = create_static_background(video_path, num_frames=10)
-                bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR)
-                bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
-            except Exception:
-                bg_subtractor = BackgroundSubtractor(method='threshold', threshold=127)
-        else:
-            bg_subtractor = BackgroundSubtractor(method=bg_method)
-
-        morph_processor = MorphologyProcessor(
-            erosion_kernel=vision_config.get('erosion_kernel', 3),
-            erosion_iterations=vision_config.get('erosion_iter', 2),
-            dilation_kernel=vision_config.get('dilation_kernel', 5),
-            dilation_iterations=vision_config.get('dilation_iter', 3)
+    def _build_processors(self, video_path, vision_config, sampling=None):
+        if sampling is None:
+            sampling = {
+                'analysis_width': 0,
+                'analysis_height': 0,
+                'scale_x': 1.0,
+                'scale_y': 1.0,
+            }
+        return self._build_processors_for_sampling(
+            video_path,
+            vision_config,
+            sampling,
+            static_frames=10,
+            erosion_default=2,
+            dilation_default=3,
+            min_area_default=100,
         )
-        detector = MouseDetector(
-            min_area=vision_config.get('min_area', 100),
-            max_area=vision_config.get('max_area', 50000),
-        )
-        return bg_subtractor, morph_processor, detector
 
     def _parse_rois(self, vision_config):
         rois_config = vision_config.get('rois', [])
@@ -158,13 +146,15 @@ class VisionAnalysisSession(AnalysisSessionBase):
         start_frame,
         end_frame,
         frames_to_process,
+        sampling,
     ):
         self._log("TST auto behavior threshold: scanning the selected video window...")
-        processors = self._build_processors(video_path, vision_config)
+        processors = self._build_processors(video_path, vision_config, sampling)
         trackers = self._build_trackers(roi_configs, vision_config, fps, pixel_to_mm, processors)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
         sampled_frames = 0
+        source_frames_done = 0
         while self.is_running:
             ret, frame = cap.read()
             if not ret:
@@ -172,18 +162,24 @@ class VisionAnalysisSession(AnalysisSessionBase):
             try:
                 current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             except Exception:
-                current_frame_no = start_frame + sampled_frames
+                current_frame_no = start_frame + source_frames_done
             if current_frame_no > end_frame:
                 break
 
-            current_time = current_frame_no / fps
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            current_time = current_frame_no / max(float(sampling.get('source_fps', fps)), 1e-6)
+            analysis_frame = self._resize_for_sampling(frame, sampling)
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+            begin_frame_cache(processors[0], current_frame_no)
             for tracker in trackers:
-                tracker.update(frame, current_time=current_time, gray=gray)
+                tracker.update(analysis_frame, current_time=current_time, gray=gray)
 
             sampled_frames += 1
+            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+            covered = 1 + skipped
+            source_frames_done += covered
+            self._advance_frame_counters(covered, processed=False)
             if sampled_frames % 90 == 0:
-                self.message = f'TST auto threshold scan {sampled_frames}/{frames_to_process}'
+                self.message = f'TST auto threshold scan {source_frames_done}/{frames_to_process}'
 
         threshold_overrides = {}
         for tracker in trackers:
@@ -228,7 +224,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             self._log(f"❌ 无法打开视频: {video_path}")
-            return
+            raise RuntimeError(f"Unable to open video: {video_path}")
 
         detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         fps_override = vision_config.get('fps_override')
@@ -242,32 +238,44 @@ class VisionAnalysisSession(AnalysisSessionBase):
         else:
             self._log(f"视频信息: {width}x{height}, {fps:.1f}fps, {total_frames}帧")
 
+        sampling = self._resolve_video_sampling(
+            width,
+            height,
+            fps,
+            vision_config,
+            label='TST',
+            temporal_default=False,
+            max_dim_default=960,
+            target_fps_default=30.0,
+        )
+        self._log_video_sampling(sampling)
+        source_fps = fps
+        analysis_fps = sampling['effective_fps']
+
         pixel_to_mm = vision_config.get('pixel_to_mm', 1.0)
+        analysis_pixel_to_mm = float(pixel_to_mm) / max(float(sampling.get('scale', 1.0)), 1e-6)
 
         # 视频编码
         writer = None
         if generate_video:
-            codecs_to_try = [
-                ('avc1', 'H264'), ('H264', 'H264'), ('X264', 'X264'), ('mp4v', 'MPEG-4'),
-            ]
-            for codec, codec_name in codecs_to_try:
-                try:
-                    fourcc = cv2.VideoWriter_fourcc(*codec)
-                    test_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-                    if test_writer.isOpened():
-                        writer = test_writer
-                        self._log(f"视频编码器: {codec_name}")
-                        break
-                    else:
-                        test_writer.release()
-                except:
-                    pass
+            writer = create_annotated_video_writer(
+                output_path,
+                analysis_fps,
+                sampling['analysis_width'],
+                sampling['analysis_height'],
+                label='TST video',
+                source_video_path=video_path,
+                logger=self._log,
+            )
+            if writer is None:
+                generate_video = False
+                self._log("TST annotated video disabled because no writer is available.")
 
         # 时间范围
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
-        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
-        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
+        start_frame = int(float(start_sec) * source_fps) if start_sec is not None else 0
+        end_frame = int(float(end_sec) * source_fps) if end_sec is not None else (total_frames - 1)
         start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
         end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
         if end_frame < start_frame:
@@ -279,13 +287,14 @@ class VisionAnalysisSession(AnalysisSessionBase):
 
         frames_to_process = end_frame - start_frame + 1
 
-        roi_configs = self._parse_rois(vision_config)
+        source_roi_configs = self._parse_rois(vision_config)
+        roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
         if not roi_configs:
             self._log("❌ 没有有效的 ROI 配置")
             cap.release()
             if writer is not None:
                 writer.release()
-            return
+            raise ValueError("No valid ROI configuration.")
 
         threshold_overrides = {}
         if bool(vision_config.get('auto_behavior_threshold', False)):
@@ -294,11 +303,12 @@ class VisionAnalysisSession(AnalysisSessionBase):
                 video_path,
                 roi_configs,
                 vision_config,
-                fps,
-                pixel_to_mm,
+                analysis_fps,
+                analysis_pixel_to_mm,
                 start_frame,
                 end_frame,
                 frames_to_process,
+                sampling,
             )
             if not self.is_running:
                 cap.release()
@@ -308,20 +318,20 @@ class VisionAnalysisSession(AnalysisSessionBase):
             cap.release()
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
-                self._log(f"鉂?鏃犳硶閲嶆柊鎵撳紑瑙嗛: {video_path}")
+                self._log(f"Unable to reopen video after threshold scan: {video_path}")
                 if writer is not None:
                     writer.release()
-                return
+                raise RuntimeError(f"Unable to reopen video after threshold scan: {video_path}")
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         else:
             self._log("TST auto behavior threshold disabled; using fixed thresholds.")
 
-        processors = self._build_processors(video_path, vision_config)
+        processors = self._build_processors(video_path, vision_config, sampling)
         trackers = self._build_trackers(
             roi_configs,
             vision_config,
-            fps,
-            pixel_to_mm,
+            analysis_fps,
+            analysis_pixel_to_mm,
             processors,
             threshold_overrides,
         )
@@ -330,7 +340,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
             cap.release()
             if writer is not None:
                 writer.release()
-            return
+            raise ValueError("No valid ROI configuration.")
         self._log(f"TST final trackers ready: {len(trackers)}")
 
         # 优化视频读取缓冲区大小
@@ -348,6 +358,9 @@ class VisionAnalysisSession(AnalysisSessionBase):
                 if item is None:  # 结束信号
                     break
                 if writer is not None:
+                    if isinstance(item, tuple):
+                        frame_to_draw, results_to_draw = item
+                        item = draw_results(frame_to_draw, results_to_draw)
                     writer.write(item)
             write_done.set()
 
@@ -358,11 +371,12 @@ class VisionAnalysisSession(AnalysisSessionBase):
 
         # 视频写入缓冲区（用于摆动状态回溯修正）
         buffer_seconds = 2.0
-        buffer_size = int(fps * buffer_seconds)
+        buffer_size = int(analysis_fps * buffer_seconds)
         video_buffer = deque(maxlen=buffer_size + 10)
         prev_swing_states = {}
 
         frame_idx = 0
+        source_frames_done = 0
         logs = []
 
         self._log(f"开始分析... (CPU核心: {os.cpu_count()}, OpenCV线程: {cv2.getNumThreads()})")
@@ -375,18 +389,20 @@ class VisionAnalysisSession(AnalysisSessionBase):
             try:
                 current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
             except:
-                current_frame_no = start_frame + frame_idx
+                current_frame_no = start_frame + source_frames_done
 
             if end_frame is not None and current_frame_no > end_frame:
                 break
 
-            current_time = current_frame_no / fps
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            current_time = current_frame_no / max(source_fps, 1e-6)
+            analysis_frame = self._resize_for_sampling(frame, sampling)
+            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
 
             # 追踪每个 ROI
+            begin_frame_cache(processors[0], current_frame_no)
             results = []
             for tracker in trackers:
-                result = tracker.update(frame, current_time=current_time, gray=gray)
+                result = tracker.update(analysis_frame, current_time=current_time, gray=gray)
                 results.append(result)
 
             # 记录日志
@@ -478,40 +494,43 @@ class VisionAnalysisSession(AnalysisSessionBase):
 
             # 绘制结果 & 异步写入
             if generate_video:
-                video_buffer.append({'frame': frame.copy(), 'results': results})
+                video_buffer.append({'frame': analysis_frame.copy(), 'results': results})
 
                 if len(video_buffer) >= buffer_size:
                     oldest = video_buffer.popleft()
                     # 非阻塞写入：放入队列由后台线程处理
-                    write_queue.put(draw_results(oldest['frame'], oldest['results']))
+                    write_queue.put((oldest['frame'].copy(), [dict(result) for result in oldest['results']]))
 
             # 更新进度
             frame_idx += 1
-            self.processed_frames = frame_idx
+            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
+            covered = 1 + skipped
+            source_frames_done += covered
+            self._advance_frame_counters(covered)
 
             if frame_idx % 30 == 0:
                 if batch_index is not None:
                     batch_progress = int(batch_index / len(self.video_paths) * 100)
-                    video_progress = int(frame_idx / max(frames_to_process, 1) * 100 / len(self.video_paths))
+                    video_progress = int(source_frames_done / max(frames_to_process, 1) * 100 / len(self.video_paths))
                     self.progress = batch_progress + video_progress
                 else:
-                    self.progress = int(frame_idx / max(frames_to_process, 1) * 100)
-                self.message = f'帧 {frame_idx}/{frames_to_process} ({self.progress}%)'
+                    self.progress = int(source_frames_done / max(frames_to_process, 1) * 100)
+                self.message = f'帧 {source_frames_done}/{frames_to_process} ({self.progress}%)'
 
             # 保存当前帧（用于实时预览）
             if frame_idx % 10 == 0:
-                self.current_frame = frame
+                self.current_frame = analysis_frame
 
         # 刷新缓冲区中剩余的帧
         if generate_video:
             while len(video_buffer) > 0:
                 item = video_buffer.popleft()
-                write_queue.put(draw_results(item['frame'], item['results']))
+                write_queue.put((item['frame'].copy(), [dict(result) for result in item['results']]))
 
         # 通知写入线程结束并等待完成
         if writer_thread is not None:
             write_queue.put(None)  # 发送结束信号
-            writer_thread.join(timeout=30)
+            writer_thread.join()
 
         cap.release()
         if writer is not None:
@@ -578,8 +597,9 @@ class VisionAnalysisSession(AnalysisSessionBase):
         # 保存不动时间统计
         immobility_summaries = []
         for tracker in valid_trackers:
-            summary = tracker.get_immobility_summary(fps)
+            summary = tracker.get_immobility_summary(analysis_fps)
             if summary:
+                self._add_sampling_summary_fields(summary, sampling)
                 immobility_summaries.append(summary)
 
         if len(immobility_summaries) > 0 and HAS_PANDAS:
@@ -615,7 +635,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
             self.message = '分析完成！'
 
         elapsed = time.time() - video_start_time
-        self._log(f"视频处理完成，耗时: {elapsed:.1f}秒，处理 {frame_idx} 帧")
+        self._log(f"视频处理完成，耗时: {elapsed:.1f}秒，处理 {source_frames_done} source frames ({frame_idx} analyzed samples)")
 
         import gc
         gc.collect()
@@ -648,13 +668,13 @@ class VisionAnalysisSession(AnalysisSessionBase):
                         ('不动比例', 'Immobility Percent', 'immobility_percent', '%'),
                         ('挣扎时间', 'Struggling Time', 'struggling_time_seconds', ' s'),
                         ('挣扎比例', 'Struggling Percent', 'struggling_percent', '%'),
+                        ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
+                        ('不确定时间', 'Uncertain Time', 'uncertain_time_seconds', ' s'),
+                        ('不确定比例', 'Uncertain Percent', 'uncertain_percent', '%'),
+                        ('自动行为阈值', 'Auto Behavior Threshold', 'auto_behavior_threshold', ''),
                     ])
-                    f.write(f"  {_bi_label('Detected Rate', 'Detected Rate')}: {_report_value(summary.get('detected_rate_percent'), '%')}\n")
-                    f.write(f"  {_bi_label('Uncertain Time', 'Uncertain Time')}: {_report_value(summary.get('uncertain_time_seconds'), ' s')}\n")
-                    f.write(f"  {_bi_label('Uncertain Percent', 'Uncertain Percent')}: {_report_value(summary.get('uncertain_percent'), '%')}\n")
-                    f.write(f"  {_bi_label('Auto Behavior Threshold', 'Auto Behavior Threshold')}: {summary.get('auto_behavior_threshold')}\n")
-                    f.write(f"  {_bi_label('Flow Threshold Lo/Hi', 'Flow Threshold Lo/Hi')}: {_report_value(summary.get('flow_thr_lo'))} / {_report_value(summary.get('flow_thr_hi'))}\n")
-                    f.write(f"  {_bi_label('Speed-Std Threshold Lo/Hi', 'Speed-Std Threshold Lo/Hi')}: {_report_value(summary.get('speed_std_thr_lo'))} / {_report_value(summary.get('speed_std_thr_hi'))}\n")
+                    f.write(f"  {_bi_label('光流阈值低/高', 'Flow Threshold Lo/Hi')}: {_report_value(summary.get('flow_thr_lo'))} / {_report_value(summary.get('flow_thr_hi'))}\n")
+                    f.write(f"  {_bi_label('速度标准差阈值低/高', 'Speed-Std Threshold Lo/Hi')}: {_report_value(summary.get('speed_std_thr_lo'))} / {_report_value(summary.get('speed_std_thr_hi'))}\n")
                     if summary.get('latency_to_immobility_seconds') is not None:
                         f.write(
                             f"  {_bi_label('首次不动潜伏期', 'Latency to First Immobility')}: "

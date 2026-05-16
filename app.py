@@ -8,6 +8,7 @@ MouseScope Behavior Analysis Platform — 简化版 Flask 应用
 
 import os
 import sys
+import logging
 import stringprep  # Ensure IDNA codec dependencies are loaded in frozen builds.
 
 try:
@@ -29,6 +30,17 @@ def _configure_console_streams():
 
 _configure_console_streams()
 
+
+def _configure_http_access_logging():
+    """Keep local status polling from flooding VS Code's terminal."""
+    enabled = str(os.environ.get('MOUSESCOPE_HTTP_ACCESS_LOG', '')).strip().lower()
+    if enabled in {'1', 'true', 'yes', 'on'}:
+        return
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+
+_configure_http_access_logging()
+
 # ==================== 性能环境变量（必须在 import numpy/cv2 之前） ====================
 # 让底层 BLAS/OpenMP 库充分利用所有 CPU 核心
 _cpu_count = str(os.cpu_count() or 4)
@@ -46,7 +58,6 @@ import hashlib
 import re
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlsplit
 from flask import (
     Flask, request, redirect, url_for,
     flash, jsonify, session
@@ -72,6 +83,7 @@ from file_utils import (
 from performance_utils import enable_opencv_optimizations
 from services.session_store import SessionStore
 from services.analysis_history import AnalysisHistoryStore
+from services.project_store import ProjectStore
 from services.experiment_registry import (
     get_manual_module,
     list_experiments,
@@ -101,8 +113,9 @@ UPLOAD_DIR = DATA_DIR / 'uploads'
 RESULT_DIR = DATA_DIR / 'results'
 WORK_DIR = RESULT_DIR / '_work'
 HISTORY_DIR = DATA_DIR / 'history'
+PROJECTS_DIR = DATA_DIR / 'projects'
 
-for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR, WORK_DIR, HISTORY_DIR]:
+for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR, WORK_DIR, HISTORY_DIR, PROJECTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 CHINA_TZ = timezone(timedelta(hours=8))
@@ -118,11 +131,6 @@ UPLOAD_FREE_SPACE_BUFFER_BYTES = 512 * 1024 * 1024
 UPLOAD_ORPHAN_STAGING_TTL_SECONDS = 24 * 60 * 60
 LICENSE_EXEMPT_ENDPOINTS = {
     'static',
-    'index',
-    'upload_page',
-    'manual',
-    'manual_open_field',
-    'manual_novel_object',
     'license_page',
     'api_get_license',
     'api_accept_license',
@@ -143,8 +151,43 @@ def china_now():
     return datetime.now(CHINA_TZ)
 
 
+def _load_or_create_secret_key():
+    env_value = os.environ.get('MOUSESCOPE_SECRET_KEY')
+    if env_value:
+        return env_value
+
+    secret_path = DATA_DIR / '.flask_secret_key'
+    try:
+        if secret_path.exists():
+            value = secret_path.read_text(encoding='utf-8').strip()
+            if value:
+                return value
+        value = secrets.token_hex(32)
+        secret_path.write_text(value, encoding='utf-8')
+        return value
+    except Exception:
+        return secrets.token_hex(32)
+
+
 def _now_ts():
     return time.time()
+
+
+def _safe_runtime_ts(value, default=None):
+    if value is None or value == '':
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        if isinstance(value, str):
+            text = value.strip()
+            if text.endswith('Z'):
+                text = f"{text[:-1]}+00:00"
+            try:
+                return datetime.fromisoformat(text).timestamp()
+            except ValueError:
+                return default
+        return default
 
 
 def _bi_label(zh_text, en_text):
@@ -310,6 +353,20 @@ def _cleanup_empty_staged_parents(start_dir):
         except OSError:
             break
         current = current.parent
+
+
+def _discard_uploaded_staging_file(path):
+    target = Path(path)
+    if not _path_is_within(target, _staged_upload_root()):
+        return False
+    try:
+        if target.is_file():
+            target.unlink()
+            _cleanup_empty_staged_parents(target.parent)
+            return True
+    except Exception:
+        return False
+    return False
 
 
 def _report_time_mode_label(mode):
@@ -575,7 +632,7 @@ enable_opencv_optimizations()
 app = Flask(__name__,
             template_folder=str(BUNDLE_DIR / 'templates'),
             static_folder=str(BUNDLE_DIR / 'static'))
-app.secret_key = secrets.token_hex(32)
+app.secret_key = _load_or_create_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
 
 
@@ -605,13 +662,48 @@ analysis_history = AnalysisHistoryStore(
 )
 analysis_history.mark_interrupted_running()
 
+project_store = ProjectStore(
+    projects_root=PROJECTS_DIR,
+    now_fn=_now_ts,
+)
+
 
 def _analysis_status_observer(analysis):
     session_id = getattr(analysis, 'session_id', None)
     if not session_id:
         return
     sess = analysis_sessions.get(session_id)
-    analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
+    record = analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
+    project_context = sess.get('project_context') if isinstance(sess, dict) and isinstance(sess.get('project_context'), dict) else None
+    if project_context:
+        status = str(record.get('status') or '').lower()
+        assignment_ids = project_context.get('assignment_ids') or []
+        progress = int(record.get('progress') or 0)
+        if status == 'completed':
+            progress = 100
+        project_store.upsert_project_run(
+            project_id=project_context.get('project_id'),
+            project_run_id=project_context.get('project_run_id'),
+            run_id=session_id,
+            session_id=session_id,
+            experiment_type=record.get('experiment_type') or sess.get('experiment_type'),
+            assignment_ids=assignment_ids,
+            output_dir=record.get('output_dir') or sess.get('output_dir') or '',
+            status=status or 'unknown',
+            progress=progress,
+            message=str(record.get('message') or ''),
+            result_files=record.get('result_files') or [],
+            finished_at=record.get('finished_at'),
+        )
+        if status in {'completed', 'error', 'stopped', 'interrupted'}:
+            project_store.set_assignments_status(
+                project_context.get('project_id'),
+                assignment_ids,
+                status,
+                latest_run_id=session_id,
+            )
+            if status == 'completed':
+                project_store.cleanup_completed_upload_caches(project_context.get('project_id'), assignment_ids)
 
 
 configure_analysis_runtime(
@@ -632,32 +724,6 @@ configure_analysis_runtime(
 
 def _experiment_type_to_manual_module(experiment_type):
     return get_manual_module(experiment_type)
-
-
-def _safe_internal_return_to(value):
-    raw = str(value or '').strip()
-    if not raw:
-        return None
-
-    parsed = urlsplit(raw)
-    if parsed.scheme or parsed.netloc:
-        return None
-
-    path = parsed.path or ''
-    if not path.startswith('/') or path.startswith('//'):
-        return None
-
-    safe = path
-    if parsed.query:
-        safe += f'?{parsed.query}'
-    if parsed.fragment:
-        safe += f'#{parsed.fragment}'
-    return safe
-
-
-def _current_request_target():
-    query = request.query_string.decode('utf-8', 'ignore') if request.query_string else ''
-    return f'{request.path}?{query}' if query else request.path
 
 
 def _request_session_id():
@@ -737,7 +803,7 @@ def _cleanup_expired_runtime_state():
 
     expired_session_ids = []
     for session_id, sess in list(analysis_sessions.items()):
-        last_access = float(sess.get('last_accessed_at') or sess.get('created_at') or now)
+        last_access = _safe_runtime_ts(sess.get('last_accessed_at') or sess.get('created_at'), now)
         analysis = sess.get('analysis')
         if analysis is None:
             ttl = SESSION_PENDING_TTL_SECONDS
@@ -787,7 +853,6 @@ def before_request_guard():
 @app.context_processor
 def inject_navigation_context():
     endpoint = request.endpoint or ''
-    manual_return_to = _safe_internal_return_to(request.args.get('return_to'))
     valid_manual_modules = {spec.manual_module for spec in list_experiments()}
 
     if endpoint == 'manual':
@@ -796,17 +861,10 @@ def inject_navigation_context():
             manual_module = 'tst'
         manual_nav_target = None
         manual_nav_rel = None
-        if manual_return_to:
-            manual_nav_url = url_for('manual', module=manual_module, return_to=manual_return_to)
-        else:
-            manual_nav_url = url_for('manual', module=manual_module)
+        manual_nav_url = url_for('manual', module=manual_module)
     else:
         manual_module = _experiment_type_to_manual_module(_request_experiment_type())
-        current_target = _safe_internal_return_to(_current_request_target())
-        if current_target:
-            manual_nav_url = url_for('manual', module=manual_module, return_to=current_target)
-        else:
-            manual_nav_url = url_for('manual', module=manual_module)
+        manual_nav_url = url_for('manual', module=manual_module)
         manual_nav_target = '_blank' if endpoint in {'calibrate', 'monitor'} else None
         manual_nav_rel = 'noopener noreferrer' if manual_nav_target else None
 
@@ -814,7 +872,6 @@ def inject_navigation_context():
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
         'manual_nav_rel': manual_nav_rel,
-        'manual_return_to': manual_return_to,
     }
 
 
@@ -838,11 +895,14 @@ def basename_filter(path):
 from types import SimpleNamespace
 from routes.pages import register_page_routes
 from routes.api import register_api_routes
+from routes.projects import register_project_page_routes
+from routes.project_api import register_project_api_routes
 
 route_context = SimpleNamespace(
     UploadStorageError=UploadStorageError,
     analysis_sessions=analysis_sessions,
     analysis_history=analysis_history,
+    project_store=project_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
     _cleanup_session_artifacts=_cleanup_session_artifacts,
@@ -852,14 +912,16 @@ route_context = SimpleNamespace(
     _now_ts=_now_ts,
     _resolve_result_dir=_resolve_result_dir,
     _result_zip_arcname=_result_zip_arcname,
-    _safe_internal_return_to=_safe_internal_return_to,
     _save_uploaded_video=_save_uploaded_video,
     _session_video_info=_session_video_info,
     _stage_local_video_if_needed=_stage_local_video_if_needed,
     _update_video_entry_info=_update_video_entry_info,
+    _discard_uploaded_staging_file=_discard_uploaded_staging_file,
 )
 register_page_routes(app, route_context)
 register_api_routes(app, route_context)
+register_project_page_routes(app, route_context)
+register_project_api_routes(app, route_context)
 
 
 # ==================== 启动 ====================

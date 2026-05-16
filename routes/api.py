@@ -7,6 +7,7 @@ import platform
 import re
 import subprocess
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -23,12 +24,14 @@ from services.analysis_sessions import (
     YMazeMultiArenaAnalysisSession,
 )
 from services.debug_preview import build_debug_preview_response
-from services.experiment_registry import summarize_batch_state
+from services.experiment_registry import get_experiment_spec, summarize_batch_state
+from services.video_frame_reader import read_video_frame
 
 
 def register_api_routes(app, ctx) -> None:
     analysis_sessions = ctx.analysis_sessions
     analysis_history = ctx.analysis_history
+    project_store = getattr(ctx, "project_store", None)
     RESULT_DIR = ctx.RESULT_DIR
     _resolve_result_dir = ctx._resolve_result_dir
     _result_zip_arcname = ctx._result_zip_arcname
@@ -41,11 +44,16 @@ def register_api_routes(app, ctx) -> None:
             task.get('experiment_type'),
             task.get('experiment_label'),
             task.get('experiment_short_label'),
+            task.get('project_id'),
+            task.get('project_name'),
+            task.get('project_run_id'),
             task.get('primary_video_name'),
             task.get('message'),
             task.get('output_dir'),
         ]
         fields.extend(task.get('video_names') or [])
+        fields.extend(task.get('experiment_types') or [])
+        fields.extend(task.get('experiment_short_labels') or [])
         return ' '.join(str(item or '') for item in fields).lower()
 
     def _task_matches_filters(task: dict, query: str, status_filter: str, experiment_filter: str) -> bool:
@@ -58,8 +66,11 @@ def register_api_routes(app, ctx) -> None:
                     return False
             elif status != status_filter:
                 return False
-        if experiment_filter and str(task.get('experiment_type') or '') != experiment_filter:
-            return False
+        if experiment_filter:
+            experiment_values = {str(task.get('experiment_type') or '').lower()}
+            experiment_values.update(str(item or '').lower() for item in (task.get('experiment_types') or []))
+            if experiment_filter not in experiment_values:
+                return False
         return True
 
     def _decorate_task_urls(task: dict) -> dict:
@@ -84,9 +95,292 @@ def register_api_routes(app, ctx) -> None:
                 task['open_folder_url'] = url_for('open_folder', session_id=session_id)
             elif run_id:
                 task['open_folder_url'] = url_for('history_open_folder', run_id=run_id)
-        if task.get('can_delete') and run_id:
+        if task.get('project_id'):
+            task['project_url'] = url_for('project_home', project_id=task.get('project_id'))
+        if task.get('can_delete') and run_id and not task.get('project_id'):
             task['delete_url'] = url_for('delete_task_record', run_id=run_id)
         return task
+
+    def _project_subject_binding_error(sess: dict, payload: dict) -> str:
+        project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+        if not project_context:
+            return ''
+
+        project_id = project_context.get('project_id')
+        subjects = project_context.get('subject_candidates') or []
+        if project_store is not None and project_id:
+            try:
+                try:
+                    project_exists = bool(project_store.get_project(project_id, include_summary=False))
+                except TypeError:
+                    project_exists = bool(project_store.get_project(project_id))
+                if project_exists:
+                    fresh_subjects = project_store.subject_candidates(project_id)
+                    subjects = fresh_subjects
+            except Exception:
+                pass
+
+        valid_subject_ids = {
+            str(subject.get('subject_id') or '').strip()
+            for subject in subjects
+            if isinstance(subject, dict) and str(subject.get('subject_id') or '').strip()
+        }
+        if not valid_subject_ids:
+            return '请先在项目中添加小鼠，然后为每个 ROI 选择对应小鼠。'
+
+        video_infos = sess.get('video_infos') or []
+
+        def video_name(index: int) -> str:
+            if 0 <= index < len(video_infos):
+                info = video_infos[index] or {}
+                return str(info.get('original_name') or info.get('name') or f'Video {index + 1}')
+            return f'Video {index + 1}'
+
+        def check_rois(rois, video_index: int) -> str:
+            if not isinstance(rois, list) or not rois:
+                return ''
+            for roi_index, roi in enumerate(rois, start=1):
+                subject_id = str((roi or {}).get('subject_id') or '').strip() if isinstance(roi, dict) else ''
+                if not subject_id or subject_id not in valid_subject_ids:
+                    return f"{video_index + 1}. {video_name(video_index)}: ROI {roi_index} 未绑定项目小鼠，请从已有小鼠中选择。"
+            return ''
+
+        raw_configs = payload.get('per_video_configs') if isinstance(payload, dict) else None
+        if isinstance(raw_configs, list):
+            for index, config in enumerate(raw_configs):
+                if not isinstance(config, dict):
+                    continue
+                error = check_rois(config.get('rois'), index)
+                if error:
+                    return error
+
+        root_rois = payload.get('rois') if isinstance(payload, dict) else None
+        if isinstance(root_rois, list):
+            try:
+                current_index = int(payload.get('video', sess.get('selected_video_idx') or 0))
+            except Exception:
+                current_index = int(sess.get('selected_video_idx') or 0)
+            error = check_rois(root_rois, current_index)
+            if error:
+                return error
+
+        return ''
+
+    def _project_task_indexes() -> tuple[dict[str, dict], dict[str, dict]]:
+        lookup: dict[str, dict] = {}
+        project_tasks: dict[str, dict] = {}
+        if project_store is None:
+            return lookup, project_tasks
+        try:
+            projects = project_store.list_projects(include_archived=True)
+        except Exception:
+            return lookup, project_tasks
+        for project in projects:
+            project_id = str(project.get('project_id') or '')
+            if not project_id:
+                continue
+            try:
+                runs = project_store.list_project_runs(project_id)
+            except Exception:
+                runs = []
+            for run in runs:
+                run_id = str(run.get('run_id') or run.get('session_id') or '').strip()
+                if not run_id:
+                    continue
+                assignment_ids = [str(item) for item in (run.get('assignment_ids') or []) if item]
+                try:
+                    assignments = project_store.get_assignments(project_id, assignment_ids) if assignment_ids else []
+                except Exception:
+                    assignments = []
+                video_names = [str(item.get('original_name') or '') for item in assignments if item.get('original_name')]
+                result_files = [str(path) for path in (run.get('result_files') or []) if path]
+                existing_result_files = [path for path in result_files if os.path.isfile(path)]
+                output_dir = str(run.get('output_dir') or '')
+                output_exists = bool(output_dir and os.path.isdir(output_dir))
+                try:
+                    spec = get_experiment_spec(str(run.get('experiment_type') or 'tst'))
+                except Exception:
+                    spec = get_experiment_spec('tst')
+                meta = {
+                    'project_id': project_id,
+                    'project_name': project.get('name') or '',
+                    'project_run_id': run.get('project_run_id') or '',
+                    'task_scope': 'project',
+                }
+                lookup[run_id] = meta
+                session_key = str(run.get('session_id') or '').strip()
+                if session_key:
+                    lookup[session_key] = meta
+                project_tasks[run_id] = {
+                    'run_id': run_id,
+                    'session_id': session_key or run_id,
+                    'experiment_type': spec.key,
+                    'experiment_label': spec.label,
+                    'experiment_short_label': spec.short_label,
+                    'status': run.get('status') or 'configured',
+                    'progress': int(run.get('progress') or 0),
+                    'message': run.get('message') or '',
+                    'video_names': video_names,
+                    'video_paths': [str(item.get('project_path') or item.get('source_path') or '') for item in assignments],
+                    'primary_video_name': video_names[0] if video_names else (project.get('name') or run_id),
+                    'video_count': len(video_names),
+                    'output_dir': output_dir,
+                    'result_files': result_files,
+                    'result_file_count': len(existing_result_files),
+                    'has_results': bool(existing_result_files or output_exists),
+                    'has_output_dir': output_exists,
+                    'config_summary': {'video_count': len(video_names)},
+                    'is_batch': len(video_names) > 1,
+                    'created_at': run.get('created_at'),
+                    'started_at': None,
+                    'finished_at': run.get('finished_at'),
+                    'updated_at': run.get('updated_at') or run.get('created_at'),
+                    'duration_seconds': None,
+                    'error_message': '',
+                    'source': 'project',
+                    'is_live': False,
+                    'can_monitor': False,
+                    'can_stop': False,
+                    'can_download': False,
+                    'can_open_folder': False,
+                    'can_configure': False,
+                    'can_delete': False,
+                    **meta,
+                }
+        return lookup, project_tasks
+
+    def _ordered_unique(values) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for value in values or []:
+            text = str(value or '').strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            result.append(text)
+        return result
+
+    def _is_project_task(task: dict) -> bool:
+        return bool(task.get('project_id') or task.get('project_run_id') or task.get('task_scope') == 'project')
+
+    def _project_summary_status(runs: list[dict]) -> str:
+        statuses = [str(run.get('status') or '').lower() for run in runs]
+        if any(status in {'analyzing', 'running'} for status in statuses):
+            return 'analyzing'
+        if any(status == 'waiting' for status in statuses):
+            return 'waiting'
+        latest_status = statuses[0] if statuses else ''
+        return latest_status or 'configured'
+
+    def _project_experiment_summary(experiment_types: list[str]) -> tuple[str, str, str, list[str]]:
+        specs = []
+        for experiment_type in experiment_types:
+            try:
+                specs.append(get_experiment_spec(experiment_type))
+            except Exception:
+                continue
+        if not specs:
+            return '', '', '', []
+        short_labels = _ordered_unique(spec.short_label for spec in specs)
+        if len(specs) == 1:
+            return specs[0].key, specs[0].label, specs[0].short_label, short_labels
+        shown = short_labels[:4]
+        extra = len(short_labels) - len(shown)
+        short_text = ' / '.join(shown) + (f' +{extra}' if extra > 0 else '')
+        return '', 'Multiple experiments', short_text, short_labels
+
+    def _aggregate_project_tasks(tasks: list[dict]) -> list[dict]:
+        project_groups: dict[str, list[dict]] = {}
+        passthrough: list[dict] = []
+        for task in tasks:
+            if not _is_project_task(task):
+                passthrough.append(task)
+                continue
+            project_id = str(task.get('project_id') or '').strip()
+            if not project_id:
+                passthrough.append(task)
+                continue
+            project_groups.setdefault(project_id, []).append(task)
+
+        cards: list[dict] = []
+        for project_id, runs in project_groups.items():
+            runs.sort(
+                key=lambda item: (
+                    _safe_timestamp(item.get('updated_at') or item.get('created_at')) or 0,
+                    _safe_timestamp(item.get('created_at')) or 0,
+                    str(item.get('run_id') or item.get('session_id') or ''),
+                ),
+                reverse=True,
+            )
+            latest = runs[0]
+            video_names = _ordered_unique(
+                name
+                for run in runs
+                for name in (run.get('video_names') or ([run.get('primary_video_name')] if run.get('primary_video_name') else []))
+            )
+            video_paths = _ordered_unique(path for run in runs for path in (run.get('video_paths') or []))
+            experiment_types = _ordered_unique(run.get('experiment_type') for run in runs)
+            experiment_type, experiment_label, experiment_short_label, experiment_short_labels = _project_experiment_summary(experiment_types)
+            result_files = _ordered_unique(path for run in runs for path in (run.get('result_files') or []))
+            existing_result_files = [path for path in result_files if os.path.isfile(path)]
+            output_dirs = _ordered_unique(run.get('output_dir') for run in runs)
+            output_exists = any(path and os.path.isdir(path) for path in output_dirs)
+            latest_created = max((_safe_timestamp(run.get('created_at')) or 0) for run in runs)
+            latest_updated = max((_safe_timestamp(run.get('updated_at') or run.get('created_at')) or 0) for run in runs)
+            progress_values = [int(run.get('progress') or 0) for run in runs]
+            status = _project_summary_status(runs)
+            if status == 'completed':
+                progress = 100
+            elif latest.get('progress') is not None and latest.get('progress') != '':
+                progress = int(latest.get('progress') or 0)
+            else:
+                progress = int(sum(progress_values) / len(progress_values)) if progress_values else 0
+
+            cards.append({
+                'run_id': f'project:{project_id}',
+                'session_id': latest.get('session_id') or latest.get('run_id') or '',
+                'experiment_type': experiment_type,
+                'experiment_types': experiment_types,
+                'experiment_label': experiment_label,
+                'experiment_short_label': experiment_short_label,
+                'experiment_short_labels': experiment_short_labels,
+                'status': status,
+                'progress': max(0, min(100, int(progress or 0))),
+                'message': latest.get('message') or '',
+                'video_names': video_names,
+                'video_paths': video_paths,
+                'primary_video_name': video_names[0] if video_names else '',
+                'video_count': len(video_names),
+                'output_dir': output_dirs[0] if len(output_dirs) == 1 else '',
+                'result_files': result_files,
+                'result_file_count': len(existing_result_files),
+                'has_results': bool(existing_result_files or output_exists),
+                'has_output_dir': bool(len(output_dirs) == 1 and output_exists),
+                'config_summary': {'video_count': len(video_names), 'project_run_count': len(runs)},
+                'project_run_count': len(runs),
+                'project_latest_run_id': latest.get('run_id') or latest.get('session_id') or '',
+                'project_id': project_id,
+                'project_name': latest.get('project_name') or '',
+                'project_run_id': '',
+                'task_scope': 'project',
+                'is_batch': len(video_names) > 1 or len(runs) > 1,
+                'created_at': latest_created or latest.get('created_at'),
+                'started_at': latest.get('started_at'),
+                'finished_at': latest.get('finished_at'),
+                'updated_at': latest_updated or latest.get('updated_at') or latest.get('created_at'),
+                'sort_at': latest_created or latest_updated,
+                'duration_seconds': latest.get('duration_seconds'),
+                'error_message': latest.get('error_message') or '',
+                'source': 'project-summary',
+                'is_live': any(bool(run.get('is_live')) for run in runs),
+                'can_monitor': False,
+                'can_stop': False,
+                'can_download': False,
+                'can_open_folder': False,
+                'can_configure': False,
+                'can_delete': False,
+            })
+        return passthrough + cards
 
     def _history_output_dir(record: dict) -> str:
         output_dir = str(record.get('output_dir') or '').strip()
@@ -172,20 +466,39 @@ def register_api_routes(app, ctx) -> None:
         query = str(request.args.get('q') or '').strip().lower()
         status_filter = str(request.args.get('status') or '').strip().lower()
         experiment_filter = str(request.args.get('experiment') or '').strip().lower()
+        project_lookup, project_only_tasks = _project_task_indexes()
 
         merged: dict[str, dict] = {}
         for task in analysis_history.list_records():
+            meta = project_lookup.get(str(task.get('run_id') or '')) or project_lookup.get(str(task.get('session_id') or ''))
+            if meta:
+                task = {**task, **meta}
             merged[task['run_id']] = task
 
         for session_id, sess in analysis_sessions.items():
             task = analysis_history.build_runtime_task(session_id, sess)
             if sess.get('analysis') is not None:
                 analysis_history.upsert_runtime(session_id, sess, analysis=sess.get('analysis'))
+            meta = project_lookup.get(str(task.get('run_id') or '')) or project_lookup.get(str(task.get('session_id') or ''))
+            if meta:
+                task = {**task, **meta}
             previous = merged.get(task['run_id']) or {}
             merged[task['run_id']] = {**previous, **task}
 
-        tasks = [_decorate_task_urls(task) for task in merged.values()]
-        tasks.sort(key=lambda item: float(item.get('updated_at') or item.get('created_at') or 0), reverse=True)
+        for run_id, task in project_only_tasks.items():
+            if run_id not in merged and str(task.get('session_id') or '') not in merged:
+                merged[run_id] = task
+
+        tasks = _aggregate_project_tasks(list(merged.values()))
+        tasks = [_decorate_task_urls(task) for task in tasks]
+        tasks.sort(
+            key=lambda item: (
+                _safe_timestamp(item.get('sort_at') or item.get('created_at') or item.get('updated_at')) or 0,
+                _safe_timestamp(item.get('created_at') or item.get('updated_at')) or 0,
+                str(item.get('run_id') or item.get('session_id') or ''),
+            ),
+            reverse=True,
+        )
 
         all_count = len(tasks)
         active_count = sum(1 for task in tasks if str(task.get('status') or '').lower() in {'waiting', 'analyzing'})
@@ -244,6 +557,74 @@ def register_api_routes(app, ctx) -> None:
             'deleted_history': bool(deleted_history),
             'removed_runtime': bool(removed_runtime),
         })
+
+    @app.route('/api/tasks/bulk_delete', methods=['POST'])
+    def bulk_delete_task_records():
+        payload = request.get_json(silent=True) or {}
+        raw_ids = payload.get('run_ids') if isinstance(payload, dict) else None
+        if not isinstance(raw_ids, list):
+            return jsonify({'success': False, 'error': '缺少要删除的任务记录'}), 400
+
+        seen: set[str] = set()
+        run_ids: list[str] = []
+        for raw_id in raw_ids:
+            run_id = str(raw_id or '').strip()
+            if run_id and run_id not in seen:
+                seen.add(run_id)
+                run_ids.append(run_id)
+
+        if not run_ids:
+            return jsonify({'success': False, 'error': '缺少要删除的任务记录'}), 400
+
+        deleted: list[dict] = []
+        skipped: list[dict] = []
+        for run_id in run_ids:
+            record = analysis_history.get_record(run_id)
+            session_id = (record or {}).get('session_id') or run_id
+            sess = analysis_sessions.get(session_id)
+            removed_runtime = False
+
+            if sess:
+                analysis = sess.get('analysis')
+                if analysis is not None:
+                    status = str(getattr(analysis, 'status', '') or '').lower()
+                    is_running = bool(getattr(analysis, 'is_running', False)) or status in {'waiting', 'analyzing'}
+                    if is_running:
+                        skipped.append({
+                            'run_id': run_id,
+                            'session_id': session_id,
+                            'error': '任务仍在运行，请先停止分析。',
+                        })
+                        continue
+                analysis_sessions.delete(session_id)
+                removed_runtime = True
+
+            deleted_history = analysis_history.delete_record(run_id)
+            if session_id != run_id:
+                deleted_history = analysis_history.delete_record(session_id) or deleted_history
+
+            if deleted_history or removed_runtime:
+                deleted.append({
+                    'run_id': run_id,
+                    'session_id': session_id,
+                    'deleted_history': bool(deleted_history),
+                    'removed_runtime': bool(removed_runtime),
+                })
+            else:
+                skipped.append({
+                    'run_id': run_id,
+                    'session_id': session_id,
+                    'error': '任务记录不存在',
+                })
+
+        return jsonify({
+            'success': bool(deleted),
+            'deleted_count': len(deleted),
+            'skipped_count': len(skipped),
+            'deleted': deleted,
+            'skipped': skipped,
+            'error': '' if deleted else '没有可删除的任务记录',
+        }), 200 if deleted else 400
 
     @app.route('/api/history/download_all/<run_id>')
     def history_download_all(run_id):
@@ -314,12 +695,9 @@ def register_api_routes(app, ctx) -> None:
             frame_idx = min(frame_idx, total_frames - 1)
 
         video_path = video_paths[video_idx]
-        cap = cv2.VideoCapture(video_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, frame = cap.read()
-        cap.release()
+        frame = read_video_frame(video_path, frame_idx, fps=video_info.get('detected_fps') or video_info.get('fps'))
 
-        if not ret:
+        if frame is None:
             return jsonify({'error': '无法读取帧'}), 400
 
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -342,6 +720,7 @@ def register_api_routes(app, ctx) -> None:
             sess.get('experiment_type'),
             sess.get('draft_payload'),
             sess.get('video_infos'),
+            project_context=sess.get('project_context'),
         )
         complete_count = sum(1 for card in cards if card.get('complete'))
         return jsonify({
@@ -381,6 +760,7 @@ def register_api_routes(app, ctx) -> None:
             sess.get('experiment_type'),
             payload,
             sess.get('video_infos'),
+            project_context=sess.get('project_context'),
         )
         return jsonify({
             'success': True,
@@ -431,6 +811,7 @@ def register_api_routes(app, ctx) -> None:
             sess.get('experiment_type'),
             draft_payload,
             sess.get('video_infos'),
+            project_context=sess.get('project_context'),
         )
         return jsonify({
             'success': True,
@@ -458,6 +839,8 @@ def register_api_routes(app, ctx) -> None:
         sess = analysis_sessions.get(session_id)
         if not sess:
             return jsonify({'error': '会话不存在'}), 404
+        if analysis_sessions.has_active_analysis(session_id):
+            return jsonify({'success': False, 'error': '分析任务已在运行，请勿重复启动。'}), 409
 
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
@@ -470,6 +853,10 @@ def register_api_routes(app, ctx) -> None:
             data = draft_payload
         elif not data and sess.get('draft_payload'):
             data = copy.deepcopy(sess.get('draft_payload') or {})
+
+        binding_error = _project_subject_binding_error(sess, data)
+        if binding_error:
+            return jsonify({'success': False, 'error': binding_error}), 400
 
         if isinstance(data, dict) and data:
             selected_video_idx = data.get('video', sess.get('selected_video_idx'))
@@ -493,9 +880,38 @@ def register_api_routes(app, ctx) -> None:
             config=vision_config
         )
 
-        analysis_sessions.set_analysis(session_id, analysis)
-        analysis.start()
+        if not analysis_sessions.set_analysis_if_idle(session_id, analysis):
+            return jsonify({'success': False, 'error': '分析任务已在运行，请勿重复启动。'}), 409
+        try:
+            analysis.start()
+        except RuntimeError as exc:
+            analysis.is_running = False
+            analysis.status = 'error'
+            analysis.message = str(exc)
+            analysis.end_time = time.time()
+            analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
+            return jsonify({'success': False, 'error': str(exc)}), 409
         analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
+        project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+        if project_store is not None and project_context:
+            project_store.upsert_project_run(
+                project_id=project_context.get('project_id'),
+                project_run_id=project_context.get('project_run_id'),
+                run_id=session_id,
+                session_id=session_id,
+                experiment_type=experiment_type,
+                assignment_ids=project_context.get('assignment_ids') or [],
+                output_dir=vision_config.get('output_dir') or sess.get('output_dir') or '',
+                status='analyzing',
+                progress=0,
+                message='Analysis started from project workspace',
+            )
+            project_store.set_assignments_status(
+                project_context.get('project_id'),
+                project_context.get('assignment_ids') or [],
+                'analyzing',
+                latest_run_id=session_id,
+            )
 
         return jsonify({'success': True, 'session_id': session_id})
 
@@ -508,6 +924,41 @@ def register_api_routes(app, ctx) -> None:
             return jsonify({'error': '会话不存在'}), 404
         status_payload = sess['analysis'].get_status()
         analysis_history.upsert_runtime(session_id, sess, analysis=sess['analysis'], status_payload=status_payload)
+        project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+        if project_store is not None and project_context:
+            status = str(status_payload.get('status') or '').lower()
+            finished_at = None
+            if status in {'completed', 'error', 'stopped', 'interrupted'}:
+                finished_at = getattr(sess['analysis'], 'end_time', None)
+            progress = int(status_payload.get('progress') or 0)
+            if status == 'completed':
+                progress = 100
+            project_store.upsert_project_run(
+                project_id=project_context.get('project_id'),
+                project_run_id=project_context.get('project_run_id'),
+                run_id=session_id,
+                session_id=session_id,
+                experiment_type=status_payload.get('experiment_type') or sess.get('experiment_type'),
+                assignment_ids=project_context.get('assignment_ids') or [],
+                output_dir=sess.get('output_dir') or '',
+                status=status or 'unknown',
+                progress=progress,
+                message=str(status_payload.get('message') or ''),
+                result_files=status_payload.get('result_files') or [],
+                finished_at=finished_at,
+            )
+            if status in {'completed', 'error', 'stopped', 'interrupted'}:
+                project_store.set_assignments_status(
+                    project_context.get('project_id'),
+                    project_context.get('assignment_ids') or [],
+                    status,
+                    latest_run_id=session_id,
+                )
+                if status == 'completed':
+                    project_store.cleanup_completed_upload_caches(
+                        project_context.get('project_id'),
+                        project_context.get('assignment_ids') or [],
+                    )
         return jsonify(status_payload)
 
 
@@ -518,6 +969,14 @@ def register_api_routes(app, ctx) -> None:
         if sess and 'analysis' in sess:
             sess['analysis'].stop()
             analysis_history.upsert_runtime(session_id, sess, analysis=sess['analysis'])
+            project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+            if project_store is not None and project_context:
+                project_store.set_assignments_status(
+                    project_context.get('project_id'),
+                    project_context.get('assignment_ids') or [],
+                    'stopped',
+                    latest_run_id=session_id,
+                )
             return jsonify({'message': '已发送停止命令'})
         return jsonify({'error': '会话不存在'}), 404
 

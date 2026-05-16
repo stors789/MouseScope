@@ -4,8 +4,33 @@ import copy
 import json
 import shutil
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+def _safe_timestamp(value, default=None):
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        if isinstance(value, str):
+            text = value.strip()
+            if text.endswith("Z"):
+                text = f"{text[:-1]}+00:00"
+            try:
+                return datetime.fromisoformat(text).timestamp()
+            except ValueError:
+                return default
+        return default
+
+
+def _analysis_is_active(analysis: Any) -> bool:
+    if analysis is None:
+        return False
+    status = str(getattr(analysis, "status", "") or "").lower()
+    return bool(getattr(analysis, "is_running", False)) or status in {"waiting", "analyzing"}
 
 
 class SessionStore:
@@ -129,6 +154,23 @@ class SessionStore:
             sess["last_accessed_at"] = self._now_fn()
             self.persist(session_id)
 
+    def has_active_analysis(self, session_id: str) -> bool:
+        with self._lock:
+            sess = self.get(session_id)
+            if not sess:
+                return False
+            return _analysis_is_active(sess.get("analysis"))
+
+    def set_analysis_if_idle(self, session_id: str, analysis: Any) -> bool:
+        with self._lock:
+            sess = self.get(session_id)
+            if not sess or _analysis_is_active(sess.get("analysis")):
+                return False
+            sess["analysis"] = analysis
+            sess["last_accessed_at"] = self._now_fn()
+            self.persist(session_id)
+            return True
+
     def save_draft(self, session_id: str, draft_payload: dict[str, Any], selected_video_idx: int | None = None) -> dict[str, Any] | None:
         with self._lock:
             sess = self.get(session_id)
@@ -163,7 +205,7 @@ class SessionStore:
         now = self._now_fn()
 
         for session_id, sess in self.items():
-            last_access = float(sess.get("last_accessed_at") or sess.get("created_at") or now)
+            last_access = _safe_timestamp(sess.get("last_accessed_at") or sess.get("created_at"), now)
             analysis = sess.get("analysis")
             if analysis is None:
                 ttl = self._pending_ttl

@@ -135,6 +135,9 @@ class AnalysisHistoryStore:
                     output_dir TEXT,
                     result_files TEXT NOT NULL DEFAULT '[]',
                     config_summary TEXT NOT NULL DEFAULT '{}',
+                    project_id TEXT,
+                    project_name TEXT,
+                    project_run_id TEXT,
                     is_batch INTEGER NOT NULL DEFAULT 0,
                     created_at REAL,
                     started_at REAL,
@@ -145,9 +148,17 @@ class AnalysisHistoryStore:
                 )
                 """
             )
+            existing_cols = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(analysis_runs)").fetchall()
+            }
+            for col_name in ("project_id", "project_name", "project_run_id"):
+                if col_name not in existing_cols:
+                    conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col_name} TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_updated ON analysis_runs(updated_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_status ON analysis_runs(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_experiment ON analysis_runs(experiment_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_analysis_runs_project ON analysis_runs(project_id)")
 
     def mark_interrupted_running(self) -> int:
         now = self._now_fn()
@@ -217,6 +228,7 @@ class AnalysisHistoryStore:
         error_message = message if status == "error" else None
         now = self._now_fn()
         created_at = _safe_float(sess.get("created_at"), None) or start_time or now
+        project_context = sess.get("project_context") if isinstance(sess.get("project_context"), dict) else {}
 
         return {
             "run_id": str(session_id),
@@ -238,6 +250,9 @@ class AnalysisHistoryStore:
                 "end_sec": config.get("end_sec"),
                 "fps_override": config.get("fps_override"),
             },
+            "project_id": str(project_context.get("project_id") or ""),
+            "project_name": str(project_context.get("project_name") or ""),
+            "project_run_id": str(project_context.get("project_run_id") or ""),
             "is_batch": 1 if bool(sess.get("is_batch") or len(video_infos) > 1 or len(video_paths) > 1) else 0,
             "created_at": created_at,
             "started_at": start_time,
@@ -261,9 +276,10 @@ class AnalysisHistoryStore:
                 INSERT INTO analysis_runs (
                     run_id, session_id, experiment_type, experiment_label, experiment_short_label,
                     status, progress, message, video_names, video_paths, output_dir, result_files,
-                    config_summary, is_batch, created_at, started_at, finished_at, updated_at,
+                    config_summary, project_id, project_name, project_run_id,
+                    is_batch, created_at, started_at, finished_at, updated_at,
                     duration_seconds, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     session_id = excluded.session_id,
                     experiment_type = excluded.experiment_type,
@@ -277,6 +293,9 @@ class AnalysisHistoryStore:
                     output_dir = excluded.output_dir,
                     result_files = excluded.result_files,
                     config_summary = excluded.config_summary,
+                    project_id = COALESCE(NULLIF(excluded.project_id, ''), analysis_runs.project_id),
+                    project_name = COALESCE(NULLIF(excluded.project_name, ''), analysis_runs.project_name),
+                    project_run_id = COALESCE(NULLIF(excluded.project_run_id, ''), analysis_runs.project_run_id),
                     is_batch = excluded.is_batch,
                     created_at = COALESCE(analysis_runs.created_at, excluded.created_at),
                     started_at = COALESCE(analysis_runs.started_at, excluded.started_at),
@@ -299,6 +318,9 @@ class AnalysisHistoryStore:
                     record["output_dir"],
                     _json_dumps(record["result_files"]),
                     _json_dumps(record["config_summary"]),
+                    record["project_id"],
+                    record["project_name"],
+                    record["project_run_id"],
                     record["is_batch"],
                     record["created_at"],
                     record["started_at"],
@@ -337,6 +359,7 @@ class AnalysisHistoryStore:
         if not output_dir:
             output_dir = _derive_output_dir_from_files(existing_result_files)
         output_exists = bool(output_dir and os.path.isdir(output_dir))
+        has_result_files = bool(existing_result_files)
         return {
             "run_id": row["run_id"],
             "session_id": row["session_id"],
@@ -353,9 +376,13 @@ class AnalysisHistoryStore:
             "output_dir": output_dir,
             "result_files": result_files,
             "result_file_count": len(existing_result_files),
-            "has_results": bool(existing_result_files or output_exists),
+            "has_results": has_result_files,
             "has_output_dir": output_exists,
             "config_summary": _json_loads(row["config_summary"], {}),
+            "project_id": row["project_id"] or "",
+            "project_name": row["project_name"] or "",
+            "project_run_id": row["project_run_id"] or "",
+            "task_scope": "project" if (row["project_id"] or row["project_run_id"]) else "quick",
             "is_batch": bool(row["is_batch"]),
             "created_at": row["created_at"],
             "started_at": row["started_at"],
@@ -367,7 +394,7 @@ class AnalysisHistoryStore:
             "is_live": False,
             "can_monitor": False,
             "can_stop": False,
-            "can_download": bool(existing_result_files or output_exists),
+            "can_download": has_result_files,
             "can_open_folder": output_exists,
             "can_delete": row["status"] not in RUNNING_STATUSES,
         }
@@ -383,20 +410,23 @@ class AnalysisHistoryStore:
         has_analysis = analysis is not None
         status = record["status"] if has_analysis else ("configured" if sess.get("draft_payload") else "uploaded")
         video_names = record["video_names"]
+        has_result_files = bool(existing_result_files)
+        has_openable_output = bool(output_exists and (has_analysis or has_result_files))
         return {
             **record,
             "status": status,
             "primary_video_name": video_names[0] if video_names else str(session_id),
             "video_count": len(video_names),
             "result_file_count": len(existing_result_files),
-            "has_results": bool(existing_result_files or output_exists),
-            "has_output_dir": output_exists,
+            "has_results": has_result_files,
+            "has_output_dir": has_openable_output,
+            "task_scope": "project" if (record.get("project_id") or record.get("project_run_id")) else "quick",
             "source": "runtime",
             "is_live": True,
             "can_monitor": has_analysis,
             "can_stop": has_analysis and status in RUNNING_STATUSES,
-            "can_download": bool(existing_result_files or output_exists),
-            "can_open_folder": output_exists,
+            "can_download": has_result_files,
+            "can_open_folder": has_openable_output,
             "can_configure": not has_analysis,
             "can_delete": status not in RUNNING_STATUSES,
         }

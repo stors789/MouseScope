@@ -72,7 +72,7 @@
                     <li>优先使用稳定俯视或接近俯视的固定机位，不要在录制中移动相机。</li>
                     <li>中心区和三条臂都应完整可见，尽量避免某条臂被裁切或被反光遮挡。</li>
                     <li>保持鼠体和地面有明显亮度对比，减少阴影和局部高亮。</li>
-                    <li>如果臂外背景或实验台边缘容易误检，建议优先使用检测遮罩。</li>
+                    <li>当小鼠躯体可能超出已画臂区边界时，建议使用检测遮罩额外框定允许检测鼠体的范围。</li>
                 </ul>
             </section>
 
@@ -105,7 +105,7 @@
                 <div class="manual-sub-block">
                     <h4><i class="fas fa-mask" style="color: var(--primary-color);"></i><span>检测遮罩 detection mask</span></h4>
                     <ul class="manual-list">
-                        <li>遮罩只限制允许检测前景的区域，不会改变中心区和三条臂的统计边界。</li>
+                        <li>遮罩用于框定允许检测鼠体的范围，不会改变中心区和三条臂的统计边界。</li>
                         <li>如果不单独绘制，系统默认使用三角中心区与三条臂区域的并集作为检测区域。</li>
                     </ul>
                 </div>
@@ -282,7 +282,7 @@
                     <li>Use a stable top view or near-top view.</li>
                     <li>Keep the center and all three arms visible without heavy clipping.</li>
                     <li>Maintain strong contrast between the mouse and maze floor while minimizing glare and shadow.</li>
-                    <li>If background outside the arms is frequently detected, prefer a detection mask.</li>
+                    <li>If the mouse body may extend beyond a drawn arm boundary, use a detection mask to define the allowed detection area.</li>
                 </ul>
             </section>
 
@@ -301,7 +301,7 @@
                     <li>Each ROI represents one full Y-maze with center, Arm A, Arm B, and Arm C.</li>
                     <li>The center is defined by 3 clicks as a triangle junction, while Arm A / B / C each use 4 corner clicks. Point order is normalized automatically.</li>
                     <li>Enter arm length and arm width so MouseScope can estimate <code>cm_per_px_est</code>.</li>
-                    <li>The detection mask limits where foreground detection is allowed but does not redefine the statistical zones.</li>
+                    <li>The detection mask defines where the mouse body is allowed to be detected but does not redefine the statistical zones.</li>
                 </ul>
                 <table class="manual-data-table">
                     <thead><tr><th>Mode</th><th>Meaning</th><th>Recommended use</th></tr></thead>

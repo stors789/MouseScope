@@ -20,6 +20,7 @@ from services.payload_geometry import (
     coerce_zone_polygons as _coerce_zone_polygons,
     coerce_zone_polygons_with_schema as _coerce_zone_polygons_with_schema,
 )
+from services.video_frame_reader import read_video_frame
 
 
 DETECTION_MASK_MIN_POINTS = 3
@@ -49,6 +50,17 @@ def _session_total_frames(sess: dict[str, Any], video_idx: int) -> int:
         except Exception:
             return 0
     return 0
+
+
+def _session_video_fps(sess: dict[str, Any], video_idx: int) -> float | None:
+    infos = sess.get('video_infos') or []
+    if 0 <= video_idx < len(infos) and isinstance(infos[video_idx], dict):
+        info = infos[video_idx]
+        try:
+            return float(info.get('detected_fps') or info.get('fps') or 0.0) or None
+        except Exception:
+            return None
+    return None
 
 
 def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) -> None:
@@ -225,6 +237,8 @@ def _novel_object_debug_preview(frame, data, video_path):
             use_head_direction=bool(data.get('use_head_direction', True)),
             head_angle_threshold_deg=float(data.get('head_angle_threshold_deg', 50.0)),
             head_confidence_threshold=float(data.get('head_confidence_threshold', 0.35)),
+            body_gray_threshold=int(data.get('body_gray_threshold', 95)),
+            mouse_is_light=invert,
             movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
             min_valid_exploration_s=float(data.get('min_valid_exploration_s', 20.0)),
         )
@@ -497,12 +511,9 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         frame_idx = min(frame_idx, total_frames - 1)
 
     video_path = video_paths[video_idx]
-    cap = cv2.VideoCapture(video_path)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-    ret, frame = cap.read()
-    cap.release()
+    frame = read_video_frame(video_path, frame_idx, fps=_session_video_fps(sess, video_idx))
 
-    if not ret:
+    if frame is None:
         return jsonify({'error': '无法读取帧'}), 400
 
     experiment_type = sess.get('experiment_type')

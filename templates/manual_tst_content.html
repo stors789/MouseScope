@@ -90,7 +90,7 @@
                     title: '体长标定与 ROI',
                     lead: 'TST 的尺度标准是 6 cm 标准体长。批量模式下，每个视频都要独立完成这一步，不能只标第一个视频然后直接套给全部。',
                     bodyPoints: [
-                        '体长标定时应沿鼠体主轴画线，使用身体长度，不包含尾巴。线段越贴合真实体长，后续光流归一化越可靠。',
+                        '体长标定时点击小鼠鼻尖和尾巴根部，画出不包含尾巴的主体体长线。线段越贴合真实体长，后续光流归一化越可靠。',
                         '标定完成后系统会得到 <code>pixel_to_mm</code>，用于把像素运动换算到归一化物理尺度。',
                         '如果跳过标定，系统会退回默认比例，跨视频比较会更容易受机位远近影响。'
                     ],
@@ -116,12 +116,12 @@
                         rows: [
                             ['<code>bg_method</code>', '调参页', '当前 TST GUI 仅提供灰度阈值法，用亮度分割前景。', '一般无需改动，因为当前只有这一种方式。'],
                             ['<code>bg_type</code>', '调参页', '告诉系统背景是浅还是深，从而决定阈值分割的方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
-                            ['<code>gray_threshold</code>', '调参页', '灰度阈值，控制前景分割的严格程度。', '噪点多就更严格；鼠体被吃掉或断裂就更宽松。'],
-                            ['<code>erosion_kernel</code>', '调参页', '腐蚀核大小，优先去掉小噪点和毛边。', '误检碎点多时增大；鼠体细节被过度削弱时减小。'],
+                            ['<code>gray_threshold</code>', '调参页', '灰度阈值，控制前景分割的严格程度。', '目标是让轮廓紧密包住小鼠除尾巴外的主体躯干；噪点多就更严格，主体被吃掉或断裂就更宽松。'],
+                            ['<code>erosion_kernel</code>', '调参页', '腐蚀核大小，优先去掉小噪点和毛边。', '调到噪点消失但主体躯干不被削掉；轮廓越贴合躯干越好。'],
                             ['<code>erosion_iter</code>', '调参页', '腐蚀次数，决定去噪强度。', '和腐蚀核一起调；数值过大容易把鼠体侵蚀得太小。'],
-                            ['<code>dilation_kernel</code>', '调参页', '膨胀核大小，用于补回轮廓空洞和断裂。', '轮廓断裂或身体不完整时增大；背景噪声和鼠体黏连时减小。'],
-                            ['<code>dilation_iter</code>', '调参页', '膨胀次数，决定轮廓修补力度。', '轮廓仍破碎时增大；相邻噪声粘连时减小。'],
-                            ['<code>min_area</code>', '调参页', '最小轮廓面积，过滤太小的误检。', '误检细小亮点就增大；鼠体太小被漏检就减小。'],
+                            ['<code>dilation_kernel</code>', '调参页', '膨胀核大小，用于补回轮廓空洞和断裂。', '主体躯干轮廓断裂时增大；一旦把尾巴、胶带或背景也粘进来就减小。'],
+                            ['<code>dilation_iter</code>', '调参页', '膨胀次数，决定轮廓修补力度。', '轮廓仍破碎时增大；包裹过松、外扩太多或粘连背景时减小。'],
+                            ['<code>min_area</code>', '调参页', '最小轮廓面积，过滤太小的误检。', '过滤细小噪点，同时保留主体躯干轮廓；真正鼠体被过滤掉就减小。'],
                             ['<code>auto_behavior_threshold</code>', '调参页', '自动根据当前视频的运动分布估计挣扎判定阈值。', '不同视频运动幅度差异较大时建议开启；正式统计前仍需复核结果视频。'],
                             ['<code>behavior_threshold_sensitivity</code>', '调参页', '自动阈值的灵敏度。数值越高，越容易进入挣扎判定。', '自动阈值开启后可用；误判挣扎偏多就降低，漏判挣扎偏多就提高。'],
                             ['<code>generate_video</code>', '开始分析前', '是否导出带叠加标注的视频。', '关闭后可以明显提速，但会失去最直观的复核材料。']
@@ -137,7 +137,7 @@
                         ]
                     },
                     callouts: [
-                        ['info', '预览时应该重点看什么', '不要只看有没有框到鼠。你要重点确认三件事：轮廓是否稳定、状态文本是否大体符合肉眼观察、同一视频里的所有 ROI 是否都没有明显偏差。'],
+                        ['info', '预览时应该重点看什么', '不要只看有没有框到鼠。重点看绿色轮廓是否大致包住小鼠除尾巴外的主体躯干，包裹越紧密越好；再确认状态文本是否大体符合肉眼观察、同一视频里的所有 ROI 是否都没有明显偏差。'],
                         ['warning', '预览只代表当前帧附近', '单帧预览不能完全替代整段视频复核。对边缘情况多的视频，建议先用 1 到 2 条样本跑一遍完整结果视频，再决定整批是否沿用这套参数。']
                     ]
                 },
@@ -311,7 +311,7 @@
                     title: 'Body calibration and ROI',
                     lead: 'TST uses a 6 cm standard body length for scale normalization. In batch mode, each video must complete this step independently; calibrating only the first video is no longer considered correct usage.',
                     bodyPoints: [
-                        'Draw the body-length line along the main body axis, excluding the tail. The closer the line is to the real body length, the more reliable the normalized flow scaling becomes.',
+                        'Click the mouse nose tip and tail base to draw the body-length line, excluding the tail. The closer the line is to the real body length, the more reliable the normalized flow scaling becomes.',
                         'The system converts this into <code>pixel_to_mm</code>, which is later used for flow normalization and cross-video comparability.',
                         'If you skip calibration, the system falls back to a default scale and comparisons across different camera distances become less reliable.'
                     ],
@@ -337,12 +337,12 @@
                         rows: [
                             ['<code>bg_method</code>', 'Tuning page', 'The current TST GUI exposes the grayscale-threshold pathway for foreground extraction.', 'Usually unchanged because only this method is currently available in the GUI.'],
                             ['<code>bg_type</code>', 'Tuning page', 'Tells the segmenter whether the background is light or dark.', 'Use <code>light</code> for dark mice on light backgrounds; <code>dark</code> for light mice on dark backgrounds.'],
-                            ['<code>gray_threshold</code>', 'Tuning page', 'Controls how strict the grayscale foreground split is.', 'Make it stricter when noise is abundant; relax it when the mouse contour breaks or disappears.'],
-                            ['<code>erosion_kernel</code>', 'Tuning page', 'Sets the erosion kernel size for removing small noise and edge fuzz.', 'Increase when tiny false positives appear; decrease when the mouse body is overly eaten away.'],
+                            ['<code>gray_threshold</code>', 'Tuning page', 'Controls how strict the grayscale foreground split is.', 'Aim for a tight contour around the mouse body trunk excluding the tail; make it stricter when noise is abundant and relax it when the trunk is eaten away or broken.'],
+                            ['<code>erosion_kernel</code>', 'Tuning page', 'Sets the erosion kernel size for removing small noise and edge fuzz.', 'Remove noise without shaving off the trunk; tighter fit around the trunk is better.'],
                             ['<code>erosion_iter</code>', 'Tuning page', 'Controls erosion strength via repeat count.', 'Tune together with the kernel; too large can shrink the mouse too much.'],
-                            ['<code>dilation_kernel</code>', 'Tuning page', 'Sets the dilation kernel used to reconnect fragmented contours.', 'Increase when the body contour is broken; decrease when noise merges into the body.'],
-                            ['<code>dilation_iter</code>', 'Tuning page', 'Controls dilation strength via repeat count.', 'Increase when contours stay fragmented; reduce when clutter fuses into the mouse.'],
-                            ['<code>min_area</code>', 'Tuning page', 'Filters out contours smaller than the specified area.', 'Increase when tiny artifacts survive; reduce when a small mouse body is being discarded.'],
+                            ['<code>dilation_kernel</code>', 'Tuning page', 'Sets the dilation kernel used to reconnect fragmented contours.', 'Increase when the trunk contour is broken; decrease when the tail, tape, or background starts merging into it.'],
+                            ['<code>dilation_iter</code>', 'Tuning page', 'Controls dilation strength via repeat count.', 'Increase when contours stay fragmented; reduce when the outline becomes loose or fuses with clutter.'],
+                            ['<code>min_area</code>', 'Tuning page', 'Filters out contours smaller than the specified area.', 'Filter tiny artifacts while keeping the trunk contour; reduce it if the real mouse body is discarded.'],
                             ['<code>auto_behavior_threshold</code>', 'Tuning page', 'Automatically estimates behavior thresholds from the current video motion distribution.', 'Useful when motion amplitude differs across videos; still review result videos before formal statistics.'],
                             ['<code>behavior_threshold_sensitivity</code>', 'Tuning page', 'Sensitivity for the automatic threshold. Higher values make struggling easier to enter.', 'Available when auto threshold is enabled; lower it for too many false struggles and raise it for missed struggles.'],
                             ['<code>generate_video</code>', 'Before analysis starts', 'Whether an annotated result video should be exported.', 'Turning it off speeds up analysis, but removes the most important manual review artifact.']
@@ -358,7 +358,7 @@
                         ]
                     },
                     callouts: [
-                        ['info', 'What to focus on during preview', 'Do not only ask whether the mouse is detected. Check whether the contour is stable, whether the status text roughly matches human observation, and whether all ROIs in that video are acceptable with the same tuning set.'],
+                        ['info', 'What to focus on during preview', 'Do not only ask whether the mouse is detected. Check whether the green contour roughly wraps the body trunk excluding the tail; tighter is better. Then confirm that state text roughly matches human observation and that all ROIs in the video are acceptable with the same tuning set.'],
                         ['warning', 'A preview is not the whole experiment', 'A single preview frame does not replace a full result-video review. For difficult videos, run one or two full examples first before trusting the same parameters on the rest of the batch.']
                     ]
                 },

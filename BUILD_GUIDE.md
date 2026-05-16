@@ -47,6 +47,9 @@ pyinstaller --name MouseScope \
     --hidden-import services.analysis_sessions \
     --hidden-import services.debug_preview \
     --hidden-import services.payload_geometry \
+    --hidden-import services.video_export \
+    --hidden-import imageio_ffmpeg \
+    --collect-data imageio_ffmpeg \
     --hidden-import routes.pages \
     --hidden-import routes.api \
     --exclude-module tkinter \

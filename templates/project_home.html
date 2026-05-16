@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} - MouseScope 项目{% endblock %}
+
+{% block extra_css %}
+<style>
+.project-shell { max-width: 1360px; margin:0 auto; }
+.project-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; margin-bottom:1.1rem; }
+.project-path { color:var(--text-muted); font-size:.84rem; word-break:break-all; }
+.project-tabs { display:flex; gap:.45rem; flex-wrap:wrap; padding:.35rem; background:rgba(255,255,255,.62); border:1px solid var(--border-card); border-radius:999px; margin-bottom:1rem; }
+.project-tab { border:0; background:transparent; color:var(--text-muted); padding:.58rem .9rem; border-radius:999px; font-weight:700; }
+.project-tab.active { background:rgba(201,100,66,.12); color:var(--primary-color); }
+.project-panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:18px; padding:1rem; box-shadow:var(--shadow-card); margin-bottom:1rem; }
+.stat-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.75rem; margin-bottom:1rem; }
+.stat-box { background:var(--bg-card); border:1px solid var(--border-card); border-radius:12px; padding:.85rem; box-shadow:var(--shadow-card); }
+.stat-box strong { display:block; color:var(--primary-color); font-size:1.35rem; line-height:1.1; }
+.stat-box span { color:var(--text-muted); font-size:.82rem; }
+.workspace-grid { display:grid; grid-template-columns:minmax(280px,.72fr) minmax(0,1.4fr); gap:1rem; align-items:start; }
+.video-workspace-grid { display:grid; grid-template-columns:minmax(280px,.46fr) minmax(0,1fr); gap:1rem; align-items:start; }
+.table-wrap { overflow:auto; border:1px solid var(--border-card); border-radius:14px; }
+.table-wrap table { margin-bottom:0; }
+.table-wrap th { white-space:nowrap; color:var(--text-secondary); font-size:.83rem; }
+.table-wrap td { vertical-align:middle; }
+.section-pane { display:none; }
+.section-pane.active { display:block; }
+.color-dot { width:.8rem; height:.8rem; border-radius:50%; display:inline-block; vertical-align:middle; border:1px solid rgba(0,0,0,.12); }
+.subject-select { min-width: 170px; }
+.group-card {
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.72);
+    padding: .75rem;
+}
+.group-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: .75rem;
+    margin-bottom: .65rem;
+}
+.group-subject-tools {
+    display: grid;
+    grid-template-columns: minmax(92px, .65fr) minmax(120px, 1fr);
+    gap: .5rem;
+    align-items: end;
+}
+.subject-code-input { min-width: 150px; max-width: 240px; font-weight: 700; }
+.video-path-box { min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.project-drop-zone {
+    border: 1px dashed rgba(201, 100, 66, 0.45);
+    border-radius: 14px;
+    background: rgba(255, 250, 245, 0.78);
+    padding: 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+    transition: border-color .15s ease, background .15s ease;
+}
+.project-drop-zone.dragover {
+    border-color: var(--primary-color);
+    background: rgba(201, 100, 66, 0.08);
+}
+.uploaded-file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-top: .55rem;
+}
+.uploaded-file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    max-width: 100%;
+    padding: .25rem .55rem;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: rgba(255,255,255,.76);
+    color: var(--text-secondary);
+    font-size: .82rem;
+}
+.uploaded-file-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.panel-titlebar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-bottom: .75rem;
+}
+.panel-eyebrow {
+    color: var(--text-muted);
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+.workflow-note {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .55rem;
+    margin-bottom: .85rem;
+}
+.workflow-step {
+    min-height: 72px;
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.62);
+    padding: .65rem .75rem;
+}
+.workflow-step strong {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    color: var(--text-primary);
+    font-size: .88rem;
+    margin-bottom: .2rem;
+}
+.workflow-step span {
+    color: var(--text-muted);
+    font-size: .78rem;
+    line-height: 1.45;
+}
+.guidance-banner {
+    display: flex;
+    gap: .65rem;
+    align-items: flex-start;
+    border: 1px solid rgba(201,100,66,.25);
+    border-left: 4px solid var(--primary-color);
+    border-radius: 12px;
+    background: rgba(255,250,245,.8);
+    padding: .75rem .85rem;
+    color: var(--text-secondary);
+    font-size: .88rem;
+    line-height: 1.55;
+    margin-bottom: .85rem;
+}
+.guidance-banner i {
+    color: var(--primary-color);
+    margin-top: .2rem;
+}
+.project-library-panel,
+.project-analysis-panel {
+    overflow: hidden;
+}
+.video-list,
+.assignment-list {
+    display: grid;
+    gap: .65rem;
+}
+.video-card {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, .42fr) minmax(90px, auto);
+    gap: .75rem;
+    align-items: center;
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.72);
+    padding: .8rem;
+}
+.video-card-main,
+.assignment-main {
+    min-width: 0;
+}
+.video-title,
+.assignment-title {
+    color: var(--text-primary);
+    font-weight: 800;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.video-path-line {
+    margin-top: .35rem;
+    color: var(--text-muted);
+    font-size: .78rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.video-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .82rem;
+    font-weight: 700;
+}
+.video-status::before {
+    content: "";
+    width: .45rem;
+    height: .45rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+.video-meta {
+    display: flex;
+    gap: .45rem;
+    flex-wrap: wrap;
+    margin-top: .45rem;
+}
+.meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: var(--bg-page);
+    color: var(--text-secondary);
+    padding: .2rem .5rem;
+    font-size: .78rem;
+}
+.video-experiment {
+    display: grid;
+    gap: .35rem;
+}
+.video-experiment-label {
+    color: var(--text-muted);
+    font-size: .76rem;
+    font-weight: 800;
+}
+.video-experiment .form-select {
+    min-width: 170px;
+}
+.experiment-required {
+    color: var(--primary-color);
+    font-size: .76rem;
+    line-height: 1.35;
+}
+.video-actions {
+    text-align: right;
+}
+.analysis-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+}
+.selection-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.62);
+    padding: .65rem .75rem;
+    margin-bottom: .75rem;
+}
+.selection-summary {
+    color: var(--text-secondary);
+    font-size: .86rem;
+}
+.assignment-card {
+    display: grid;
+    grid-template-columns: auto minmax(150px,.25fr) minmax(220px,1fr) auto;
+    gap: .75rem;
+    align-items: center;
+    border: 1px solid var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.72);
+    padding: .75rem .85rem;
+}
+.assignment-card.is-disabled {
+    opacity: .62;
+}
+.experiment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-size: .8rem;
+    font-weight: 800;
+    padding: .28rem .6rem;
+}
+.empty-state {
+    border: 1px dashed var(--border-card);
+    border-radius: 12px;
+    background: rgba(255,255,255,.46);
+    color: var(--text-muted);
+    padding: 1rem;
+    text-align: center;
+}
+.result-grid { display:grid; gap:.75rem; }
+.result-card { border:1px solid var(--border-card); border-radius:12px; background:rgba(255,255,255,.72); padding:.9rem; }
+.result-card-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; flex-wrap:wrap; margin-bottom:.45rem; }
+.result-title { font-weight:800; color:var(--text-primary); }
+.result-meta { display:flex; gap:.75rem; flex-wrap:wrap; color:var(--text-muted); font-size:.84rem; margin:.35rem 0; }
+.mini-note { color:var(--text-muted); font-size:.88rem; line-height:1.65; }
+.run-status { display:inline-flex; align-items:center; gap:.35rem; border:1px solid var(--border-card); background:var(--bg-page); border-radius:999px; padding:.25rem .55rem; font-size:.82rem; }
+@media (max-width: 1100px) { .workspace-grid, .video-workspace-grid, .stat-grid, .workflow-note { grid-template-columns:1fr; } .project-tabs { border-radius:18px; } .video-card, .assignment-card { grid-template-columns:1fr; align-items:start; } .video-actions { text-align:left; } }
+@media (max-width: 560px) { .group-subject-tools { grid-template-columns:1fr; } .subject-code-input { max-width:none; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="project-shell" data-project-id="{{ project.project_id }}" data-tour-page="project_home">
+    <div class="project-header">
+        <div>
+            <div class="text-muted small" data-i18n="project.kicker">MouseScope Project Workspace v3.0.0</div>
+            <h1 class="display-6 cyber-text mb-1">{{ project.name }}</h1>
+            <div class="project-path">{{ project.project_dir }}</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary" href="{{ url_for('projects_page') }}"><i class="fas fa-arrow-left me-2"></i><span data-i18n="project.back">项目列表</span></a>
+            <button class="btn btn-success" type="button" onclick="openProjectFolder()"><i class="fas fa-folder-open me-2"></i><span data-i18n="project.open_folder">打开项目文件夹</span></button>
+        </div>
+    </div>
+
+    <div class="stat-grid" id="statGrid"></div>
+
+    <div class="project-tabs" role="tablist">
+        <button class="project-tab active" type="button" data-tab="subjects" data-tour-id="project-tab-subjects" onclick="showTab('subjects')"><i class="fas fa-users me-1"></i><span data-i18n="project.tabs.subjects">组别与小鼠</span></button>
+        <button class="project-tab" type="button" data-tab="videos" data-tour-id="project-tab-videos" onclick="showTab('videos')"><i class="fas fa-film me-1"></i><span data-i18n="project.tabs.videos">视频库</span></button>
+        <button class="project-tab" type="button" data-tab="analysis" data-tour-id="project-tab-analysis" onclick="showTab('analysis')"><i class="fas fa-play me-1"></i><span data-i18n="project.tabs.analysis">分析</span></button>
+        <button class="project-tab" type="button" data-tab="results" data-tour-id="project-tab-results" onclick="showTab('results')"><i class="fas fa-chart-column me-1"></i><span data-i18n="project.tabs.results">结果</span></button>
+    </div>
+
+    <div id="projectAlert" class="alert alert-info" style="display:none;"></div>
+
+    <section class="section-pane active" id="pane-subjects">
+        <div class="workspace-grid">
+            <div class="project-panel">
+                <h5 data-i18n="project.groups.add_title">新增组别</h5>
+                <form id="groupForm" class="row g-2" data-tour-id="project-groups">
+                    <div class="col-md-8"><input class="form-control" id="groupName" data-i18n="project.groups.name_ph" data-i18n-attr="placeholder" placeholder="Control / Model" required></div>
+                    <div class="col-md-4 d-grid"><button class="btn btn-primary" type="submit"><i class="fas fa-plus me-2"></i><span data-i18n="project.groups.add_btn">添加组别</span></button></div>
+                </form>
+                <hr>
+                <h6 data-i18n="project.groups.list">组别列表</h6>
+                <div id="groupList" class="d-grid gap-2"></div>
+            </div>
+            <div class="project-panel" data-tour-id="project-subjects">
+                <h5 data-i18n="project.subjects.list_title">小鼠列表</h5>
+                <div class="mini-note mb-3" data-i18n="project.subjects.batch_hint">在左侧组别卡片里选择数量即可批量生成小鼠；生成后仍可直接修改小鼠编号。</div>
+                <div class="table-wrap">
+                    <table class="table table-hover align-middle">
+                        <thead><tr>
+                            <th data-i18n="project.subjects.table.subject">小鼠</th>
+                            <th data-i18n="project.subjects.table.group">组别</th>
+                            <th></th>
+                        </tr></thead>
+                        <tbody id="subjectTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-pane" id="pane-videos">
+        <div class="video-workspace-grid">
+            <div class="project-panel">
+                <h5 data-i18n="project.videos.import_title">导入视频</h5>
+                <div class="mini-note mb-2" data-i18n="project.videos.import_note">先导入视频记录；导入后在右侧视频库中逐个选择实验类型。</div>
+                <form id="videoImportForm" class="row g-2">
+                    <div class="col-12">
+                        <div class="project-drop-zone" id="projectVideoDropZone" data-tour-id="project-video-drop">
+                            <input type="file" id="projectVideoFileInput" accept=".mp4,.avi,.mov,.mkv,.wmv" multiple hidden>
+                            <div class="fw-semibold mb-1"><i class="fas fa-cloud-arrow-up me-2"></i><span data-i18n="project.videos.drop_title">拖拽视频到这里</span></div>
+                            <div class="small text-muted mb-2" data-i18n="project.videos.drop_hint">支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件</div>
+                            <div class="small text-muted mb-2" data-i18n="project.videos.upload_cache_note">拖拽/选择文件会使用软件副本；分析成功后只清理这份副本，不会删除你电脑里的原视频。</div>
+                            <button class="btn btn-outline-primary btn-sm" type="button" id="chooseProjectVideosBtn">
+                                <i class="fas fa-folder-open me-1"></i><span data-i18n="project.videos.choose_files">选择视频文件</span>
+                            </button>
+                        </div>
+                        <div class="small mt-2" id="projectVideoUploadStatus"></div>
+                        <div class="uploaded-file-list" id="projectUploadedFiles"></div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="project.videos.local_paths_label">也可粘贴本机路径</label>
+                        <textarea class="form-control video-path-box" id="videoPaths" data-tour-id="project-video-paths" data-i18n="project.videos.paths_ph" data-i18n-attr="placeholder" placeholder="每行一个视频文件或文件夹路径"></textarea>
+                    </div>
+                    <div class="col-12 d-grid"><button class="btn btn-primary" type="submit"><i class="fas fa-file-import me-2"></i><span data-i18n="project.videos.import_btn">导入视频</span></button></div>
+                </form>
+            </div>
+            <div class="project-panel project-library-panel">
+                <div class="panel-titlebar">
+                    <div>
+                        <div class="panel-eyebrow" data-i18n="project.videos.library_eyebrow">项目视频库</div>
+                        <h5 class="mb-1" data-i18n="project.videos.library">视频库</h5>
+                        <div class="mini-note" data-i18n="project.videos.library_note">导入后先在这里为每个视频指定实验类型。</div>
+                    </div>
+                </div>
+                <div class="guidance-banner" data-tour-id="project-video-type-guide">
+                    <i class="fas fa-circle-info"></i>
+                    <div data-i18n="project.videos.type_required_hint">每个视频都必须选择实验类型后，才会生成项目分析记录；未选择实验类型的视频不会出现在“分析”页，也不能开始分析。</div>
+                </div>
+                <div class="video-list" id="videoTable" data-tour-id="project-video-table"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-pane" id="pane-analysis">
+        <div class="project-panel project-analysis-panel">
+            <div class="analysis-head">
+                <div>
+                    <div class="panel-eyebrow" data-i18n="project.analysis.eyebrow">项目分析队列</div>
+                    <h5 class="mb-1" data-i18n="project.analysis.title">项目分析</h5>
+                    <div class="mini-note" data-i18n="project.analysis.note">在视频库中为视频选择实验类型后，实验记录会出现在这里。勾选同一种实验类型的视频记录即可进入配置和分析流程。</div>
+                </div>
+                <button class="btn btn-primary" type="button" data-tour-id="project-start-analysis" onclick="startSelectedAssignments()"><i class="fas fa-play me-2"></i><span data-i18n="project.analysis.start">开始配置 / 分析</span></button>
+            </div>
+            <div class="workflow-note" data-tour-id="project-analysis-guide">
+                <div class="workflow-step">
+                    <strong><i class="fas fa-film"></i><span data-i18n="project.analysis.step1_title">先选实验类型</span></strong>
+                    <span data-i18n="project.analysis.step1_body">视频库中未指定实验类型的视频不会进入这里。</span>
+                </div>
+                <div class="workflow-step">
+                    <strong><i class="fas fa-check-square"></i><span data-i18n="project.analysis.step2_title">勾选同类记录</span></strong>
+                    <span data-i18n="project.analysis.step2_body">一次项目分析只能包含同一种实验类型。</span>
+                </div>
+                <div class="workflow-step">
+                    <strong><i class="fas fa-sliders"></i><span data-i18n="project.analysis.step3_title">进入配置</span></strong>
+                    <span data-i18n="project.analysis.step3_body">确认后进入 ROI、参数和预览流程。</span>
+                </div>
+            </div>
+            <div class="selection-bar">
+                <label class="form-check-label d-inline-flex align-items-center gap-2">
+                    <input type="checkbox" class="form-check-input m-0" id="selectAllAssignments" onchange="toggleAllAssignments(this.checked)">
+                    <span data-i18n="project.analysis.select_all">全选可用记录</span>
+                </label>
+                <div class="selection-summary" id="assignmentSelectionSummary" data-i18n="project.analysis.selection_empty">尚未选择分析记录</div>
+            </div>
+            <div class="assignment-list" id="assignmentTable" data-tour-id="project-analysis-list"></div>
+        </div>
+    </section>
+
+    <section class="section-pane" id="pane-results">
+        <div class="project-panel">
+            <h5 data-i18n="project.results.title">结果与运行记录</h5>
+            <div class="mini-note mb-3" data-i18n="project.results.note">这里汇总从项目启动的分析结果，方便直接打开结果目录继续整理。</div>
+            <div id="runList" data-tour-id="project-results"></div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.MouseScopeProject = {
+    projectId: {{ project.project_id | tojson }},
+    experiments: [
+        {% for spec in experiments %}
+        {key: {{ spec.key | tojson }}, label: {{ (spec.short_label ~ ' · ' ~ spec.label) | tojson }}}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+};
+</script>
+<script src="{{ url_for('static', filename='js/project_home.js') }}"></script>
+{% endblock %}

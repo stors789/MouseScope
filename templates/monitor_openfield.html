@@ -121,7 +121,8 @@
             <div class="monitor-card" id="downloadSection" style="display:none;">
                 <h5 class="mb-3" data-i18n="oft.monitor.download.title">结果下载</h5>
                 <div class="download-grid">
-                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-i18n="oft.monitor.download.all">全部下载</span></a>
+                    <button type="button" class="btn btn-success" onclick="openResultFolder()"><i class="fas fa-folder-open me-2"></i><span data-i18n="oft.monitor.download.open_folder">打开结果目录</span></button>
+                    <a href="#" id="downloadAllBtn" class="btn btn-outline-primary"><i class="fas fa-archive me-2"></i><span data-i18n="oft.monitor.download.all">全部下载</span></a>
                     <a href="#" id="dlVideo" class="btn btn-outline-primary" data-i18n="oft.monitor.download.video">标注视频</a>
                     <a href="#" id="dlTrack" class="btn btn-outline-primary" data-i18n="oft.monitor.download.track">轨迹 CSV</a>
                     <a href="#" id="dlSummary" class="btn btn-outline-primary" data-i18n="oft.monitor.download.summary">汇总 CSV</a>
@@ -129,7 +130,6 @@
                     <a href="#" id="dlReport" class="btn btn-outline-primary" data-i18n="oft.monitor.download.report">TXT 报告</a>
                     <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-i18n="oft.monitor.download.heatmap">热图</a>
                     <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-i18n="oft.monitor.download.trackmap">轨迹图</a>
-                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-i18n="oft.monitor.download.open_folder">打开结果目录</button>
                 </div>
                 <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
                     <span data-i18n="oft.monitor.download.save_path">保存位置:</span> <code id="resultPathText"></code>

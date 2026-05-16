@@ -908,6 +908,7 @@ class MouseTracker:
             return {
                 'roi_id': self.roi_id,
                 'roi_name': self.roi_name,
+                'roi_bbox': self.roi_bbox,
                 'detected': False,
                 'centroid': None,
                 'contour': None,
@@ -1360,6 +1361,7 @@ class MouseTracker:
         return {
             'roi_id': self.roi_id,
             'roi_name': self.roi_name,
+            'roi_bbox': self.roi_bbox,
             'detected': True,
             'centroid': detection['centroid'],
             'contour': detection['contour'],
@@ -1690,6 +1692,41 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
     # 【性能优化】避免不必要的复制
     output = frame if inplace else frame.copy()
     occupied_panels = []
+    frame_h, frame_w = output.shape[:2]
+
+    def _overlaps(rect_a, rect_b):
+        ax1, ay1, ax2, ay2 = rect_a
+        bx1, by1, bx2, by2 = rect_b
+        return ax1 < bx2 and ax2 > bx1 and ay1 < by2 and ay2 > by1
+
+    def _overlap_area(rect_a, rect_b):
+        ax1, ay1, ax2, ay2 = rect_a
+        bx1, by1, bx2, by2 = rect_b
+        ow = max(0, min(ax2, bx2) - max(ax1, bx1))
+        oh = max(0, min(ay2, by2) - max(ay1, by1))
+        return ow * oh
+
+    def _clamp_panel_to_frame(x, y, panel_width, panel_height):
+        x = max(5, min(int(round(x)), frame_w - panel_width - 5))
+        y = max(5, min(int(round(y)), frame_h - panel_height - 5))
+        return x, y
+
+    def _coerce_bbox(value):
+        if value is None:
+            return None
+        try:
+            values = list(value)
+        except TypeError:
+            return None
+        if len(values) != 4:
+            return None
+        try:
+            x, y, w, h = [int(round(float(v))) for v in values]
+        except Exception:
+            return None
+        if w <= 0 or h <= 0:
+            return None
+        return x, y, w, h
     
     for result in tracker_results:
         if not result['detected']:
@@ -1762,32 +1799,36 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         panel_height = len(info_lines) * line_step + 9
         
         # 位置
-        def _overlaps(rect_a, rect_b):
-            ax1, ay1, ax2, ay2 = rect_a
-            bx1, by1, bx2, by2 = rect_b
-            return ax1 < bx2 and ax2 > bx1 and ay1 < by2 and ay2 > by1
+        roi_bbox = _coerce_bbox(result.get('roi_bbox'))
+        if roi_bbox is None:
+            roi_bbox = (max(0, cx - panel_width // 2), max(0, y_min), panel_width, panel_height)
+        roi_x, roi_y, roi_w, roi_h = roi_bbox
+        roi_x2 = roi_x + roi_w
+        row_gap = 4
+        base_x = roi_x + 4
+        base_y = roi_y - panel_height - 8
 
         def _clamp_panel(x, y):
-            x = max(5, min(int(x), output.shape[1] - panel_width - 5))
-            y = max(5, min(int(y), output.shape[0] - panel_height - 5))
-            return x, y
+            return _clamp_panel_to_frame(x, y, panel_width, panel_height)
 
-        def _overlap_area(rect_a, rect_b):
-            ax1, ay1, ax2, ay2 = rect_a
-            bx1, by1, bx2, by2 = rect_b
-            ow = max(0, min(ax2, bx2) - max(ax1, bx1))
-            oh = max(0, min(ay2, by2) - max(ay1, by1))
-            return ow * oh
-
-        base_x = cx - panel_width // 2
-        base_y = y_min - panel_height - 10
+        x_candidates = [
+            base_x,
+            roi_x + roi_w / 2.0 - panel_width / 2.0,
+            roi_x2 - panel_width - 4,
+            cx - panel_width / 2.0,
+        ]
+        above_y_candidates = [
+            base_y - row * (panel_height + row_gap)
+            for row in range(4)
+        ]
+        fallback_y_candidates = [
+            roi_y + 6 + row * (panel_height + row_gap)
+            for row in range(2)
+        ]
         candidate_positions = [
-            (base_x, base_y),
-            (base_x, cy + 12),
-            (cx + 12, cy - panel_height // 2),
-            (cx - panel_width - 12, cy - panel_height // 2),
-            (base_x, y_min - panel_height * 2 - 14),
-            (base_x, y_min + 8),
+            (cand_x, cand_y)
+            for cand_y in above_y_candidates + fallback_y_candidates
+            for cand_x in x_candidates
         ]
 
         best_score = None
@@ -1796,21 +1837,24 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
             cand_x, cand_y = _clamp_panel(cand_x, cand_y)
             rect = (cand_x, cand_y, cand_x + panel_width, cand_y + panel_height)
             overlap = sum(_overlap_area(rect, existing) for existing in occupied_panels)
-            distance = abs(cand_x - base_x) + abs(cand_y - base_y)
-            score = overlap * 1000 + distance
+            below_roi_penalty = 5000 if cand_y >= roi_y else 0
+            distance = abs(cand_x - base_x) + abs(cand_y - base_y) * 3 + below_roi_penalty
+            score = overlap * 10000 + distance
             if best_score is None or score < best_score:
                 best_score = score
                 panel_x, panel_y = cand_x, cand_y
-            if overlap == 0:
-                break
 
         panel_rect = (panel_x, panel_y, panel_x + panel_width, panel_y + panel_height)
+        attempts = 0
         while any(_overlaps(panel_rect, existing) for existing in occupied_panels):
-            next_y = panel_y + panel_height + 4
-            if next_y + panel_height > output.shape[0] - 5:
+            next_y = panel_y - panel_height - row_gap
+            if next_y < 5:
+                next_y = panel_y + panel_height + row_gap
+            if next_y + panel_height > frame_h - 5 or attempts >= 12:
                 break
-            panel_y = next_y
+            panel_x, panel_y = _clamp_panel(panel_x, next_y)
             panel_rect = (panel_x, panel_y, panel_x + panel_width, panel_y + panel_height)
+            attempts += 1
         occupied_panels.append(panel_rect)
         
         # 背景

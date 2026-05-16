@@ -18,6 +18,15 @@ echo [INFO] Building MouseScope with:
 echo        %PYTHON_EXE%
 echo.
 
+echo [INFO] Installing/updating runtime dependencies...
+"%PYTHON_EXE%" -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Dependency installation failed.
+    pause
+    exit /b 1
+)
+
 "%PYTHON_EXE%" -m PyInstaller --clean --noconfirm MouseScope.spec
 if errorlevel 1 (
     echo.

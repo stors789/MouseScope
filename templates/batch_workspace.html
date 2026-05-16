@@ -340,7 +340,7 @@
             <div class="side-card">
                 <h3 id="manualGuideTitle">手册与说明</h3>
                 <p id="manualGuideText">如果需要回看实验逻辑、ROI 规则或结果指标，建议从这里打开对应模块手册，再返回继续配置。</p>
-                <a class="btn btn-outline-primary w-100" href="{{ url_for('manual', module=experiment_spec.manual_module) }}" target="_blank" rel="noopener noreferrer">
+                <a class="btn btn-outline-primary w-100 d-none" href="{{ url_for('manual', module=experiment_spec.manual_module) }}" target="_blank" rel="noopener noreferrer">
                     <i class="fas fa-book-open me-2"></i><span id="manualButtonText">打开当前模块手册</span>
                 </a>
             </div>

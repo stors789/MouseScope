@@ -60,7 +60,7 @@
     <div class="spinner"></div>
 </div>
 
-<div class="tst-shell">
+<div class="tst-shell" data-calibration-module="tst">
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
@@ -80,7 +80,7 @@
             </div>
         </div>
         <div class="d-flex gap-2 flex-wrap align-items-center">
-            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='tst') }}" target="_blank">
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='tst') }}" target="_blank">
                 <i class="fas fa-book-open me-2"></i><span data-page-i18n="header.manual">TST 使用手册</span>
             </a>
             <div class="calibration-steps" role="tablist">
@@ -101,9 +101,8 @@
             <div class="stage-grid">
                 <div class="stage-main">
                     <div class="calibration-instruction">
-                        <p data-i18n="calib.instr.p1">1. 在画面中选择一只老鼠，点击头部然后点击尾部画一条线</p>
-                        <p data-i18n="calib.instr.p2">2. 系统会根据标准体长(60mm)计算像素-毫米比例</p>
-                        <p class="text-info mt-2"><i class="fas fa-lightbulb me-1"></i><span data-i18n="calib.instr.p3">如果没有老鼠可以标定，可以直接跳过进入下一步(使用默认比例)</span></p>
+                        <p data-i18n="calib.instr.p1">1. 在画面中选择一只老鼠，点击鼻尖和尾巴根部画一条体长线</p>
+                        <p data-i18n="calib.instr.p2">2. 系统会根据标准体长计算像素-毫米比例</p>
                     </div>
 
                     {% if is_batch and launch_mode != 'workspace' %}
@@ -152,7 +151,7 @@
                             </div>
                             <div class="detail-row">
                                 <strong data-page-i18n="calibration.target">标定目标</strong>
-                                <span data-page-i18n="calibration.target_value">60 mm 体长</span>
+                                <span data-page-i18n="calibration.target_value">标准体长</span>
                             </div>
                             <div class="detail-row">
                                 <strong data-page-i18n="calibration.next">下一步</strong>
@@ -248,6 +247,11 @@
                     <div class="stage-card">
                         <h4><i class="fas fa-list me-2"></i><span data-i18n="calib.roi.list.title">ROI 列表</span> (<span id="roiCount">0</span>)</h4>
                         <div class="helper-note mb-3" data-page-i18n="roi.helper">每个 ROI 都可以单独命名，并设置跟随全局、相对时间或精确时间窗口。</div>
+                        {% if project_context and project_context.project_id %}
+                        <div class="alert alert-warning py-2 mb-3 project-subject-guide" data-tour-id="project-subject-required">
+                            <i class="fas fa-circle-info me-2"></i><span data-page-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入参数调试或启动分析。</span>
+                        </div>
+                        {% endif %}
                         <div class="roi-list" id="roiList">
                             <div class="text-center text-muted py-3"><i class="fas fa-info-circle me-2"></i>尚未绘制 ROI</div>
                         </div>
@@ -265,8 +269,16 @@
     </div>
     <div id="debug-step" class="step-content" style="display:none;">
         <div class="workbench-stage">
-            <div class="calibration-instruction">
-                <p data-i18n="calib.debug.instr">调整检测参数，实时预览效果。确认参数后点击“开始分析”</p>
+            <div class="calibration-action-head">
+                <div>
+                    <h5 class="mb-1"><i class="fas fa-sliders-h me-2"></i><span data-i18n="calib.step3">3. 参数调试</span></h5>
+                    <div class="mini-note" data-i18n="calib.debug.instr">调整检测参数，让右侧绿色轮廓尽量紧密包住小鼠除尾巴外的主体躯干。确认参数后点击“开始分析”</div>
+                </div>
+                <div class="toolbar-actions analysis-action-group">
+                    <button class="btn btn-outline-secondary" onclick="previousStep()"><i class="fas fa-arrow-left me-2"></i><span data-i18n="calib.debug.btn.prev">上一步</span></button>
+                    <button class="btn btn-outline-primary" onclick="updateDebugPreview()"><i class="fas fa-sync me-2"></i><span data-i18n="calib.debug.btn.refresh">刷新预览</span></button>
+                    <button class="btn btn-success" id="primaryActionBtn" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span id="primaryActionText" data-i18n="calib.debug.btn.start">开始分析</span></button>
+                </div>
             </div>
 
             <div class="control-line">
@@ -277,7 +289,7 @@
                 <span id="frameLabelDebug" class="text-muted">帧 0 / 1000</span>
             </div>
 
-            <div class="preview-grid">
+            <div class="preview-grid" data-tour-id="tst-debug-preview">
                 <div class="preview-card">
                     <h5 class="mb-3"><i class="fas fa-video me-2"></i><span data-i18n="calib.debug.orig">原始帧</span></h5>
                     <canvas id="debugOriginal"></canvas>
@@ -287,9 +299,12 @@
                     <canvas id="debugResult"></canvas>
                 </div>
             </div>
+            <div class="helper-note mb-3" data-page-i18n="debug.preview_body">
+                调参目标是让检测轮廓大致包住小鼠除尾巴外的主体躯干，越贴合越好；不要把尾巴、胶带、背景或隔板一起包进去。
+            </div>
 
             <div class="stage-grid" id="traditionalParamsContainer">
-                <div class="stage-main">
+                <div class="stage-main" data-tour-id="tst-detection-params">
                     <div class="param-group">
                         <h5><i class="fas fa-search me-2"></i><span data-i18n="calib.debug.method.title">检测方法</span></h5>
                         <div class="mb-3">
@@ -344,7 +359,7 @@
                     </div>
                 </div>
 
-                <div class="stage-side">
+                <div class="stage-side" data-tour-id="tst-output-params">
                     <div class="stage-card">
                         <h5 class="mb-3" data-page-i18n="debug.output_title">分析输出</h5>
                         <div class="helper-note mb-3" data-page-i18n="debug.output_body">
@@ -366,13 +381,6 @@
                             <label class="form-label" data-i18n="calib.debug.behavior.sensitivity">行为阈值灵敏度</label>
                             <input type="range" class="form-range" id="behaviorThresholdSensitivity" min="-3" max="3" step="0.5" value="0" oninput="syncBehaviorThresholdUI()">
                             <div class="d-flex justify-content-between text-small"><span>-3</span><span id="behaviorThresholdSensitivityVal">0</span><span>3</span></div>
-                        </div>
-                        <div class="toolbar-actions">
-                            <button class="btn btn-secondary" onclick="previousStep()"><i class="fas fa-arrow-left me-2"></i><span data-i18n="calib.debug.btn.prev">上一步</span></button>
-                            <button class="btn btn-info" onclick="updateDebugPreview()"><i class="fas fa-sync me-2"></i><span data-i18n="calib.debug.btn.refresh">刷新预览</span></button>
-                        </div>
-                        <div class="toolbar-actions mt-3">
-                            <button class="btn btn-success btn-lg w-100" id="primaryActionBtn" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span id="primaryActionText" data-i18n="calib.debug.btn.start">开始分析</span></button>
                         </div>
                     </div>
                 </div>
@@ -397,6 +405,9 @@
     {% else %}
     const videoList = [];
     {% endif %}
+    const projectContext = {{ (project_context or {}) | tojson }};
+    const projectSubjects = {{ (project_subjects or []) | tojson }};
+    const isProjectMode = Boolean(projectContext && projectContext.project_id);
 
     const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
     let firstFrame = null;
@@ -408,7 +419,67 @@
     let rois = [];
     let currentROI = [];
     let isDrawingROI = false;
+    let activeROIIndex = null;
     let debugFrame = null;
+    function currentProjectAssignmentId() {
+        const map = projectContext && projectContext.video_assignment_map ? projectContext.video_assignment_map : {};
+        return map[String(currentVideoIdx)] || null;
+    }
+    function currentProjectUnits() {
+        const assignmentId = currentProjectAssignmentId();
+        const unitMap = projectContext && projectContext.unit_map ? projectContext.unit_map : {};
+        return assignmentId && Array.isArray(unitMap[assignmentId]) ? unitMap[assignmentId] : [];
+    }
+    function projectSubjectById(subjectId) {
+        return (projectSubjects || []).find(subject => subject.subject_id === subjectId) || null;
+    }
+    function clearProjectSubjectForROI(roi) {
+        if (!roi) return;
+        const previousAnimalCode = roi.animal_code;
+        delete roi.project_unit_id;
+        delete roi.subject_id;
+        delete roi.animal_code;
+        delete roi.group_id;
+        delete roi.group_name;
+        if (previousAnimalCode && roi.name === previousAnimalCode) roi.name = '';
+    }
+    function applyProjectSubjectToROI(roi, index, subjectId) {
+        if (!isProjectMode || !roi) return;
+        const subject = projectSubjectById(subjectId);
+        if (!subject) {
+            clearProjectSubjectForROI(roi);
+            return;
+        }
+        const units = currentProjectUnits();
+        const unit = units.find(unit => unit.subject_id === subject.subject_id) || null;
+        roi.project_unit_id = unit ? unit.unit_id : null;
+        roi.subject_id = subject.subject_id;
+        roi.animal_code = subject.animal_code;
+        roi.group_id = subject.group_id || '';
+        roi.group_name = subject.group_name || '';
+        roi.name = subject.animal_code || roi.name;
+    }
+    function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
+        if (!isProjectMode) {
+            return `
+                <label class="form-label small">${fallbackLabel}</label>
+                <input type="text" class="form-control form-control-sm"
+                       value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">
+            `;
+        }
+        const selectedId = roi.subject_id || '';
+        const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+            const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
+            return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        })).join('');
+        return `
+            <label class="form-label small">小鼠 / 实验单元</label>
+            <select class="form-select form-select-sm" onchange="updateROIProjectSubject(${index}, this.value)">
+                ${options}
+            </select>
+            <div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>
+        `;
+    }
     function defaultDebugParams() {
         return {
             bg_method: 'threshold',
@@ -475,12 +546,71 @@
         if (sensitivity) sensitivity.disabled = !enabled;
         if (sensitivityVal && sensitivity) sensitivityVal.textContent = sensitivity.value;
     }
+    function isCompleteROI(roi) {
+        const points = roi && roi.points ? roi.points : (Array.isArray(roi) ? roi : []);
+        return Array.isArray(points) && points.length >= 3;
+    }
+    function allROIsReady(sourceRois = rois) {
+        return Array.isArray(sourceRois) && sourceRois.length > 0 && sourceRois.every(isCompleteROI);
+    }
+    function projectSubjectRequiredMessage(noSubjects = false) {
+        const en = typeof getLang === 'function' && getLang() === 'en';
+        if (noSubjects) {
+            return en
+                ? 'Add animals in the project first, then choose one for every ROI.'
+                : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。';
+        }
+        return en
+            ? 'Please choose an existing project animal for every ROI.'
+            : '请为每个 ROI 选择项目中已有的小鼠。';
+    }
+    function projectRoiSubjectsReady(sourceRois = rois, completeFn = isCompleteROI) {
+        if (!isProjectMode) return true;
+        if (!(projectSubjects || []).length) return false;
+        return (sourceRois || []).every(roi => !completeFn(roi) || !!projectSubjectById(roi.subject_id));
+    }
+    function validateProjectRoiSubjects(sourceRois = rois, completeFn = isCompleteROI) {
+        if (!isProjectMode) return true;
+        if (!(projectSubjects || []).length) {
+            alert(projectSubjectRequiredMessage(true));
+            return false;
+        }
+        const missingIndex = (sourceRois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+        if (missingIndex >= 0) {
+            alert(projectSubjectRequiredMessage(false));
+            return false;
+        }
+        return true;
+    }
+    function addProjectSubjectBatchIssues(incomplete, configs, completeFn = isCompleteROI) {
+        if (!isProjectMode) return;
+        if (!(projectSubjects || []).length) {
+            incomplete.push(projectSubjectRequiredMessage(true));
+            return;
+        }
+        (configs || []).forEach((cfg, index) => {
+            const subjectIndex = (cfg.rois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+            if (subjectIndex >= 0) {
+                const en = typeof getLang === 'function' && getLang() === 'en';
+                incomplete.push(en
+                    ? `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} has no project animal selected`
+                    : `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} 未选择项目小鼠`);
+            }
+        });
+    }
+    function updateROIReadinessUI() {
+        const nextBtn = document.getElementById('nextToDebugBtn');
+        const finishBtn = document.getElementById('finishROIBtn');
+        if (nextBtn) nextBtn.disabled = !allROIsReady() || !projectRoiSubjectsReady();
+        if (finishBtn) finishBtn.disabled = currentROI.length < 3;
+    }
     let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
         calib_points: [],
         pixel_to_mm: null,
         rois: [],
         current_roi: [],
         is_drawing_roi: false,
+        active_roi_index: null,
         debug_params: defaultDebugParams(),
     }));
 
@@ -528,7 +658,7 @@
             'calibration.status_title': '当前标定状态',
             'calibration.current_video': '当前视频',
             'calibration.target': '标定目标',
-            'calibration.target_value': '60 mm 体长',
+            'calibration.target_value': '标准体长',
             'calibration.next': '下一步',
             'calibration.next_value': '进入 ROI 绘制',
             'calibration.hint_title': '操作提示',
@@ -540,7 +670,9 @@
             'roi.helper': '每个 ROI 都可以单独命名，并设置跟随全局、相对时间或精确时间窗口。',
             'roi.rules_title': '当前规则',
             'roi.rules_body': 'ROI 只负责统计区域，不在这里切换其它视频分析。批量模式下，当前视频的设置会自动保存，返回批次页面后再统一检查完整性。',
+            'project.subject_required': '项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入参数调试或启动分析。',
             'debug.output_title': '分析输出',
+            'debug.preview_body': '调参目标是让检测轮廓大致包住小鼠除尾巴外的主体躯干，越贴合越好；不要把尾巴、胶带、背景或隔板一起包进去。',
             'debug.output_body': '当前调参与 ROI 配置会随视频一起保存。批量模式下，主按钮会保存当前设置并返回批次页面；单视频模式下则直接开始分析。'
         },
         en: {
@@ -550,7 +682,7 @@
             'calibration.status_title': 'Calibration Status',
             'calibration.current_video': 'Current Video',
             'calibration.target': 'Target',
-            'calibration.target_value': '60 mm body length',
+            'calibration.target_value': 'Standard body length',
             'calibration.next': 'Next',
             'calibration.next_value': 'Draw ROIs',
             'calibration.hint_title': 'Tips',
@@ -562,7 +694,9 @@
             'roi.helper': 'Each ROI can be renamed and assigned to global, relative, or precise timing windows.',
             'roi.rules_title': 'Rules',
             'roi.rules_body': 'ROIs define statistics only. Batch mode does not switch to other videos here; the current setup stays with this video until you return to the batch page.',
+            'project.subject_required': 'In project mode, every complete ROI must be assigned to an existing project animal before parameter tuning or analysis can start.',
             'debug.output_title': 'Analysis Output',
+            'debug.preview_body': 'Tune until the contour roughly wraps the mouse body trunk excluding the tail; tighter is better. Do not include the tail, tape, background, or dividers.',
             'debug.output_body': 'Current tuning and ROI settings are saved with the video. In batch mode the primary button saves the current setup and returns to the batch page; in single-video mode it starts analysis directly.'
         }
     };
@@ -603,6 +737,7 @@
                 rois: [],
                 current_roi: [],
                 is_drawing_roi: false,
+                active_roi_index: null,
                 debug_params: defaultDebugParams(),
             };
         }
@@ -615,6 +750,7 @@
         config.rois = cloneState(rois);
         config.current_roi = cloneState(currentROI);
         config.is_drawing_roi = Boolean(isDrawingROI);
+        config.active_roi_index = activeROIIndex == null ? null : Number(activeROIIndex);
         config.debug_params = readDebugParamsFromControls();
     }
     function refreshCalibrationInfo() {
@@ -644,7 +780,7 @@
             select.value = String(currentVideoIdx);
             Array.from(select.options).forEach((option, index) => {
                 const config = ensureVideoConfig(index);
-                const ready = config.pixel_to_mm !== null && Array.isArray(config.rois) && config.rois.length > 0;
+                const ready = config.pixel_to_mm !== null && allROIsReady(config.rois || []);
                 option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
             });
         });
@@ -675,13 +811,20 @@
         rois = cloneState(config.rois || []);
         currentROI = cloneState(config.current_roi || []);
         isDrawingROI = Boolean(config.is_drawing_roi);
+        activeROIIndex = config.active_roi_index == null ? null : Number(config.active_roi_index);
+        if (isDrawingROI && (activeROIIndex == null || !rois[activeROIIndex])) {
+            activeROIIndex = rois.findIndex(roi => !isCompleteROI(roi));
+            if (activeROIIndex < 0) activeROIIndex = null;
+        }
+        if (isDrawingROI && activeROIIndex != null && rois[activeROIIndex]) {
+            currentROI = cloneState(rois[activeROIIndex].points || currentROI || []);
+        }
         applyDebugParamsToControls(config.debug_params);
         refreshCalibrationInfo();
         updateROIList();
         const finishBtn = document.getElementById('finishROIBtn');
         const nextBtn = document.getElementById('nextToDebugBtn');
-        if (finishBtn) finishBtn.disabled = currentROI.length < 3;
-        if (nextBtn) nextBtn.disabled = rois.length === 0;
+        updateROIReadinessUI();
         persistCurrentVideoState();
         syncFrameControls();
         syncVideoSelectors();
@@ -704,6 +847,7 @@
                 target.rois = cloneState(workspaceCfg.rois || []);
                 target.current_roi = cloneState(workspaceCfg.current_roi || []);
                 target.is_drawing_roi = Boolean(workspaceCfg.is_drawing_roi);
+                target.active_roi_index = workspaceCfg.active_roi_index ?? null;
                 target.debug_params = { ...defaultDebugParams(), ...(workspaceCfg.debug_params || {}) };
                 continue;
             }
@@ -816,6 +960,10 @@
                 const x = Math.round((e.clientX - rect.left) * scaleX);
                 const y = Math.round((e.clientY - rect.top) * scaleY);
                 currentROI.push({ x, y });
+                if (activeROIIndex != null && rois[activeROIIndex]) {
+                    rois[activeROIIndex].points = cloneState(currentROI);
+                }
+                updateROIList();
                 persistCurrentVideoState();
                 drawROICanvas();
                 if (currentROI.length >= 3) document.getElementById('finishROIBtn').disabled = false;
@@ -849,7 +997,7 @@
         const dx = calibPoints[1].x - calibPoints[0].x;
         const dy = calibPoints[1].y - calibPoints[0].y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        pixelToMm = 60.0 / dist; // 标准体长 60mm
+        pixelToMm = 60.0 / dist; // standard body length
         refreshCalibrationInfo();
         persistCurrentVideoState();
         syncVideoSelectors();
@@ -888,6 +1036,7 @@
         // 绘制已完成的ROI — 半透明填充
         rois.forEach((roi, i) => {
             const points = roi.points || roi;
+            if (!Array.isArray(points) || points.length === 0 || (isDrawingROI && i === activeROIIndex)) return;
             const name = roi.name || `ROI ${i + 1}`;
 
             ctx.strokeStyle = `hsl(${i * 60}, 70%, 50%)`;
@@ -937,8 +1086,40 @@
 
     function finishCurrentROI() {
         if (currentROI.length < 3) return;
+        if (activeROIIndex != null && rois[activeROIIndex]) {
+            rois[activeROIIndex].points = cloneState(currentROI);
+        } else {
+            const newROI = {
+                points: [...currentROI],
+                name: `ROI ${rois.length + 1}`,
+                time_config: {
+                    mode: 'global',
+                    start: 0,
+                    end: 0
+                }
+            };
+            rois.push(newROI);
+        }
+        currentROI = [];
+        isDrawingROI = false;
+        activeROIIndex = null;
+        updateROIReadinessUI();
+        updateROIList();
+        persistCurrentVideoState();
+        syncVideoSelectors();
+        drawROICanvas();
+        updateROIReadinessUI();
+    }
+
+    function addNewROI() {
+        if (currentROI.length >= 3) finishCurrentROI();
+        if (isDrawingROI && activeROIIndex != null && rois[activeROIIndex] && !isCompleteROI(rois[activeROIIndex])) {
+            updateROIList();
+            drawROICanvas();
+            return;
+        }
         const newROI = {
-            points: [...currentROI],
+            points: [],
             name: `ROI ${rois.length + 1}`,
             time_config: {
                 mode: 'global',
@@ -947,21 +1128,11 @@
             }
         };
         rois.push(newROI);
-        currentROI = [];
-        isDrawingROI = false;
-        document.getElementById('finishROIBtn').disabled = true;
-        updateROIList();
-        persistCurrentVideoState();
-        syncVideoSelectors();
-        drawROICanvas();
-        if (rois.length > 0) document.getElementById('nextToDebugBtn').disabled = false;
-    }
-
-    function addNewROI() {
-        if (currentROI.length >= 3) finishCurrentROI();
+        activeROIIndex = rois.length - 1;
         currentROI = [];
         isDrawingROI = true;
-        document.getElementById('finishROIBtn').disabled = true;
+        updateROIList();
+        updateROIReadinessUI();
         persistCurrentVideoState();
         drawROICanvas();
     }
@@ -969,7 +1140,11 @@
     function clearLastPoint() {
         if (currentROI.length > 0) {
             currentROI.pop();
-            if (currentROI.length < 3) document.getElementById('finishROIBtn').disabled = true;
+            if (activeROIIndex != null && rois[activeROIIndex]) {
+                rois[activeROIIndex].points = cloneState(currentROI);
+            }
+            updateROIList();
+            updateROIReadinessUI();
             persistCurrentVideoState();
             drawROICanvas();
         }
@@ -977,8 +1152,9 @@
 
     function clearAllROIs() {
         rois = []; currentROI = [];
-        document.getElementById('finishROIBtn').disabled = true;
-        document.getElementById('nextToDebugBtn').disabled = true;
+        activeROIIndex = null;
+        isDrawingROI = false;
+        updateROIReadinessUI();
         updateROIList();
         persistCurrentVideoState();
         syncVideoSelectors();
@@ -987,11 +1163,18 @@
 
     function deleteROI(idx) {
         rois.splice(idx, 1);
+        if (activeROIIndex === idx) {
+            activeROIIndex = null;
+            currentROI = [];
+            isDrawingROI = false;
+        } else if (activeROIIndex != null && idx < activeROIIndex) {
+            activeROIIndex -= 1;
+        }
         updateROIList();
         persistCurrentVideoState();
         syncVideoSelectors();
         drawROICanvas();
-        if (rois.length === 0) document.getElementById('nextToDebugBtn').disabled = true;
+        updateROIReadinessUI();
     }
 
     function updateROIList() {
@@ -1004,6 +1187,7 @@
         if (rois.length === 0) {
             const emptyText = (typeof getLang === 'function' && getLang() === 'en') ? 'No ROI has been drawn yet' : '尚未绘制 ROI';
             list.innerHTML = `<div class="text-center text-muted py-3"><i class="fas fa-info-circle me-2"></i>${emptyText}</div>`;
+            updateROIReadinessUI();
             return;
         }
 
@@ -1016,9 +1200,12 @@
             item.style.alignItems = 'stretch';
 
             const points = roi.points || roi;
-            const name = roi.name || `ROI ${i + 1}`;
+            let name = roi.name || `ROI ${i + 1}`;
             const timeConfig = roi.time_config || { mode: 'global', start: 0, end: 0 };
             const lang = (getLang && getLang() === 'en') ? 'en' : 'zh';
+            const complete = isCompleteROI(roi);
+            const completeText = lang === 'en' ? (complete ? 'Complete' : 'Drawing') : (complete ? '已完成' : '绘制中');
+            name = roi.name || name;
 
             // 确保roi对象有这些属性
             if (!roi.points) { roi.points = points; roi.name = name; roi.time_config = timeConfig; }
@@ -1045,7 +1232,7 @@
                 <div class="roi-card-top">
                     <div>
                         <div class="roi-card-title">${escapeHtml(name)}</div>
-                        <div class="roi-meta-line">${points.length} ${lang === 'en' ? 'points' : '个顶点'} · ${escapeHtml(timeSummary)}</div>
+                        <div class="roi-meta-line">${points.length} ${lang === 'en' ? 'points' : '个顶点'} · ${completeText} · ${escapeHtml(timeSummary)}</div>
                     </div>
                     <div class="roi-card-actions">
                         <button class="btn btn-sm btn-outline-danger" onclick="deleteROI(${i})">${lang === 'en' ? 'Delete' : '删除'}</button>
@@ -1053,9 +1240,7 @@
                 </div>
                 <div class="roi-inline-grid">
                     <div>
-                        <label class="form-label small">${lang === 'en' ? 'ROI Name' : 'ROI名称'}</label>
-                        <input type="text" class="form-control form-control-sm"
-                               value="${escapeHtml(name)}" onchange="updateROIName(${i}, this.value)">
+                        ${projectSubjectSelectMarkup(i, roi, 'updateROIName', lang === 'en' ? 'ROI Name' : 'ROI名称')}
                     </div>
                     <div>
                         <label class="form-label small">${lang === 'en' ? 'Statistics Mode' : '统计模式'}</label>
@@ -1087,6 +1272,7 @@
             `;
             list.appendChild(item);
         });
+        updateROIReadinessUI();
         persistCurrentVideoState();
         syncVideoSelectors();
     }
@@ -1098,6 +1284,14 @@
             const points = rois[index];
             rois[index] = { points: points, name: value, time_config: { mode: 'global', start: 0, end: 0 } };
         }
+        updateROIList();
+        persistCurrentVideoState();
+        drawROICanvas();
+    }
+
+    function updateROIProjectSubject(index, subjectId) {
+        if (!rois[index]) return;
+        applyProjectSubjectToROI(rois[index], index, subjectId);
         updateROIList();
         persistCurrentVideoState();
         drawROICanvas();
@@ -1130,7 +1324,8 @@
 
     function goToDebugStep() {
         if (currentROI.length >= 3) finishCurrentROI();
-        if (rois.length === 0) { alert(calibTr('calib.alert.need_roi', 'Please draw at least one ROI.')); return; }
+        if (!allROIsReady()) { alert(calibTr('calib.alert.need_roi', 'Please draw at least one ROI.')); return; }
+        if (!validateProjectRoiSubjects()) return;
         updateStepStatus(2, true);
         goToStep(3);
         updateDebugPreview();
@@ -1171,7 +1366,7 @@
             dilation_kernel: document.getElementById('dilationKernel').value,
             dilation_iter: document.getElementById('dilationIter').value,
             min_area: document.getElementById('minArea').value,
-            rois: rois.map(r => ({ points: r.points })),
+            rois: normalizeRoisForPayload(rois).map(r => ({ points: r.points })),
         };
 
         fetch(`/api/debug_preview/${sessionId}`, {
@@ -1201,7 +1396,7 @@
     }
 
     function normalizeRoisForPayload(sourceRois) {
-        return (sourceRois || []).map(roi => {
+        return (sourceRois || []).filter(isCompleteROI).map(roi => {
             if (!roi.points) {
                 return {
                     points: roi,
@@ -1273,6 +1468,11 @@
 
     function startAnalysis() {
         if (isAnalysisStarting) return;
+        if (!allROIsReady()) {
+            alert(calibTr('calib.alert.need_roi', 'Please draw at least one ROI.'));
+            return;
+        }
+        if (!validateProjectRoiSubjects()) return;
         const { currentDebugParams, perVideoConfigs, body } = buildAnalysisBody();
         if (launchMode === 'workspace') {
             document.getElementById('loading').style.display = 'flex';
@@ -1304,6 +1504,7 @@
                     );
                 }
             });
+            addProjectSubjectBatchIssues(incomplete, perVideoConfigs);
             if (incomplete.length > 0) {
                 alert(
                     calibFormat(

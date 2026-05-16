@@ -2,25 +2,14 @@
 {% block title %}上传视频 - MouseScope{% endblock %}
 {% block extra_css %}
 <style>
-.upload-shell { max-width: 1440px; margin: 0 auto; }
-.upload-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+.upload-shell { max-width: 1120px; margin: 0 auto; }
+.upload-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
     gap: 1rem;
-    margin-bottom: 1.4rem;
-    align-items: stretch;
-}
-.upload-hero-main, .upload-hero-side {
-    border-radius: 30px;
-    border: 1px solid rgba(201, 100, 66, 0.16);
-    box-shadow: 0 18px 40px rgba(52, 34, 20, 0.08);
-    height: 100%;
-}
-.upload-hero-main {
-    padding: 1.8rem;
-    background:
-        radial-gradient(circle at top left, rgba(217, 119, 87, 0.18), transparent 30%),
-        linear-gradient(135deg, rgba(255, 249, 243, 0.98), rgba(246, 238, 228, 0.95));
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
 }
 .upload-kicker {
     display: inline-flex;
@@ -34,298 +23,223 @@
     font-weight: 700;
 }
 .upload-title {
-    margin: 0.9rem 0 0.55rem;
-    color: #342214;
-    font-size: clamp(2rem, 3vw, 3rem);
-    line-height: 1.05;
+    margin: 0.55rem 0 0.35rem;
+    color: var(--text-primary);
+    font-size: clamp(2rem, 2.8vw, 2.7rem);
+    line-height: 1.08;
     font-family: "Georgia", "Times New Roman", serif;
 }
 .upload-copy {
     margin: 0;
-    color: #735540;
-    line-height: 1.75;
+    max-width: 780px;
+    color: var(--text-secondary);
+    line-height: 1.65;
 }
-.upload-hero-side {
-    padding: 1.2rem;
-    background: rgba(255, 250, 245, 0.92);
+.upload-panel .card-header {
     display: grid;
-    gap: 0.85rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
 }
-.upload-side-card {
-    background: rgba(255,255,255,0.74);
-    border: 1px solid rgba(201, 100, 66, 0.12);
-    border-radius: 20px;
+.upload-format-note {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    white-space: nowrap;
+}
+.upload-panel .card-body {
+    padding: 1.25rem;
+}
+.upload-start-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+}
+.upload-experiment-block,
+.upload-path-block,
+.upload-config-panel {
+    border: 1px solid var(--border-card);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.52);
     padding: 1rem;
 }
-.upload-side-card h3 {
-    margin: 0 0 0.5rem;
-    color: #3f2c1e;
-    font-size: 1rem;
+.upload-experiment-block {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.upload-experiment-help {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    margin: 0.65rem 0 0;
+}
+.upload-drop-main {
+    min-height: 174px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.35rem 1rem;
+}
+.upload-drop-main h5 {
+    margin-bottom: 0.4rem;
+    color: var(--text-primary);
     font-weight: 800;
 }
-.upload-side-card p, .upload-side-card li {
-    color: #7a5d49;
-    font-size: 0.92rem;
-    line-height: 1.7;
+.upload-path-block {
+    margin-top: 1rem;
 }
-.upload-side-card ul {
-    margin: 0;
-    padding-left: 1rem;
+.upload-path-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: end;
 }
-@media (max-width: 1100px) {
-    .upload-hero { grid-template-columns: 1fr; }
+.upload-path-row textarea {
+    min-height: 96px;
+}
+@media (max-width: 900px) {
+    .upload-start-grid,
+    .upload-path-row,
+    .upload-panel .card-header { grid-template-columns: 1fr; }
+    .upload-format-note { white-space: normal; }
+}
+@media (max-width: 640px) {
+    .upload-panel .card-body { padding: 1rem; }
+    .upload-drop-main { min-height: 150px; }
 }
 </style>
 {% endblock %}
 {% block content %}
-<div class="upload-shell">
-<section class="upload-hero">
-    <div class="upload-hero-main">
-        <div class="upload-kicker">
-            <i class="fas fa-clapperboard"></i>
-            <span>MouseScope v2.3.0</span>
-        </div>
-        <h1 class="upload-title" data-page-i18n="hero.title">统一上传入口</h1>
-        <p class="upload-copy" data-page-i18n="hero.copy">
-            选择实验模块并上传视频后，单视频会直接进入该视频设置页；多视频会先进入批次页面，方便逐条检查和完成 ROI、时间窗与参数设置。
-        </p>
-    </div>
-    <aside class="upload-hero-side">
-        <div class="upload-side-card">
-            <h3 data-page-i18n="hero.modules_title">支持模块</h3>
-            <p class="mb-0" data-page-i18n="hero.modules_body">当前支持 TST、FST、Open Field、Novel Object、EPM 与 Y-Maze。</p>
-        </div>
-        <div class="upload-side-card">
-            <h3 data-page-i18n="hero.path_title">推荐路径</h3>
-            <ul>
-                <li data-page-i18n="hero.path_item_1">单视频：上传后直接进入该视频配置页。</li>
-                <li data-page-i18n="hero.path_item_2">多视频：先进入批次页面，再逐条完成 ROI 和参数。</li>
-                <li data-page-i18n="hero.path_item_3">分析完成后，在统一监控页与结果下载区查看输出。</li>
-            </ul>
-        </div>
-    </aside>
-</section>
-
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="cyber-text mb-0" data-i18n="upload.title">视频文件上传</h5>
+<div class="upload-shell" data-tour-page="upload">
+    <section class="upload-header">
+        <div>
+            <div class="upload-kicker">
+                <i class="fas fa-clapperboard"></i>
+                <span>MouseScope v3.0.0</span>
             </div>
-            <div class="card-body">
-                <ul class="nav nav-tabs mb-4" id="uploadMethodTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="web-upload-tab" data-bs-toggle="tab"
-                            data-bs-target="#web-upload" type="button" role="tab" aria-selected="false"><span
-                                data-i18n="upload.tab.web">网页上传</span></button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="local-path-tab" data-bs-toggle="tab" data-bs-target="#local-path"
-                            type="button" role="tab" aria-selected="true"><span data-i18n="upload.tab.local">服务器本地路径</span></button>
-                    </li>
-                </ul>
+            <h1 class="upload-title" data-page-i18n="hero.title">快速分析</h1>
+            <p class="upload-copy" data-page-i18n="hero.copy">
+                选择实验模块，拖拽视频或粘贴本机路径，然后进入对应设置页。
+            </p>
+        </div>
+    </section>
 
-                <form method="POST" action="{{ url_for('do_upload') }}" enctype="multipart/form-data" id="uploadForm">
-                    <div class="card mb-4" style="border-style: dashed;">
-                        <div class="card-body">
-                            <div class="row g-3 align-items-center">
-                                <div class="col-md-6">
-                                    <label for="experimentType" class="form-label fw-semibold" data-i18n="upload.exp.label">实验模块 / Experiment</label>
-                                    <select class="form-select" id="experimentType" name="experiment_type">
-                                        <option value="tst" selected data-i18n="upload.exp.tst_option">悬尾实验 TST</option>
-                                        <option value="forced_swim" data-i18n="upload.exp.fst_option">强迫游泳 Forced Swim Test</option>
-                                        <option value="open_field" data-i18n="upload.exp.oft_option">旷场实验 Open Field Test</option>
-                                        <option value="novel_object" data-i18n="upload.exp.nor_option">新奇物体识别 Novel Object Recognition</option>
-                                        <option value="elevated_plus" data-i18n="upload.exp.epm_option">高架十字迷宫 Elevated Plus Maze</option>
-                                        <option value="y_maze" data-i18n="upload.exp.ymaze_option">Y 迷宫 Y Maze</option>
-                                    </select>
+    <section class="card upload-panel">
+        <div class="card-header">
+            <h5 class="cyber-text mb-0" data-i18n="upload.title">视频文件上传</h5>
+            <span class="upload-format-note" data-page-i18n="panel.formats">支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件</span>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('do_upload') }}" enctype="multipart/form-data" id="uploadForm">
+                <div class="upload-start-grid">
+                    <div class="upload-experiment-block">
+                        <label for="experimentType" class="form-label fw-semibold" data-i18n="upload.exp.label">实验模块 / Experiment</label>
+                        <select class="form-select" id="experimentType" name="experiment_type" data-tour-id="upload-experiment">
+                            <option value="tst" selected data-i18n="upload.exp.tst_option">悬尾实验 TST</option>
+                            <option value="forced_swim" data-i18n="upload.exp.fst_option">强迫游泳 Forced Swim Test</option>
+                            <option value="open_field" data-i18n="upload.exp.oft_option">旷场实验 Open Field Test</option>
+                            <option value="novel_object" data-i18n="upload.exp.nor_option">新奇物体识别 Novel Object Recognition</option>
+                            <option value="elevated_plus" data-i18n="upload.exp.epm_option">高架十字迷宫 Elevated Plus Maze</option>
+                            <option value="y_maze" data-i18n="upload.exp.ymaze_option">Y 迷宫 Y Maze</option>
+                        </select>
+                        <p class="upload-experiment-help" data-i18n="upload.exp.help" data-i18n-html>
+                            选择后进入对应配置流程；多视频会先进入批次页。
+                        </p>
+                    </div>
+
+                    <div class="local-drop-zone upload-drop-main" id="localDropZone" data-tour-id="upload-local-drop">
+                        <div class="text-center">
+                            <h5 data-i18n="upload.local.drag.hint">拖拽视频文件到这里</h5>
+                            <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv .wmv 格式，可同时拖入多个文件</p>
+                            <input type="file" class="d-none" id="localFileInput" name="videos" accept=".mp4,.avi,.mov,.mkv,.wmv" multiple>
+                            <button type="button" class="btn btn-primary" onclick="document.getElementById('localFileInput').click()">
+                                <i class="fas fa-folder-open me-2"></i><span data-i18n="upload.local.or.select">或点击选择文件</span>
+                            </button>
+                            <div id="localUploadProgress" class="mt-3 text-start" style="display: none;">
+                                <div class="progress" style="height: 14px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                        id="localProgressBar" role="progressbar" style="width: 0%"
+                                        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
                                 </div>
-                                <div class="col-md-6">
-                                    <small class="text-muted" data-i18n="upload.exp.help" data-i18n-html>
-                                        请选择实验模块。多视频上传后，系统会先进入批次页面，方便逐条完成各视频的 ROI、时间窗和参数设置。
-                                    </small>
-                                </div>
+                                <small class="text-muted d-flex align-items-center mt-2" id="localUploadStatus">
+                                    <i class="fas fa-spinner fa-spin me-2"></i><span data-i18n="upload.uploading">上传中...</span>
+                                </small>
                             </div>
                         </div>
                     </div>
-                    <div class="tab-content" id="uploadMethodContent">
-                        <div class="tab-pane fade" id="web-upload" role="tabpanel">
-                            <div class="upload-zone-compact" id="dropZone">
-                                <div class="text-center">
-                                    <h4 data-i18n="upload.drop.hint">拖拽文件到这里</h4>
-                                    <p class="text-muted mb-3" data-i18n="upload.drop.or">或点击选择文件</p>
-                                    <input type="file" class="d-none" id="video" name="videos"
-                                        accept=".mp4,.avi,.mov,.mkv,.wmv" multiple>
-                                    <span class="d-none" data-i18n="upload.status.ready">Ready to upload</span>
-                                    <span class="d-none" data-i18n="upload.status.uploading">Uploading</span>
-                                    <span class="d-none" data-i18n="upload.status.files">个文件</span>
-                                    <span class="d-none" data-i18n="upload.status.done">个文件已上传</span>
-                                    <button type="button" class="btn btn-primary"
-                                        onclick="document.getElementById('video').click()"><span
-                                            data-i18n="upload.btn.select">选择文件</span></button>
-                                </div>
-                            </div>
+                </div>
+
+                <div class="upload-path-block">
+                    <div class="upload-path-row">
+                        <div>
+                            <label for="localPaths" class="form-label" data-i18n="upload.local.label">视频文件/文件夹路径</label>
+                            <textarea class="form-control font-monospace" id="localPaths" name="local_paths" data-tour-id="upload-paths"
+                                rows="3" data-i18n="upload.local.placeholder" data-i18n-attr="placeholder"
+                                placeholder="例如：&#10;/data/videos/mouse1.mp4&#10;/data/videos/batch1/"></textarea>
                         </div>
+                        <button type="button" class="btn btn-outline-primary" id="validatePathsBtn" data-tour-id="upload-validate">
+                            <span data-i18n="upload.validate">验证路径</span>
+                        </button>
+                    </div>
+                </div>
 
-                        <div class="tab-pane fade show active" id="local-path" role="tabpanel">
-                            <div class="alert alert-info">
-                                <strong data-i18n="upload.local.tip.title">提示:</strong><br>
-                                <span data-i18n="upload.local.tip.body"
-                                    data-i18n-html>可以直接<strong>拖拽视频文件</strong>到下方区域，或手动输入服务器上的完整路径</span><br>
-                                <small>• <span data-i18n="upload.local.bullet1">拖拽文件：自动上传并填入路径</span></small><br>
-                                <small>• <span
-                                        data-i18n="upload.local.bullet2">手动输入：支持文件路径和文件夹路径，每行一个</span></small><br>
-                                <small>• <span data-i18n="upload.local.bullet3">文件夹：自动扫描并批量处理文件夹下所有视频</span></small>
-                            </div>
-
-                            <div class="local-drop-zone" id="localDropZone">
-                                <div class="text-center">
-                                    <h5 data-i18n="upload.local.drag.hint">拖拽视频文件到这里</h5>
-                                    <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv
-                                        .wmv 格式，可同时拖入多个文件</p>
-                                    <input type="file" class="d-none" id="localFileInput"
-                                        accept=".mp4,.avi,.mov,.mkv,.wmv" multiple>
-                                    <button type="button" class="btn btn-outline-info"
-                                        onclick="document.getElementById('localFileInput').click()"><span
-                                            data-i18n="upload.local.or.select">或点击选择文件</span></button>
-                                </div>
-                                <div id="localUploadProgress" class="mt-3" style="display: none;">
-                                    <div class="progress">
-                                        <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                            id="localProgressBar" style="width: 0%"></div>
-                                    </div>
-                                    <small class="text-muted d-flex align-items-center mt-2" id="localUploadStatus"><i
-                                            class="fas fa-spinner fa-spin me-2"></i><span
-                                            data-i18n="upload.uploading">上传中...</span></small>
-                                </div>
-                            </div>
-
-                            <div class="text-center my-3">
-                                <span class="text-muted" data-i18n="upload.local.or.input">── 或手动输入路径 ──</span>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="localPaths" class="form-label"
-                                    data-i18n="upload.local.label">视频文件/文件夹路径</label>
-                                <textarea class="form-control font-monospace" id="localPaths" name="local_paths"
-                                    rows="6" data-i18n="upload.local.placeholder" data-i18n-attr="placeholder"
-                                    placeholder="例如：&#10;/data/videos/mouse1.mp4&#10;/data/videos/batch1/"></textarea>
-                            </div>
-                            <button type="button" class="btn btn-outline-primary" id="validatePathsBtn"><span
-                                    data-i18n="upload.validate">验证路径</span></button>
+                <div id="fileList" class="mt-3"></div>
+                <div id="configSection" class="upload-config-panel mt-3" style="display: none;" data-tour-id="upload-config">
+                    <h6 class="cyber-text mb-3" data-i18n="upload.config.title">分析配置</h6>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label" data-i18n="upload.config.start">开始秒数（可选）</label>
+                            <input type="number" step="0.1" min="0" class="form-control" name="start_seconds" placeholder="0.0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" data-i18n="upload.config.end">结束秒数（可选）</label>
+                            <input type="number" step="0.1" min="0" class="form-control" name="end_seconds" placeholder="">
+                            <div class="form-text" data-i18n="upload.config.end.hint">填写则只分析该时间段</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" data-i18n="upload.config.fps">帧率 FPS（可选）</label>
+                            <input type="number" step="0.01" min="1" max="240" class="form-control" name="fps_override" placeholder="自动检测">
+                            <div class="form-text" data-i18n="upload.config.fps.hint">Bandicam等VFR视频建议手动填写</div>
                         </div>
                     </div>
-
-                    <div id="fileList" class="mt-4"></div>
-                    <div id="configSection" class="mt-4" style="display: none;">
-                        <div class="card">
-                            <div class="card-body">
-                                <h6 class="cyber-text mb-3" data-i18n="upload.config.title">分析配置</h6>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-md-4">
-                                        <label class="form-label" data-i18n="upload.config.start">开始秒数（可选）</label>
-                                        <input type="number" step="0.1" min="0" class="form-control"
-                                            name="start_seconds" placeholder="0.0">
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label" data-i18n="upload.config.end">结束秒数（可选）</label>
-                                        <input type="number" step="0.1" min="0" class="form-control" name="end_seconds"
-                                            placeholder="">
-                                        <div class="form-text" data-i18n="upload.config.end.hint">填写则只分析该时间段</div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label" data-i18n="upload.config.fps">帧率 FPS（可选）</label>
-                                        <input type="number" step="0.01" min="1" max="240" class="form-control"
-                                            name="fps_override" placeholder="自动检测">
-                                        <div class="form-text" data-i18n="upload.config.fps.hint">Bandicam等VFR视频建议手动填写
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label" data-i18n="upload.config.outdir">输出文件夹（可选）</label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control font-monospace" name="output_dir"
-                                            id="outputDir" data-i18n="upload.config.outdir.ph"
-                                            data-i18n-attr="placeholder" placeholder="留空则使用默认目录: data/results/">
-                                        <button type="button" class="btn btn-outline-info"
-                                            onclick="setDefaultOutputDir()">
-                                            <i class="fas fa-undo me-1"></i><span
-                                                data-i18n="upload.config.default">默认</span>
-                                        </button>
-                                    </div>
-                                    <div class="form-text" data-i18n="upload.config.outdir.hint">
-                                        桌面端专属：分析结果将直接保存到此文件夹，可用文件管理器直接查看</div>
-                                </div>
-                                <div class="d-grid">
-                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn"><span
-                                            data-i18n="upload.config.submit">开始分析配置</span></button>
-                                </div>
-                            </div>
+                    <div class="mb-3">
+                        <label class="form-label" data-i18n="upload.config.outdir">输出文件夹（可选）</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace" name="output_dir"
+                                id="outputDir" data-i18n="upload.config.outdir.ph"
+                                data-i18n-attr="placeholder" placeholder="留空则使用默认目录: data/results/">
+                            <button type="button" class="btn btn-outline-info" onclick="setDefaultOutputDir()">
+                                <i class="fas fa-undo me-1"></i><span data-i18n="upload.config.default">默认</span>
+                            </button>
+                        </div>
+                        <div class="form-text" data-i18n="upload.config.outdir.hint">
+                            桌面端专属：分析结果将直接保存到此文件夹，可用文件管理器直接查看
                         </div>
                     </div>
-                </form>
-            </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" data-tour-id="upload-submit">
+                            <span data-i18n="upload.config.submit">开始分析配置</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
-    </div>
-
-    <div class="col-lg-4">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="cyber-text mb-0" data-i18n="upload.side.title">实验信息</h6>
-            </div>
-            <div class="card-body">
-                <div class="text-center mb-3">
-                    <h6 class="text-primary mb-1" data-i18n="upload.side.entry.title">实验入口</h6>
-                    <small class="text-muted" data-i18n="upload.side.entry.sub">选择实验模块后进入对应配置页</small>
-                </div>
-                <div class="small text-muted mb-3" data-i18n="upload.side.entry.desc">
-                    选择实验模块后进入对应设置页；多视频模式会先进入批次页面，再逐视频完成配置。
-                </div>
-                <div class="flow-steps">
-                    <span class="flow-step active" data-i18n="upload.step1">1.上传</span>
-                    <i class="fas fa-chevron-right flow-arrow"></i>
-                    <span class="flow-step" data-i18n="upload.step2">2.标定</span>
-                    <i class="fas fa-chevron-right flow-arrow"></i>
-                    <span class="flow-step" data-i18n="upload.step3">3.分析</span>
-                    <i class="fas fa-chevron-right flow-arrow"></i>
-                    <span class="flow-step" data-i18n="upload.step4">4.结果</span>
-                </div>
-                <div class="d-grid gap-2 mt-3">
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='tst') }}" target="_blank" data-i18n="upload.side.manual.tst">查看 TST 手册</a>
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='fst') }}" target="_blank" data-i18n="upload.side.manual.fst">查看 FST 手册</a>
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='oft') }}" target="_blank" data-i18n="upload.side.manual.oft">查看 OFT 手册</a>
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='nor') }}" target="_blank" data-i18n="upload.side.manual.nor">查看 NOR 手册</a>
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='epm') }}" target="_blank" data-i18n="upload.side.manual.epm">查看 EPM 手册</a>
-                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('manual', module='ymaze') }}" target="_blank" data-i18n="upload.side.manual.ymaze">查看 Y 迷宫手册</a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+    </section>
 </div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const PAGE_I18N_UPLOAD = {
             zh: {
-                'hero.title': '统一上传入口',
-                'hero.copy': '选择实验模块并上传视频后，单视频会直接进入该视频设置页；多视频会先进入批次页面，方便逐条检查和完成 ROI、时间窗与参数设置。',
-                'hero.modules_title': '支持模块',
-                'hero.modules_body': '当前支持 TST、FST、Open Field、Novel Object、EPM 与 Y-Maze。',
-                'hero.path_title': '推荐路径',
-                'hero.path_item_1': '单视频：上传后直接进入该视频配置页。',
-                'hero.path_item_2': '多视频：先进入批次页面，再逐条完成 ROI 和参数。',
-                'hero.path_item_3': '分析完成后，在统一监控页与结果下载区查看输出。'
+                'hero.title': '快速分析',
+                'hero.copy': '选择实验模块，拖拽视频或粘贴本机路径，然后进入对应设置页。',
+                'panel.formats': '支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件'
             },
             en: {
-                'hero.title': 'Unified Upload Entry',
-                'hero.copy': 'Choose an experiment module and upload the videos. A single video opens its own setup page directly, while multiple videos first open a batch page so ROI, timing, and parameters can be completed one by one.',
-                'hero.modules_title': 'Supported Modules',
-                'hero.modules_body': 'Currently supports TST, FST, Open Field, Novel Object, EPM, and Y-Maze.',
-                'hero.path_title': 'Recommended Path',
-                'hero.path_item_1': 'Single video: upload and open its dedicated configuration page.',
-                'hero.path_item_2': 'Multiple videos: open the batch page first, then finish ROI and parameter setup one by one.',
-                'hero.path_item_3': 'After analysis, review outputs from the unified monitor and download area.'
+                'hero.title': 'Quick Analysis',
+                'hero.copy': 'Choose an experiment module, drop videos or paste local paths, then open the matching setup page.',
+                'panel.formats': 'Supports .mp4 .avi .mov .mkv .wmv, with multiple files at once'
             }
         };
         function pageTrUpload(key, fallback) {
@@ -354,47 +268,8 @@
                 .join('\n');
         }
 
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('video');
         const fileList = document.getElementById('fileList');
         const configSection = document.getElementById('configSection');
-
-        if (fileInput) {
-            fileInput.addEventListener('change', function (e) {
-                if (e.target.files.length > 0) handleFiles(e.target.files);
-            });
-        }
-
-        if (dropZone) {
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt =>
-                dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); }, false));
-            ['dragenter', 'dragover'].forEach(evt =>
-                dropZone.addEventListener(evt, () => dropZone.classList.add('dragover'), false));
-            ['dragleave', 'drop'].forEach(evt =>
-                dropZone.addEventListener(evt, () => dropZone.classList.remove('dragover'), false));
-            dropZone.addEventListener('drop', e => {
-                fileInput.files = e.dataTransfer.files;
-                handleFiles(e.dataTransfer.files);
-            }, false);
-        }
-
-        function handleFiles(files) {
-            if (files.length > 0) {
-                const totalSize = Array.from(files).reduce((s, f) => s + f.size, 0);
-                const readyText = trUploadGlobal('upload.status.ready', 'Ready to upload');
-                const fileWord = trUploadGlobal('upload.status.files', (typeof getLang === 'function' && getLang() === 'en') ? 'files' : '个文件');
-                fileList.innerHTML = `
-                <div class="alert alert-success d-flex align-items-center">
-                    <i class="fas fa-check-circle me-2 fs-5"></i>
-                    <div class="flex-grow-1">
-                        <strong>${readyText}</strong> — ${files.length} ${fileWord}
-                        <div class="small text-muted mt-1">${Array.from(files).map(f => f.name).slice(0, 3).join(', ')}${files.length > 3 ? '...' : ''}</div>
-                    </div>
-                    <span class="badge bg-success">${(totalSize / 1024 / 1024).toFixed(1)} MB</span>
-                </div>`;
-                configSection.style.display = 'block';
-            }
-        }
 
         const validateBtn = document.getElementById('validatePathsBtn');
         if (validateBtn) {
@@ -411,13 +286,16 @@
             });
         }
 
-        // ====== 本地路径拖拽上传逻辑 ======
         const localDropZone = document.getElementById('localDropZone');
         const localFileInput = document.getElementById('localFileInput');
+        const validVideoExts = ['.mp4', '.avi', '.mov', '.mkv', '.wmv'];
+        const uploadForm = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        let uploadInProgress = false;
 
         if (localFileInput) {
             localFileInput.addEventListener('change', function (e) {
-                if (e.target.files.length > 0) uploadLocalFiles(e.target.files);
+                if (e.target.files.length > 0) selectVideoFiles(e.target.files, false);
             });
         }
 
@@ -430,49 +308,152 @@
                 localDropZone.addEventListener(evt, () => localDropZone.classList.remove('dragover'), false));
             localDropZone.addEventListener('drop', e => {
                 const files = e.dataTransfer.files;
-                if (files.length > 0) uploadLocalFiles(files);
+                if (files.length > 0) selectVideoFiles(files, true);
             }, false);
         }
 
-        function uploadLocalFiles(files) {
-            const progressDiv = document.getElementById('localUploadProgress');
-            const progressBar = document.getElementById('localProgressBar');
-            const statusText = document.getElementById('localUploadStatus');
-            const textarea = document.getElementById('localPaths');
-
-            // 过滤视频文件
-            const validExts = ['.mp4', '.avi', '.mov', '.mkv', '.wmv'];
-            const videoFiles = Array.from(files).filter(f => {
-                const ext = '.' + f.name.split('.').pop().toLowerCase();
-                return validExts.includes(ext);
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', function (e) {
+                if (!uploadInProgress && localFileInput && localFileInput.files && localFileInput.files.length > 0) {
+                    e.preventDefault();
+                    uploadFormWithProgress();
+                    return;
+                }
+                if (!uploadInProgress) return;
+                e.preventDefault();
+                alert(trUploadGlobal('upload.status.uploading', 'Uploading') + '...');
             });
+        }
 
+        function filterVideoFiles(files) {
+            return Array.from(files || []).filter(f => {
+                const dotIndex = f.name.lastIndexOf('.');
+                if (dotIndex < 0) return false;
+                return validVideoExts.includes(f.name.slice(dotIndex).toLowerCase());
+            });
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[ch]);
+        }
+
+        function setUploadProgress(percent) {
+            const progressBar = document.getElementById('localProgressBar');
+            if (!progressBar) return;
+            const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
+            progressBar.style.width = pct + '%';
+            progressBar.textContent = pct + '%';
+            progressBar.setAttribute('aria-valuenow', String(pct));
+        }
+
+        function setUploadStatus(iconClass, text, extraClass) {
+            const statusText = document.getElementById('localUploadStatus');
+            if (!statusText) return;
+            statusText.innerHTML = `<i class="${iconClass} me-2 ${extraClass || ''}"></i><span>${escapeHtml(text)}</span>`;
+        }
+
+        function setSubmitDisabled(disabled) {
+            if (!submitBtn) return;
+            submitBtn.disabled = disabled;
+            submitBtn.classList.toggle('disabled', disabled);
+        }
+
+        function assignFilesToInput(videoFiles) {
+            if (!localFileInput) return;
+            if (typeof DataTransfer === 'function') {
+                const transfer = new DataTransfer();
+                videoFiles.forEach(file => transfer.items.add(file));
+                localFileInput.files = transfer.files;
+            }
+        }
+
+        function selectVideoFiles(files, assignToInput) {
+            const videoFiles = filterVideoFiles(files);
             if (videoFiles.length === 0) {
                 alert((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.novideo'] : '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv）');
                 return;
             }
+            if (assignToInput) assignFilesToInput(videoFiles);
 
-            progressDiv.style.display = 'block';
-            progressBar.style.width = '0%';
-            const uploadingLabel = document.querySelector('[data-i18n="upload.status.uploading"]') ? document.querySelector('[data-i18n="upload.status.uploading"]').textContent : 'Uploading';
-            statusText.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i><span>${uploadingLabel} 0%</span>`;
+            const totalSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
+            const readyText = trUploadGlobal('upload.status.ready', 'Ready to upload');
+            const fileWord = trUploadGlobal('upload.status.files', (typeof getLang === 'function' && getLang() === 'en') ? 'files' : '个文件');
+            const names = videoFiles.map(file => file.name).slice(0, 4).map(escapeHtml).join(', ');
+            const more = videoFiles.length > 4 ? '...' : '';
+            setUploadProgress(0);
+            fileList.innerHTML = `
+                <div class="alert alert-success d-flex align-items-center gap-3 flex-wrap">
+                    <i class="fas fa-check-circle fs-5"></i>
+                    <div class="flex-grow-1">
+                        <strong>${escapeHtml(readyText)}</strong> - ${videoFiles.length} ${escapeHtml(fileWord)}
+                        <div class="small text-muted mt-1">${names}${more}</div>
+                    </div>
+                    <span class="badge bg-success">${(totalSize / 1024 / 1024).toFixed(1)} MB</span>
+                </div>`;
+            configSection.style.display = 'block';
+        }
 
-            const formData = new FormData();
-            videoFiles.forEach(f => formData.append('files', f));
+        function uploadFormWithProgress() {
+            if (uploadInProgress) {
+                alert(trUploadGlobal('upload.status.uploading', 'Uploading') + '...');
+                return;
+            }
+
+            const videoFiles = filterVideoFiles(localFileInput ? localFileInput.files : []);
+            if (videoFiles.length === 0) {
+                uploadForm.submit();
+                return;
+            }
+
+            const totalSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
+            const progressDiv = document.getElementById('localUploadProgress');
+            const progressBar = document.getElementById('localProgressBar');
+            const uploadingText = trUploadGlobal('upload.status.uploading', 'Uploading');
+            const fileWord = trUploadGlobal('upload.status.files', (typeof getLang === 'function' && getLang() === 'en') ? 'files' : '个文件');
+            const names = videoFiles.map(file => file.name).slice(0, 4).map(escapeHtml).join(', ');
+            const more = videoFiles.length > 4 ? '...' : '';
+            const formData = new FormData(uploadForm);
+
+            uploadInProgress = true;
+            setSubmitDisabled(true);
+            if (progressDiv) progressDiv.style.display = 'block';
+            if (progressBar) {
+                progressBar.classList.remove('bg-success', 'bg-danger');
+                progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
+            }
+            setUploadProgress(0);
+            setUploadStatus('fas fa-spinner fa-spin', `${uploadingText} 0%`);
+            fileList.innerHTML = `
+                <div class="alert alert-info d-flex align-items-center gap-3 flex-wrap">
+                    <i class="fas fa-spinner fa-spin fs-5"></i>
+                    <div class="flex-grow-1">
+                        <strong>${escapeHtml(uploadingText)}</strong> - ${videoFiles.length} ${escapeHtml(fileWord)}
+                        <div class="small text-muted mt-1">${names}${more}</div>
+                    </div>
+                    <span class="badge bg-success">${(totalSize / 1024 / 1024).toFixed(1)} MB</span>
+                </div>`;
 
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/upload_files', true);
+            xhr.open('POST', uploadForm.action, true);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
             xhr.upload.onprogress = function (e) {
-                if (e.lengthComputable) {
-                    const pct = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = pct + '%';
-                    const uploadingLabel = document.querySelector('[data-i18n="upload.status.uploading"]') ? document.querySelector('[data-i18n="upload.status.uploading"]').textContent : 'Uploading';
-                    statusText.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i><span>${uploadingLabel} ${pct}%</span>`;
-                }
+                if (!e.lengthComputable) return;
+                const pct = Math.round((e.loaded / e.total) * 100);
+                setUploadProgress(pct);
+                setUploadStatus('fas fa-spinner fa-spin', `${uploadingText} ${pct}%`);
             };
 
             xhr.onload = function () {
+                uploadInProgress = false;
+                setSubmitDisabled(false);
+
                 let result = {};
                 try {
                     result = JSON.parse(xhr.responseText || '{}');
@@ -480,47 +461,35 @@
                     result = {};
                 }
 
-                if (xhr.status === 200 && result.success && result.paths.length > 0) {
-                    // 将上传后的服务器路径追加到textarea
-                    const currentPaths = textarea.value.trim();
-                    const newPaths = result.paths.join('\n');
-                    textarea.value = currentPaths ? currentPaths + '\n' + newPaths : newPaths;
-
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('progress-bar-animated');
-                    progressBar.classList.add('bg-success');
+                if (xhr.status === 200 && result.success && result.redirect_url) {
+                    setUploadProgress(100);
+                    if (progressBar) {
+                        progressBar.classList.remove('progress-bar-animated');
+                        progressBar.classList.add('bg-success');
+                    }
                     const doneText = trUploadGlobal('upload.status.done', (typeof getLang === 'function' && getLang() === 'en') ? 'files uploaded' : '个文件已上传');
-                    statusText.innerHTML = `<i class="fas fa-check-circle me-2 text-success"></i><span>${result.paths.length} ${doneText}</span>`;
-
-                    const msgUpload = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.upload.success'].replace('{}', result.paths.length) : result.paths.length + ' 个文件已上传并添加到路径列表';
-                    const uploadedNames = Array.isArray(result.names) && result.names.length === result.paths.length
-                        ? result.names
-                        : result.paths.map(p => p.split('/').pop());
-                    fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgUpload + '</strong><div class="small text-muted mt-1">' + uploadedNames.join(', ') + '</div></div>';
-                    configSection.style.display = 'block';
-
-                    setTimeout(() => {
-                        progressDiv.style.display = 'none';
-                        progressBar.classList.remove('bg-success');
-                        progressBar.classList.add('progress-bar-animated');
-                    }, 3000);
+                    setUploadStatus('fas fa-check-circle', `${videoFiles.length} ${doneText}`, 'text-success');
+                    window.location.href = result.redirect_url;
                     return;
                 }
 
-                const pre = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.upload'] : '上传失败: ';
+                const pre = trUploadGlobal('upload.error.upload', '上传失败: ');
                 const fallback = (xhr.status === 413)
-                    ? ((getLang && getLang() === 'en') ? 'The selected upload is larger than the 2GB limit.' : '上传文件超过 2GB 限制')
-                    : ((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.retry'] : '上传失败，请重试');
+                    ? ((typeof getLang === 'function' && getLang() === 'en') ? 'The selected upload is larger than the 2GB limit.' : '上传文件超过 2GB 限制')
+                    : trUploadGlobal('upload.error.retry', '上传失败，请重试');
                 const errorMessage = result.error || fallback;
-                statusText.textContent = pre + errorMessage;
-                progressBar.classList.add('bg-danger');
-                fileList.innerHTML = '<div class="alert alert-danger"><strong></strong></div>';
-                fileList.querySelector('strong').textContent = pre + errorMessage;
+                setUploadStatus('fas fa-exclamation-circle', pre + errorMessage, 'text-danger');
+                if (progressBar) progressBar.classList.add('bg-danger');
+                fileList.innerHTML = '<div class="alert alert-danger"><strong>' + escapeHtml(pre + errorMessage) + '</strong></div>';
             };
 
             xhr.onerror = function () {
-                statusText.textContent = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.error.network'] : '网络错误，请检查连接后重试';
-                progressBar.classList.add('bg-danger');
+                uploadInProgress = false;
+                setSubmitDisabled(false);
+                const networkError = trUploadGlobal('upload.error.network', '网络错误，请检查连接后重试');
+                setUploadStatus('fas fa-exclamation-circle', networkError, 'text-danger');
+                if (progressBar) progressBar.classList.add('bg-danger');
+                fileList.innerHTML = '<div class="alert alert-danger"><strong>' + escapeHtml(networkError) + '</strong></div>';
             };
 
             xhr.send(formData);
@@ -554,6 +523,20 @@
         out.value = '';
         out.placeholder = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.config.outdir.ph'] : '留空则使用默认目录: data/results/';
     }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!window.MouseScopeTour) return;
+        MouseScopeTour.register('upload', {
+            version: 'v1',
+            steps: [
+                {target: '[data-tour-id="upload-experiment"]', titleKey: 'tour.upload.experiment.title', bodyKey: 'tour.upload.experiment.body'},
+                {target: '[data-tour-id="upload-local-drop"]', titleKey: 'tour.upload.local_drop.title', bodyKey: 'tour.upload.local_drop.body'},
+                {target: '[data-tour-id="upload-paths"]', titleKey: 'tour.upload.paths.title', bodyKey: 'tour.upload.paths.body'},
+                {target: '[data-tour-id="upload-validate"]', titleKey: 'tour.upload.validate.title', bodyKey: 'tour.upload.validate.body'},
+                {target: '[data-tour-id="upload-submit"]', titleKey: 'tour.upload.submit.title', bodyKey: 'tour.upload.submit.body'}
+            ]
+        });
+    });
 </script>
 
 {% endblock %}

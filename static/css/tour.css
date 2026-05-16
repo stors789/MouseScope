@@ -1,0 +1,85 @@
+.navbar {
+    position: relative;
+    z-index: 1500;
+}
+
+.tour-scrim {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--tour-top, 0px);
+    bottom: 0;
+    background: rgba(17, 17, 15, 0.54);
+    z-index: 1300;
+}
+
+.tour-spotlight {
+    position: fixed;
+    z-index: 1310;
+    border: 2px solid var(--primary-color);
+    border-radius: 14px;
+    box-shadow: 0 0 0 9999px rgba(17, 17, 15, 0.54), 0 14px 34px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+    transition: top .16s ease, left .16s ease, width .16s ease, height .16s ease;
+}
+
+.tour-spotlight.in-navbar {
+    z-index: 1600;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.tour-popover {
+    position: fixed;
+    z-index: 1400;
+    width: min(360px, calc(100vw - 2rem));
+    padding: 1rem;
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    background: rgba(250, 249, 245, 0.98);
+    box-shadow: 0 22px 48px rgba(20, 20, 19, 0.22);
+    color: var(--text-primary);
+}
+
+.tour-popover h3 {
+    margin: 0 0 .45rem;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.tour-popover p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    font-size: .92rem;
+}
+
+.tour-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-top: .95rem;
+}
+
+.tour-actions .btn {
+    white-space: nowrap;
+}
+
+.tour-progress {
+    color: var(--text-muted);
+    font-size: .82rem;
+    font-weight: 700;
+    margin-top: .75rem;
+}
+
+.tour-target-active {
+    position: relative;
+    z-index: 1320 !important;
+}
+
+@media (max-width: 576px) {
+    .tour-popover {
+        left: 1rem !important;
+        right: 1rem;
+        width: auto;
+    }
+}

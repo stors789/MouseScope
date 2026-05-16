@@ -184,6 +184,21 @@ class ForcedSwimTracker:
         self.online_candidate = STATE_UNCERTAIN
         self.online_candidate_frames = 0
         self.flow_analyzer = OpticalFlowAnalyzer(fps=self.fps, pixel_to_mm=self.pixel_to_mm)
+        self.live_total_frames = 0
+        self.live_detected_frames = 0
+        self.live_state_frames = {
+            STATE_ACTIVE: 0,
+            STATE_IMMOBILE: 0,
+            STATE_UNCERTAIN: 0,
+            STATE_OUTSIDE: 0,
+        }
+        self.live_motion_score_sum = 0.0
+        self.live_motion_score_count = 0
+        self.live_immobility_bouts = 0
+        self.live_current_immobility_bout = 0
+        self.live_longest_immobility_bout = 0
+        self.live_prev_immobile = False
+        self.live_latency_to_immobility_s: Optional[float] = None
         if clear_threshold:
             self.immobility_threshold = None
             self.immobility_high_threshold = None
@@ -347,6 +362,31 @@ class ForcedSwimTracker:
 
         state = self._online_update_state(motion_score, detected) if in_stats_window else STATE_OUTSIDE
         origin = self._stats_window_origin_abs()
+        if record and in_stats_window:
+            self.live_total_frames += 1
+            if detected:
+                self.live_detected_frames += 1
+            counted_state = state if state in self.live_state_frames else STATE_UNCERTAIN
+            self.live_state_frames[counted_state] += 1
+            if motion_score is not None:
+                self.live_motion_score_sum += float(motion_score)
+                self.live_motion_score_count += 1
+
+            is_immobile = counted_state == STATE_IMMOBILE
+            if is_immobile:
+                self.live_current_immobility_bout += 1
+                if not self.live_prev_immobile:
+                    self.live_immobility_bouts += 1
+                    if self.live_latency_to_immobility_s is None:
+                        self.live_latency_to_immobility_s = max(0.0, float(current_time) - origin)
+            else:
+                self.live_longest_immobility_bout = max(
+                    self.live_longest_immobility_bout,
+                    self.live_current_immobility_bout,
+                )
+                self.live_current_immobility_bout = 0
+            self.live_prev_immobile = is_immobile
+
         record_row = {
             "roi_id": self.roi_id,
             "roi_name": self.roi_name,
@@ -383,6 +423,52 @@ class ForcedSwimTracker:
             "detection_count": len(detections),
             "diameter_points": self.diameter_points,
             "waterline_points": self.waterline_points,
+        }
+
+    def build_live_summary(self) -> Dict[str, Any]:
+        total_frames = int(self.live_total_frames)
+        detected_frames = int(self.live_detected_frames)
+        immobile_frames = int(self.live_state_frames.get(STATE_IMMOBILE, 0))
+        active_frames = int(self.live_state_frames.get(STATE_ACTIVE, 0))
+        uncertain_frames = max(0, total_frames - immobile_frames - active_frames)
+
+        total_time_s = total_frames / self.fps if self.fps > 0 else 0.0
+        detected_time_s = detected_frames / self.fps if self.fps > 0 else 0.0
+        immobile_time_s = immobile_frames / self.fps if self.fps > 0 else 0.0
+        active_time_s = active_frames / self.fps if self.fps > 0 else 0.0
+        uncertain_time_s = uncertain_frames / self.fps if self.fps > 0 else 0.0
+        longest_bout_frames = max(self.live_longest_immobility_bout, self.live_current_immobility_bout)
+        mean_motion_score = (
+            self.live_motion_score_sum / self.live_motion_score_count
+            if self.live_motion_score_count > 0
+            else None
+        )
+
+        return {
+            "roi_id": self.roi_id,
+            "roi_name": self.roi_name,
+            "total_time_s": round(total_time_s, 3),
+            "detected_frames": detected_frames,
+            "total_frames": total_frames,
+            "detected_rate_percent": round(detected_frames / max(total_frames, 1) * 100.0, 2),
+            "detected_time_s": round(detected_time_s, 3),
+            "immobility_time_s": round(immobile_time_s, 3),
+            "active_time_s": round(active_time_s, 3),
+            "uncertain_time_s": round(uncertain_time_s, 3),
+            "immobility_percent": round(immobile_time_s / max(total_time_s, 1e-6) * 100.0, 2),
+            "active_percent": round(active_time_s / max(total_time_s, 1e-6) * 100.0, 2),
+            "uncertain_percent": round(uncertain_time_s / max(total_time_s, 1e-6) * 100.0, 2),
+            "immobility_percent_detected": round(immobile_time_s / max(detected_time_s, 1e-6) * 100.0, 2),
+            "immobility_bouts": int(self.live_immobility_bouts),
+            "longest_immobility_bout_s": round(longest_bout_frames / self.fps, 3),
+            "latency_to_immobility_s": (
+                round(self.live_latency_to_immobility_s, 3)
+                if self.live_latency_to_immobility_s is not None
+                else None
+            ),
+            "mean_motion_score": round(float(mean_motion_score), 6) if mean_motion_score is not None else None,
+            "immobility_threshold": round(self.low_threshold, 6),
+            "active_threshold": round(self.high_threshold, 6),
         }
 
     def auto_configure_thresholds(self, fallback_threshold: float = 0.08) -> None:

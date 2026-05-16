@@ -103,6 +103,7 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
     default_use_head_direction = bool(data.get("use_head_direction", True))
     default_head_angle_threshold_deg = float(data.get("head_angle_threshold_deg", 50.0))
     default_head_confidence_threshold = float(data.get("head_confidence_threshold", 0.35))
+    default_body_gray_threshold = int(data.get("body_gray_threshold", 95))
     default_movement_threshold_cm_s = float(data.get("movement_threshold_cm_s", 2.0))
     default_min_valid_exploration_s = float(data.get("min_valid_exploration_s", 20.0))
     default_bin_seconds = float(data.get("bin_seconds", 300.0))
@@ -130,6 +131,7 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
             "use_head_direction": bool(raw_cfg.get("use_head_direction", default_use_head_direction)),
             "head_angle_threshold_deg": float(raw_cfg.get("head_angle_threshold_deg", default_head_angle_threshold_deg)),
             "head_confidence_threshold": float(raw_cfg.get("head_confidence_threshold", default_head_confidence_threshold)),
+            "body_gray_threshold": int(raw_cfg.get("body_gray_threshold", default_body_gray_threshold)),
             "movement_threshold_cm_s": float(raw_cfg.get("movement_threshold_cm_s", default_movement_threshold_cm_s)),
             "min_valid_exploration_s": float(raw_cfg.get("min_valid_exploration_s", default_min_valid_exploration_s)),
             "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
@@ -158,6 +160,7 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
         "use_head_direction": default_use_head_direction,
         "head_angle_threshold_deg": default_head_angle_threshold_deg,
         "head_confidence_threshold": default_head_confidence_threshold,
+        "body_gray_threshold": default_body_gray_threshold,
         "movement_threshold_cm_s": default_movement_threshold_cm_s,
         "min_valid_exploration_s": default_min_valid_exploration_s,
         "bin_seconds": default_bin_seconds,

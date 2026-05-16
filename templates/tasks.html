@@ -58,6 +58,29 @@
     border-radius: 20px;
     background: rgba(250, 249, 245, 0.86);
 }
+.tasks-bulkbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border-card);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.68);
+}
+.bulk-left,
+.bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+.bulk-count {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
 .search-wrap { position: relative; }
 .search-wrap i {
     position: absolute;
@@ -68,9 +91,43 @@
 }
 .search-wrap .form-control { padding-left: 2.4rem !important; }
 .task-list { display: grid; gap: 0.85rem; }
+.task-section {
+    margin-top: 1rem;
+}
+.task-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+.task-section-head h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.18rem;
+    font-weight: 800;
+}
+.task-section-head p {
+    margin: .25rem 0 0;
+    color: var(--text-muted);
+    font-size: .9rem;
+    line-height: 1.55;
+}
+.task-section-count {
+    display: inline-flex;
+    align-items: center;
+    padding: .28rem .6rem;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: rgba(255,255,255,.68);
+    color: var(--text-secondary);
+    font-size: .82rem;
+    font-weight: 700;
+}
 .task-card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 1rem;
     align-items: center;
     padding: 1.15rem;
@@ -79,6 +136,23 @@
     border-radius: 22px;
     background: rgba(250, 249, 245, 0.94);
     box-shadow: var(--shadow-card);
+}
+.task-card.is-selected {
+    border-color: rgba(201, 100, 66, 0.32);
+    background: rgba(255, 255, 255, 0.96);
+}
+.task-select-cell {
+    align-self: start;
+    padding-top: 0.2rem;
+}
+.task-select {
+    width: 1.05rem;
+    height: 1.05rem;
+    cursor: pointer;
+}
+.task-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
 }
 .task-card.status-analyzing,
 .task-card.status-waiting { border-left-color: var(--accent-cyan); }
@@ -174,29 +248,36 @@
 @media (max-width: 1100px) {
     .tasks-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .tasks-toolbar { grid-template-columns: 1fr 1fr; }
-    .task-card { grid-template-columns: 1fr; }
+    .task-card { grid-template-columns: auto 1fr; }
     .task-buttons { justify-content: flex-start; min-width: 0; }
+    .task-buttons { grid-column: 2; }
 }
 @media (max-width: 640px) {
     .tasks-hero { padding: 1.35rem; border-radius: 22px; }
     .tasks-summary,
     .tasks-toolbar { grid-template-columns: 1fr; }
+    .tasks-bulkbar { align-items: stretch; }
+    .bulk-left,
+    .bulk-actions { width: 100%; }
     .task-buttons .btn { width: 100%; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="tasks-shell">
+<div class="tasks-shell" data-tour-page="tasks">
     <section class="tasks-hero">
         <div>
             <div class="tasks-kicker"><i class="fas fa-list-check"></i><span data-i18n="tasks.kicker">Analysis Workspace</span></div>
             <h1 data-i18n="tasks.title">任务中心</h1>
             <p data-i18n="tasks.subtitle">集中查看正在运行的分析和本地历史记录；软件重启后，已完成、出错或中断的任务仍可搜索。</p>
         </div>
-        <div class="tasks-actions">
-            <a href="{{ url_for('upload_page') }}" class="btn btn-primary">
-                <i class="fas fa-plus me-2"></i><span data-i18n="tasks.action.new">新建分析</span>
+        <div class="tasks-actions" data-tour-id="tasks-actions">
+            <a href="{{ url_for('projects_page') }}" class="btn btn-outline-primary" data-tour-id="tasks-new-project">
+                <i class="fas fa-folder-plus me-2"></i><span data-i18n="tasks.action.new_project">新增项目</span>
+            </a>
+            <a href="{{ url_for('upload_page') }}" class="btn btn-outline-primary" data-tour-id="tasks-quick">
+                <i class="fas fa-plus me-2"></i><span data-i18n="tasks.action.new">快速分析</span>
             </a>
             <button type="button" class="btn btn-outline-primary" id="refreshTasksBtn" title="Refresh">
                 <i class="fas fa-rotate me-2"></i><span data-i18n="tasks.action.refresh">刷新</span>
@@ -204,7 +285,7 @@
         </div>
     </section>
 
-    <section class="tasks-summary" aria-label="Task summary">
+    <section class="tasks-summary" aria-label="Task summary" data-tour-id="tasks-summary">
         <div class="summary-tile"><div class="value" id="countAll">0</div><div class="label" data-i18n="tasks.count.all">全部任务</div></div>
         <div class="summary-tile"><div class="value" id="countActive">0</div><div class="label" data-i18n="tasks.count.active">运行中</div></div>
         <div class="summary-tile"><div class="value" id="countCompleted">0</div><div class="label" data-i18n="tasks.count.completed">已完成</div></div>
@@ -212,7 +293,7 @@
         <div class="summary-tile"><div class="value" id="countError">0</div><div class="label" data-i18n="tasks.count.error">出错</div></div>
     </section>
 
-    <section class="tasks-toolbar" aria-label="Task filters">
+    <section class="tasks-toolbar" aria-label="Task filters" data-tour-id="tasks-filter">
         <div class="search-wrap">
             <i class="fas fa-search"></i>
             <input type="search" class="form-control" id="taskSearch" data-i18n="tasks.search.placeholder" data-i18n-attr="placeholder" placeholder="搜索视频名、实验类型、输出目录">
@@ -241,11 +322,53 @@
         </button>
     </section>
 
-    <div id="taskList" class="task-list"></div>
-    <div id="emptyTasks" class="empty-state">
-        <i class="fas fa-folder-open"></i>
-        <div data-i18n="tasks.empty">没有匹配的分析任务。</div>
-    </div>
+    <section class="tasks-bulkbar" aria-label="Bulk task actions" data-tour-id="tasks-bulk">
+        <div class="bulk-left">
+            <label class="form-check d-inline-flex align-items-center gap-2 m-0">
+                <input class="form-check-input m-0" type="checkbox" id="selectAllTasks">
+                <span data-i18n="tasks.bulk.select_all">全选当前列表</span>
+            </label>
+            <span class="bulk-count" id="selectedTaskCount" data-i18n="tasks.bulk.selected_none">未选择记录</span>
+        </div>
+        <div class="bulk-actions">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="clearTaskSelectionBtn" disabled>
+                <i class="fas fa-eraser me-1"></i><span data-i18n="tasks.bulk.clear_selection">取消选择</span>
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDeleteTasksBtn" disabled>
+                <i class="fas fa-trash-can me-1"></i><span data-i18n="tasks.bulk.delete_selected">批量删除记录</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="task-section" aria-label="Project analysis runs" data-tour-id="tasks-project-section">
+        <div class="task-section-head">
+            <div>
+                <h2 data-i18n="tasks.section.projects.title">运行过的项目</h2>
+                <p data-i18n="tasks.section.projects.subtitle">从项目工作台启动的分析会集中在这里，方便回到项目继续整理小鼠、视频和结果。</p>
+            </div>
+            <span class="task-section-count" id="projectTaskCount">0</span>
+        </div>
+        <div id="projectTaskList" class="task-list"></div>
+        <div id="emptyProjectTasks" class="empty-state">
+            <i class="fas fa-folder-open"></i>
+            <div data-i18n="tasks.empty.projects">还没有项目分析记录。</div>
+        </div>
+    </section>
+
+    <section class="task-section" aria-label="Quick analysis runs" data-tour-id="tasks-quick-section">
+        <div class="task-section-head">
+            <div>
+                <h2 data-i18n="tasks.section.quick.title">快速分析记录</h2>
+                <p data-i18n="tasks.section.quick.subtitle">单视频分析和批量快速分析保留在这里，适合临时任务或不需要项目管理的实验。</p>
+            </div>
+            <span class="task-section-count" id="quickTaskCount">0</span>
+        </div>
+        <div id="quickTaskList" class="task-list"></div>
+        <div id="emptyQuickTasks" class="empty-state">
+            <i class="fas fa-folder-open"></i>
+            <div data-i18n="tasks.empty.quick">没有匹配的快速分析记录。</div>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
@@ -254,11 +377,62 @@
 const TASK_REFRESH_MS = 2500;
 let taskTimer = null;
 let taskAbort = null;
+let currentTasks = [];
+let selectedTaskIds = new Set();
 
 function t(key, fallback) {
     const lang = (typeof getLang === 'function') ? getLang() : 'zh';
-    const dict = (window.I18N && I18N[lang]) || {};
+    const dict = (typeof I18N !== 'undefined' && I18N[lang]) || (window.I18N && window.I18N[lang]) || {};
     return dict[key] || fallback;
+}
+
+function fillText(template, values = {}) {
+    return String(template || '').replace(/\{(\w+)\}/g, (_, name) => values[name] ?? '');
+}
+
+function localizeTaskMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+
+    const exactMessages = [
+        [/^Analysis started from project workspace$/i, 'tasks.message.started_project'],
+        [/^Waiting to start\.\.\.$/i, 'tasks.message.waiting'],
+        [/^分析完成[!！。.]?$/, 'tasks.message.completed.generic'],
+        [/^Open field analysis completed\.$/i, 'tasks.message.completed.oft'],
+        [/^Novel object recognition analysis completed\.$/i, 'tasks.message.completed.nor'],
+        [/^Forced swim analysis completed\.$/i, 'tasks.message.completed.fst'],
+        [/^Y-maze analysis completed\.$/i, 'tasks.message.completed.ymaze'],
+        [/^Elevated plus maze analysis completed\.$/i, 'tasks.message.completed.epm'],
+        [/^软件关闭时分析未完成。?$/, 'tasks.message.closed_interrupted'],
+    ];
+    const exact = exactMessages.find(([pattern]) => pattern.test(text));
+    if (exact) return t(exact[1], text);
+
+    let match = text.match(/^All\s+(\d+)(?:\s+([A-Za-z-]+))?\s+videos finished\.?$/i);
+    if (match) {
+        const values = {count: match[1], assay: match[2] || ''};
+        return values.assay
+            ? fillText(t('tasks.message.batch_completed_assay', text), values)
+            : fillText(t('tasks.message.batch_completed', text), values);
+    }
+
+    match = text.match(/^全部\s*(\d+)\s*个\s*([A-Za-z-]+)?\s*视频(?:分析)?(?:已)?完成[!！。.]?$/);
+    if (match) {
+        const values = {count: match[1], assay: (match[2] || '').trim()};
+        return values.assay
+            ? fillText(t('tasks.message.batch_completed_assay', text), values)
+            : fillText(t('tasks.message.batch_completed', text), values);
+    }
+
+    match = text.match(/^Processing\s+(?:(OFT|NOR|FST|Y-maze|EPM)\s+)?video\s+(\d+)\/(\d+):\s*(.*)$/i);
+    if (match) {
+        const values = {assay: match[1] || '', index: match[2], total: match[3], name: match[4] || '-'};
+        return values.assay
+            ? fillText(t('tasks.message.processing_assay_video', text), values)
+            : fillText(t('tasks.message.processing_video', text), values);
+    }
+
+    return text;
 }
 
 function escapeHtml(value) {
@@ -302,7 +476,56 @@ function formatDuration(value) {
     return `${s}s`;
 }
 
+function taskId(task) {
+    return String(task.run_id || task.session_id || '');
+}
+
+function isProjectTask(task) {
+    return Boolean(task.project_id || task.project_run_id || task.task_scope === 'project');
+}
+
+function sectionCountText(count) {
+    return String(t('tasks.section.count', '{count} 条记录')).replace('{count}', count);
+}
+
+function visibleDeletableIds() {
+    return currentTasks
+        .filter(task => task.delete_url && taskId(task))
+        .map(taskId);
+}
+
+function pruneSelectionToVisibleTasks() {
+    const allowed = new Set(visibleDeletableIds());
+    selectedTaskIds = new Set([...selectedTaskIds].filter(id => allowed.has(id)));
+}
+
+function replaceCount(template, count) {
+    return String(template || '').replace('{count}', count);
+}
+
+function updateBulkControls() {
+    const visibleIds = visibleDeletableIds();
+    const visibleSet = new Set(visibleIds);
+    const selectedVisibleCount = [...selectedTaskIds].filter(id => visibleSet.has(id)).length;
+    const selectAll = document.getElementById('selectAllTasks');
+    const countNode = document.getElementById('selectedTaskCount');
+    const clearBtn = document.getElementById('clearTaskSelectionBtn');
+    const deleteBtn = document.getElementById('bulkDeleteTasksBtn');
+
+    selectAll.disabled = visibleIds.length === 0;
+    selectAll.checked = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+    selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
+    clearBtn.disabled = selectedVisibleCount === 0;
+    deleteBtn.disabled = selectedVisibleCount === 0;
+    countNode.textContent = selectedVisibleCount
+        ? replaceCount(t('tasks.bulk.selected_count', '已选择 {count} 条记录'), selectedVisibleCount)
+        : t('tasks.bulk.selected_none', '未选择记录');
+}
+
 function actionButton(task, kind) {
+    if (kind === 'project' && task.project_url) {
+        return `<a class="btn btn-outline-primary btn-sm" href="${task.project_url}" title="${t('tasks.action.open_project', '打开项目')}"><i class="fas fa-folder-open me-1"></i>${t('tasks.action.open_project', '打开项目')}</a>`;
+    }
     if (kind === 'monitor' && task.monitor_url) {
         return `<a class="btn btn-primary btn-sm" href="${task.monitor_url}" title="${t('tasks.action.monitor', '查看监控')}"><i class="fas fa-chart-line me-1"></i>${t('tasks.action.monitor', '查看监控')}</a>`;
     }
@@ -313,10 +536,10 @@ function actionButton(task, kind) {
         return `<button class="btn btn-danger btn-sm" data-stop-url="${task.stop_url}" title="${t('tasks.action.stop', '停止')}"><i class="fas fa-stop me-1"></i>${t('tasks.action.stop', '停止')}</button>`;
     }
     if (kind === 'download' && task.download_all_url) {
-        return `<a class="btn btn-success btn-sm" href="${task.download_all_url}" title="${t('tasks.action.download', '下载')}"><i class="fas fa-file-archive me-1"></i>${t('tasks.action.download', '下载')}</a>`;
+        return `<a class="btn btn-outline-primary btn-sm" href="${task.download_all_url}" title="${t('tasks.action.download', '下载')}"><i class="fas fa-file-archive me-1"></i>${t('tasks.action.download', '下载')}</a>`;
     }
     if (kind === 'folder' && task.open_folder_url) {
-        return `<button class="btn btn-outline-secondary btn-sm" data-open-url="${task.open_folder_url}" title="${t('tasks.action.folder', '打开目录')}"><i class="fas fa-folder-open me-1"></i>${t('tasks.action.folder', '打开目录')}</button>`;
+        return `<button class="btn btn-success btn-sm" data-open-url="${task.open_folder_url}" title="${t('tasks.action.folder', '打开目录')}"><i class="fas fa-folder-open me-1"></i>${t('tasks.action.folder', '打开目录')}</button>`;
     }
     if (kind === 'delete' && task.delete_url) {
         return `<button class="btn btn-outline-danger btn-sm" data-delete-url="${task.delete_url}" title="${t('tasks.action.delete', '删除记录')}"><i class="fas fa-trash-can me-1"></i>${t('tasks.action.delete', '删除记录')}</button>`;
@@ -329,37 +552,57 @@ function renderTask(task) {
     const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
     const names = Array.isArray(task.video_names) ? task.video_names : [];
     const moreCount = Math.max(0, names.length - 1);
-    const batchText = task.is_batch
-        ? t('tasks.meta.batch', '批量') + ` · ${task.video_count || names.length || 0}`
-        : t('tasks.meta.single', '单视频');
-    const message = task.message || task.error_message || '';
+    const projectScoped = isProjectTask(task);
+    const projectRunCount = Number(task.project_run_count || 0);
+    const batchText = projectScoped && projectRunCount
+        ? fillText(t('tasks.meta.project_run_count', '{count} 次运行'), {count: projectRunCount})
+        : (task.is_batch
+            ? t('tasks.meta.batch', '批量') + ` · ${task.video_count || names.length || 0}`
+            : t('tasks.meta.single', '单视频'));
+    const message = localizeTaskMessage(task.message || task.error_message || '');
     const outputDir = String(task.output_dir || '');
     const outputState = outputDir && !task.has_output_dir
         ? ` · ${t('tasks.meta.output_missing', '目录不存在或已移动')}`
         : '';
+    const taskTitle = projectScoped
+        ? (task.project_name || task.primary_video_name || task.run_id)
+        : (task.primary_video_name || task.run_id);
+    const projectVideoText = projectScoped && Number(task.video_count || 0) > 1
+        ? fillText(t('tasks.meta.video_count', '{count} 个视频'), {count: task.video_count || names.length || 0})
+        : (task.primary_video_name || '');
     const resultText = task.has_results
         ? `${task.result_file_count || 0} ${t('tasks.meta.files', '个结果文件')}`
         : t('tasks.meta.no_results', '暂无结果文件');
+    const id = taskId(task);
+    const selectable = Boolean(id && task.delete_url);
+    const selected = selectable && selectedTaskIds.has(id);
     const actions = [
+        actionButton(task, 'project'),
         actionButton(task, 'monitor'),
         actionButton(task, 'configure'),
         actionButton(task, 'stop'),
-        actionButton(task, 'download'),
         actionButton(task, 'folder'),
+        actionButton(task, 'download'),
         actionButton(task, 'delete')
     ].filter(Boolean).join('');
 
     return `
-        <article class="task-card status-${escapeHtml(status)}">
+        <article class="task-card status-${escapeHtml(status)} ${selected ? 'is-selected' : ''}">
+            <div class="task-select-cell">
+                <input class="form-check-input task-select" type="checkbox" data-select-task="${escapeHtml(id)}" aria-label="${escapeHtml(t('tasks.bulk.select_record', '选择记录'))}" ${selectable ? '' : 'disabled'} ${selected ? 'checked' : ''}>
+            </div>
             <div>
                 <div class="task-topline">
                     <span class="status-pill"><span class="status-dot ${escapeHtml(status)}"></span>${escapeHtml(statusLabel(status))}</span>
+                    ${projectScoped && task.project_name ? `<span class="badge bg-light text-dark">${escapeHtml(t('tasks.meta.project', '项目'))}: ${escapeHtml(task.project_name)}</span>` : ''}
                     <span class="badge bg-light text-dark">${escapeHtml(task.experiment_short_label || task.experiment_type || '')}</span>
                     <span class="badge bg-light text-dark">${escapeHtml(batchText)}</span>
                     ${moreCount ? `<span class="badge bg-light text-dark">+${moreCount}</span>` : ''}
                 </div>
-                <h2 class="task-title">${escapeHtml(task.primary_video_name || task.run_id)}</h2>
+                <h2 class="task-title">${escapeHtml(taskTitle)}</h2>
                 <div class="task-meta">
+                    ${projectScoped && projectVideoText ? `<span><i class="fas fa-film me-1"></i>${escapeHtml(t('tasks.meta.video', '视频'))}: ${escapeHtml(projectVideoText)}</span>` : ''}
+                    ${projectScoped && projectRunCount ? `<span><i class="fas fa-layer-group me-1"></i>${escapeHtml(t('tasks.meta.project_runs', '项目运行'))}: ${escapeHtml(projectRunCount)}</span>` : ''}
                     <span><i class="far fa-clock me-1"></i>${escapeHtml(t('tasks.meta.updated', '更新'))}: ${escapeHtml(formatTime(task.updated_at || task.created_at))}</span>
                     <span><i class="fas fa-hourglass-half me-1"></i>${escapeHtml(t('tasks.meta.duration', '耗时'))}: ${escapeHtml(formatDuration(task.duration_seconds))}</span>
                     <span><i class="fas fa-file-lines me-1"></i>${escapeHtml(resultText)}</span>
@@ -407,22 +650,68 @@ function loadTasks() {
         .then(data => {
             if (!data.success) throw new Error(data.error || 'failed');
             updateCounts(data.counts || {});
-            const list = document.getElementById('taskList');
-            const empty = document.getElementById('emptyTasks');
             const tasks = data.tasks || [];
-            list.innerHTML = tasks.map(renderTask).join('');
-            empty.style.display = tasks.length ? 'none' : 'block';
+            currentTasks = tasks;
+            pruneSelectionToVisibleTasks();
+            const projectTasks = tasks.filter(isProjectTask);
+            const quickTasks = tasks.filter(task => !isProjectTask(task));
+            document.getElementById('projectTaskList').innerHTML = projectTasks.map(renderTask).join('');
+            document.getElementById('quickTaskList').innerHTML = quickTasks.map(renderTask).join('');
+            document.getElementById('emptyProjectTasks').style.display = projectTasks.length ? 'none' : 'block';
+            document.getElementById('emptyQuickTasks').style.display = quickTasks.length ? 'none' : 'block';
+            document.getElementById('projectTaskCount').textContent = sectionCountText(projectTasks.length);
+            document.getElementById('quickTaskCount').textContent = sectionCountText(quickTasks.length);
+            updateBulkControls();
         })
         .catch(err => {
             if (err.name === 'AbortError') return;
-            document.getElementById('taskList').innerHTML = '';
-            document.getElementById('emptyTasks').style.display = 'block';
+            currentTasks = [];
+            selectedTaskIds.clear();
+            document.getElementById('projectTaskList').innerHTML = '';
+            document.getElementById('quickTaskList').innerHTML = '';
+            document.getElementById('emptyProjectTasks').style.display = 'block';
+            document.getElementById('emptyQuickTasks').style.display = 'block';
+            document.getElementById('projectTaskCount').textContent = sectionCountText(0);
+            document.getElementById('quickTaskCount').textContent = sectionCountText(0);
+            updateBulkControls();
         });
 }
 
 function scheduleTasks() {
     if (taskTimer) window.clearInterval(taskTimer);
     taskTimer = window.setInterval(loadTasks, TASK_REFRESH_MS);
+}
+
+function selectedDeletableIds() {
+    const visibleSet = new Set(visibleDeletableIds());
+    return [...selectedTaskIds].filter(id => visibleSet.has(id));
+}
+
+function bulkDeleteSelectedTasks() {
+    const ids = selectedDeletableIds();
+    if (!ids.length) return;
+    const confirmText = replaceCount(
+        t('tasks.confirm.bulk_delete', '只删除任务中心记录，不会删除结果文件。确定删除选中的 {count} 条记录吗？'),
+        ids.length
+    );
+    if (!window.confirm(confirmText)) return;
+
+    fetch('/api/tasks/bulk_delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_ids: ids })
+    })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) throw new Error(data.error || t('tasks.alert.bulk_delete_failed', '批量删除失败'));
+            selectedTaskIds.clear();
+            const skipped = Number(data.skipped_count || 0);
+            if (skipped > 0) {
+                alert(replaceCount(t('tasks.alert.bulk_delete_partial', '已删除部分记录，{count} 条记录被跳过。'), skipped));
+            }
+            loadTasks();
+        })
+        .catch(err => alert(err.message || t('tasks.alert.bulk_delete_failed', '批量删除失败')));
 }
 
 document.addEventListener('click', function(event) {
@@ -452,12 +741,50 @@ document.addEventListener('click', function(event) {
     }
 });
 
+document.addEventListener('change', function(event) {
+    const taskCheckbox = event.target.closest('[data-select-task]');
+    if (taskCheckbox) {
+        const id = taskCheckbox.getAttribute('data-select-task');
+        if (taskCheckbox.checked) selectedTaskIds.add(id);
+        else selectedTaskIds.delete(id);
+        updateBulkControls();
+        taskCheckbox.closest('.task-card')?.classList.toggle('is-selected', taskCheckbox.checked);
+        return;
+    }
+
+    if (event.target.id === 'selectAllTasks') {
+        const ids = visibleDeletableIds();
+        if (event.target.checked) {
+            ids.forEach(id => selectedTaskIds.add(id));
+        } else {
+            ids.forEach(id => selectedTaskIds.delete(id));
+        }
+        document.querySelectorAll('[data-select-task]').forEach(input => {
+            if (!input.disabled) {
+                input.checked = event.target.checked;
+                input.closest('.task-card')?.classList.toggle('is-selected', event.target.checked);
+            }
+        });
+        updateBulkControls();
+    }
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('refreshTasksBtn').addEventListener('click', loadTasks);
+    document.getElementById('clearTaskSelectionBtn').addEventListener('click', function() {
+        selectedTaskIds.clear();
+        document.querySelectorAll('[data-select-task]').forEach(input => {
+            input.checked = false;
+            input.closest('.task-card')?.classList.remove('is-selected');
+        });
+        updateBulkControls();
+    });
+    document.getElementById('bulkDeleteTasksBtn').addEventListener('click', bulkDeleteSelectedTasks);
     document.getElementById('clearFiltersBtn').addEventListener('click', function() {
         document.getElementById('taskSearch').value = '';
         document.getElementById('statusFilter').value = '';
         document.getElementById('experimentFilter').value = '';
+        selectedTaskIds.clear();
         loadTasks();
     });
     ['taskSearch', 'statusFilter', 'experimentFilter'].forEach(id => {
@@ -469,6 +796,18 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('mousescope:langchange', loadTasks);
     loadTasks();
     scheduleTasks();
+});
+
+MouseScopeTour.register('tasks', {
+    version: 'v1',
+    steps: [
+        {target: '[data-tour-id="tasks-actions"]', titleKey: 'tour.tasks.actions.title', bodyKey: 'tour.tasks.actions.body'},
+        {target: '[data-tour-id="tasks-summary"]', titleKey: 'tour.tasks.summary.title', bodyKey: 'tour.tasks.summary.body'},
+        {target: '[data-tour-id="tasks-filter"]', titleKey: 'tour.tasks.filter.title', bodyKey: 'tour.tasks.filter.body'},
+        {target: '[data-tour-id="tasks-project-section"] .task-section-head', titleKey: 'tour.tasks.project.title', bodyKey: 'tour.tasks.project.body'},
+        {target: '[data-tour-id="tasks-quick-section"] .task-section-head', titleKey: 'tour.tasks.quick.title', bodyKey: 'tour.tasks.quick.body'},
+        {target: '[data-tour-id="tasks-bulk"]', titleKey: 'tour.tasks.bulk.title', bodyKey: 'tour.tasks.bulk.body'}
+    ]
 });
 </script>
 {% endblock %}

@@ -12,6 +12,7 @@ from services.experiment_registry import get_experiment_spec, normalize_experime
 def register_page_routes(app, ctx) -> None:
     UploadStorageError = ctx.UploadStorageError
     analysis_sessions = ctx.analysis_sessions
+    project_store = getattr(ctx, "project_store", None)
     BUNDLE_DIR = ctx.BUNDLE_DIR
     VALID_VIDEO_EXTS = ctx.VALID_VIDEO_EXTS
     _cleanup_session_artifacts = ctx._cleanup_session_artifacts
@@ -19,7 +20,6 @@ def register_page_routes(app, ctx) -> None:
     _get_original_name_for_path = ctx._get_original_name_for_path
     _now_ts = ctx._now_ts
     _resolve_result_dir = ctx._resolve_result_dir
-    _safe_internal_return_to = ctx._safe_internal_return_to
     _save_uploaded_video = ctx._save_uploaded_video
     _session_video_info = ctx._session_video_info
     _stage_local_video_if_needed = ctx._stage_local_video_if_needed
@@ -55,18 +55,12 @@ def register_page_routes(app, ctx) -> None:
     @app.route('/manual/open_field')
     def manual_open_field():
         """Open field manual."""
-        return_to = _safe_internal_return_to(request.args.get('return_to'))
-        if return_to:
-            return redirect(url_for('manual', module='oft', return_to=return_to))
         return redirect(url_for('manual', module='oft'))
 
 
     @app.route('/manual/novel_object')
     def manual_novel_object():
         """Novel object recognition manual."""
-        return_to = _safe_internal_return_to(request.args.get('return_to'))
-        if return_to:
-            return redirect(url_for('manual', module='nor', return_to=return_to))
         return redirect(url_for('manual', module='nor'))
 
 
@@ -130,6 +124,14 @@ def register_page_routes(app, ctx) -> None:
     @app.route('/do_upload', methods=['POST'])
     def do_upload():
         """处理视频上传"""
+        is_ajax_upload = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+        def upload_error(message, status_code=400):
+            if is_ajax_upload:
+                return jsonify({'success': False, 'error': message}), status_code
+            flash(message, 'error')
+            return redirect(url_for('upload_page'))
+
         session_id = secrets.token_hex(16)
         uploaded_files = request.files.getlist('videos')
         local_paths_raw = request.form.get('local_paths', '').strip()
@@ -170,12 +172,10 @@ def register_page_routes(app, ctx) -> None:
         except UploadStorageError as exc:
             _cleanup_session_artifacts(session_id)
             app.logger.warning("Upload failed because storage is full: %s", exc)
-            flash(str(exc), 'error')
-            return redirect(url_for('upload_page'))
+            return upload_error(str(exc), 507)
 
         if not video_paths:
-            flash('请选择或输入至少一个视频文件', 'error')
-            return redirect(url_for('upload_page'))
+            return upload_error('请选择或输入至少一个视频文件')
 
         # 获取时间配置
         start_seconds = request.form.get('start_seconds', '').strip()
@@ -213,8 +213,12 @@ def register_page_routes(app, ctx) -> None:
         }
 
         if len(video_paths) > 1:
-            return redirect(url_for('batch_workspace', session_id=session_id))
-        return redirect(url_for('calibrate', session_id=session_id))
+            redirect_url = url_for('batch_workspace', session_id=session_id)
+        else:
+            redirect_url = url_for('calibrate', session_id=session_id)
+        if is_ajax_upload:
+            return jsonify({'success': True, 'redirect_url': redirect_url})
+        return redirect(redirect_url)
 
 
     def _render_calibrate_page(session_id, sess, video_idx=0, launch_mode='direct'):
@@ -239,6 +243,10 @@ def register_page_routes(app, ctx) -> None:
                 })
 
         spec = get_experiment_spec(sess.get('experiment_type'))
+        project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+        project_subjects = []
+        if project_context and project_store is not None:
+            project_subjects = project_context.get('subject_candidates') or project_store.subject_candidates(project_context.get('project_id'))
         return render_template(
             spec.calibrate_template,
             session_id=session_id,
@@ -254,6 +262,8 @@ def register_page_routes(app, ctx) -> None:
             launch_mode=launch_mode,
             batch_workspace_url=url_for('batch_workspace', session_id=session_id) if sess.get('is_batch') else None,
             draft_payload=sess.get('draft_payload'),
+            project_context=project_context,
+            project_subjects=project_subjects,
         )
 
 
@@ -270,6 +280,7 @@ def register_page_routes(app, ctx) -> None:
             sess.get('experiment_type'),
             sess.get('draft_payload'),
             sess.get('video_infos'),
+            project_context=sess.get('project_context'),
         )
         complete_count = sum(1 for card in cards if card.get('complete'))
         return render_template(

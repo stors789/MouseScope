@@ -38,6 +38,10 @@
 .mini-note { font-size: 0.85rem; color: var(--text-muted); }
 .status-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; color: var(--text-muted); font-size: 0.9rem; }
 .status-pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--bg-page); border: 1px solid var(--border-card); }
+.nor-guide-callout { display: flex; gap: 0.7rem; align-items: flex-start; border: 1px solid rgba(201, 100, 66, 0.24); border-left: 4px solid var(--primary-color); border-radius: 12px; background: rgba(255, 250, 245, 0.78); padding: 0.85rem; }
+.nor-guide-callout i { color: var(--primary-color); margin-top: 0.18rem; }
+.nor-guide-callout strong { display: block; margin-bottom: 0.25rem; color: var(--text-primary); }
+.nor-guide-callout p { margin: 0; color: var(--text-secondary); font-size: 0.88rem; line-height: 1.6; }
 .loading-overlay { position: fixed; inset: 0; background: rgba(241, 245, 249, 0.78); display: flex; justify-content: center; align-items: center; z-index: 9999; }
 .spinner { width: 48px; height: 48px; border: 3px solid var(--border-card); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -57,7 +61,7 @@
     <div class="spinner"></div>
 </div>
 
-<div class="nor-shell">
+<div class="nor-shell" data-calibration-module="novel_object">
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
@@ -75,7 +79,7 @@
             <div class="text-secondary" data-nor-i18n="header.subtitle">支持多 ROI / 多 arena 标定。每个 ROI 需要 4 个 arena 角点 + 2 个物体中心点。</div>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='nor') }}" target="_blank">
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='nor') }}" target="_blank">
                 <i class="fas fa-book-open me-2"></i><span data-nor-i18n="header.manual">NOR 使用手册</span>
             </a>
             <div class="nor-steps">
@@ -118,7 +122,7 @@
                 {% endif %}
 
                 <div class="nor-hint" data-nor-i18n="calib.hint" data-nor-i18n-html>
-                    点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为 familiar，第 2 个物体为 novel。若镜头边缘畸变明显，可在右侧 ROI 卡片中额外绘制单独的检测遮罩。
+                    点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为 familiar，第 2 个物体为 novel。当小鼠躯体可能超出 arena 边界时，可在右侧 ROI 卡片中额外绘制检测遮罩来框定允许检测鼠体的范围。
                 </div>
 
                 <div class="mb-3">
@@ -169,7 +173,12 @@
 
             <div class="nor-panel">
                 <h5 class="mb-3" data-nor-i18n="roi_list.title">ROI 列表</h5>
-                <div class="nor-hint" data-nor-i18n="roi_list.hint">每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗，也可以额外绘制一个检测遮罩多边形。</div>
+                <div class="nor-hint" data-nor-i18n="roi_list.hint">每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗；当小鼠躯体可能超出 arena 边界时，也可以额外绘制检测遮罩多边形。</div>
+                {% if project_context and project_context.project_id %}
+                <div class="alert alert-warning py-2 mb-3 project-subject-guide" data-tour-id="project-subject-required">
+                    <i class="fas fa-circle-info me-2"></i><span data-nor-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。</span>
+                </div>
+                {% endif %}
                 <div id="roiList" class="roi-list">
                     <div class="mini-note" data-nor-i18n="roi_list.empty">还没有添加 ROI。</div>
                 </div>
@@ -216,7 +225,7 @@
 
             <div class="param-grid">
                 <div class="param-stack">
-                    <div class="nor-panel mb-0">
+                    <div class="nor-panel mb-0" data-tour-id="nor-detection-params">
                         <h6 data-nor-i18n="detect.title">检测参数</h6>
                         <div class="compact-grid">
                             <div>
@@ -243,6 +252,11 @@
                                 <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
                                 <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
                             </div>
+                            <div data-tour-id="nor-body-threshold">
+                                <label class="form-label" data-nor-i18n="detect.body_gray_threshold">第二灰度阈值（躯干/尾巴）</label>
+                                <input type="range" class="form-range" id="bodyGrayThreshold" min="0" max="255" value="95" oninput="syncRangeLabel('bodyGrayThreshold'); updateDebugPreview()">
+                                <div class="range-line"><span>0</span><span id="bodyGrayThresholdLabel">95</span><span>255</span></div>
+                            </div>
                             <div>
                                 <label class="form-label" data-nor-i18n="detect.erosion_kernel">腐蚀核</label>
                                 <input type="range" class="form-range" id="erosionKernel" min="1" max="15" value="3" oninput="syncRangeLabel('erosionKernel'); updateDebugPreview()">
@@ -268,7 +282,7 @@
                 </div>
 
                 <div class="param-stack">
-                    <div class="nor-panel mb-0">
+                    <div class="nor-panel mb-0" data-tour-id="nor-stats-params">
                         <h6 data-nor-i18n="stats.title">统计参数</h6>
                         <div class="compact-grid">
                             <div>
@@ -287,17 +301,17 @@
                                 <label class="form-label" data-nor-i18n="stats.exploration_max_speed">探索最大速度 (cm/s)</label>
                                 <input type="number" class="form-control" id="explorationMaxSpeed" min="0" step="0.1" value="12.0" onchange="updateDebugPreview()">
                             </div>
-                            <div class="d-flex align-items-end">
+                            <div class="d-flex align-items-end" data-tour-id="nor-head-switch">
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" id="useHeadDirection" checked onchange="updateDebugPreview()">
                                     <label class="form-check-label" for="useHeadDirection" data-nor-i18n="stats.use_head_direction">启用头向辅助探索</label>
                                 </div>
                             </div>
-                            <div>
+                            <div data-tour-id="nor-head-angle">
                                 <label class="form-label" data-nor-i18n="stats.head_angle_threshold">头向角度阈值 (°)</label>
                                 <input type="number" class="form-control" id="headAngleThreshold" min="5" max="180" step="1" value="50" onchange="updateDebugPreview()">
                             </div>
-                            <div>
+                            <div data-tour-id="nor-head-confidence">
                                 <label class="form-label" data-nor-i18n="stats.head_confidence_threshold">头向置信度阈值</label>
                                 <input type="number" class="form-control" id="headConfidenceThreshold" min="0" max="1" step="0.05" value="0.35" onchange="updateDebugPreview()">
                             </div>
@@ -320,8 +334,15 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="nor-guide-callout mt-3" data-tour-id="nor-head-direction-guide">
+                            <i class="fas fa-compass"></i>
+                            <div>
+                                <strong data-nor-i18n="stats.head_direction_guide_title">头向双阈值怎么调</strong>
+                                <p data-nor-i18n="stats.head_direction_guide_body">第二灰度阈值先把躯干和尾巴分开，用预览里的蓝色躯干、紫色尾巴和黄色鼻尖线判断是否稳定；头向角度阈值越小越严格，置信度阈值越高越保守。若鼻尖线频繁跳动，先调第二灰度阈值，再适当提高置信度或放宽角度。</p>
+                            </div>
+                        </div>
                         <div class="mini-note mt-3" data-nor-i18n="stats.head_direction_hint">
-                            头向估计主要依据鼠体前缘形状和前后帧连续性，不依赖完整尾巴；当置信度不足时，会自动回退到原来的距离阈值规则。
+                            预览中绿色为整体轮廓，蓝色为第二阈值得到的躯干，紫色为清理后的尾巴核心/尾根，红点为尾尖，黄色为鼻尖和头向线。尾巴证据不足时会回退到躯干轮廓头向逻辑。
                         </div>
                         <div class="status-strip mt-3">
                             <div class="status-pill" id="previewStatus" data-nor-i18n="debug.preview_waiting">等待预览</div>
@@ -349,6 +370,9 @@ const videoList = {{ video_list | tojson }};
 {% else %}
 const videoList = [];
 {% endif %}
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
 
 const NOR_I18N = {
     zh: {
@@ -363,7 +387,7 @@ const NOR_I18N = {
         'calib.arena_width': 'Arena 宽度 (cm)',
         'calib.arena_height': 'Arena 高度 (cm)',
         'calib.preview_video': '预览视频',
-        'calib.hint': '点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为熟悉物体，第 2 个物体为新奇物体。若镜头边缘畸变明显，可在右侧 ROI 卡片中额外绘制单独的检测遮罩。',
+        'calib.hint': '点击顺序固定为：<strong>4 个 arena 角点</strong> → <strong>2 个物体中心点</strong>。Recognition 阶段默认第 1 个物体为熟悉物体，第 2 个物体为新奇物体。当小鼠躯体可能超出 arena 边界时，可在右侧 ROI 卡片中额外绘制检测遮罩来框定允许检测鼠体的范围。',
         'calib.select_frame': '选择帧',
         'calib.btn.add_roi': '新增 ROI',
         'calib.btn.undo': '撤销一步',
@@ -379,8 +403,9 @@ const NOR_I18N = {
         'calib.status.mode': '当前模式:',
         'calib.status.phase': '当前阶段:',
         'roi_list.title': 'ROI 列表',
-        'roi_list.hint': '每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗，也可以额外绘制一个检测遮罩多边形。',
+        'roi_list.hint': '每个 ROI 都可以单独命名，设置两个物体的名称、角色和独立时间窗；当小鼠躯体可能超出 arena 边界时，也可以额外绘制检测遮罩多边形。',
         'roi_list.empty': '还没有添加 ROI。',
+        'project.subject_required': '项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。',
         'roi_list.card.points_hint_mask_custom': '4 个 arena 角点 + 2 个物体中心点 · 已自定义检测遮罩（{0} 点）',
         'roi_list.card.points_hint_mask_default': '4 个 arena 角点 + 2 个物体中心点 · 检测遮罩默认跟随 arena',
         'roi_list.card.name': '名称',
@@ -392,7 +417,7 @@ const NOR_I18N = {
         'roi_list.card.edit_mask': '编辑检测遮罩',
         'roi_list.card.continue_mask': '继续编辑检测遮罩',
         'roi_list.card.reset_mask': '恢复默认遮罩',
-        'roi_list.card.mask_note': '统计仍使用 4 点 arena 和物体位置；检测时会优先使用这里的遮罩多边形。',
+        'roi_list.card.mask_note': '当小鼠躯体超出 arena 边界时，可用遮罩框定允许检测鼠体的范围；统计仍使用 4 点 arena 和物体位置。',
         'roi_list.card.object1': '物体 1',
         'roi_list.card.object2': '物体 2',
         'roi_list.card.object_name': '名称',
@@ -417,6 +442,7 @@ const NOR_I18N = {
         'detect.bg_dark': '深色背景 / 浅色鼠',
         'detect.min_area': '最小面积',
         'detect.gray_threshold': '灰度阈值',
+        'detect.body_gray_threshold': '第二灰度阈值（躯干/尾巴）',
         'detect.erosion_kernel': '腐蚀核',
         'detect.erosion_iter': '腐蚀次数',
         'detect.dilation_kernel': '膨胀核',
@@ -433,7 +459,9 @@ const NOR_I18N = {
         'stats.min_valid_exploration': '最小有效探索时长 (s)',
         'stats.bin_seconds': '分箱时长 (s)',
         'stats.generate_video': '生成标注视频',
-        'stats.head_direction_hint': '头向估计主要依据鼠体前缘形状和前后帧连续性，不依赖完整尾巴；当置信度不足时，会自动回退到原来的距离阈值规则。',
+        'stats.head_direction_guide_title': '头向双阈值怎么调',
+        'stats.head_direction_guide_body': '第二灰度阈值先把躯干和尾巴分开，用预览里的蓝色躯干、紫色尾巴和黄色鼻尖线判断是否稳定；头向角度阈值越小越严格，置信度阈值越高越保守。若鼻尖线频繁跳动，先调第二灰度阈值，再适当提高置信度或放宽角度。',
+        'stats.head_direction_hint': '预览中绿色为整体轮廓，蓝色为第二阈值得到的躯干，紫色为清理后的尾巴核心/尾根，红点为尾尖，黄色为鼻尖和头向线。尾巴证据不足时会回退到躯干轮廓头向逻辑。',
         'common.frame': '帧',
         'common.phase.recognition': '识别测试期',
         'common.phase.familiarization': '熟悉期',
@@ -469,7 +497,7 @@ const NOR_I18N = {
         'calib.arena_width': 'Arena Width (cm)',
         'calib.arena_height': 'Arena Height (cm)',
         'calib.preview_video': 'Preview Video',
-        'calib.hint': 'Click in this fixed order: <strong>4 arena corners</strong> → <strong>2 object centers</strong>. In the Recognition phase, object 1 defaults to familiar and object 2 defaults to novel. If edge distortion is obvious, draw a separate detection mask in the ROI card on the right.',
+        'calib.hint': 'Click in this fixed order: <strong>4 arena corners</strong> → <strong>2 object centers</strong>. In the Recognition phase, object 1 defaults to familiar and object 2 defaults to novel. When the mouse body may extend beyond the arena boundary, draw a detection mask in the ROI card to define where the body is allowed to be detected.',
         'calib.select_frame': 'Select Frame',
         'calib.btn.add_roi': 'Add ROI',
         'calib.btn.undo': 'Undo',
@@ -485,8 +513,9 @@ const NOR_I18N = {
         'calib.status.mode': 'Mode:',
         'calib.status.phase': 'Phase:',
         'roi_list.title': 'ROI List',
-        'roi_list.hint': 'Each ROI can be named individually, configured with object names, roles, and its own time window, and can also use an extra detection-mask polygon.',
+        'roi_list.hint': 'Each ROI can be named individually, configured with object names, roles, and its own time window. When the mouse body may extend beyond the arena boundary, add an extra detection-mask polygon.',
         'roi_list.empty': 'No ROI added yet.',
+        'project.subject_required': 'In project mode, every complete ROI must be assigned to an existing project animal before you can tune or start analysis.',
         'roi_list.card.points_hint_mask_custom': '4 arena corners + 2 object centers · custom detection mask ({0} points)',
         'roi_list.card.points_hint_mask_default': '4 arena corners + 2 object centers · detection mask follows the arena by default',
         'roi_list.card.name': 'Name',
@@ -498,7 +527,7 @@ const NOR_I18N = {
         'roi_list.card.edit_mask': 'Edit Detection Mask',
         'roi_list.card.continue_mask': 'Continue Mask Editing',
         'roi_list.card.reset_mask': 'Reset Default Mask',
-        'roi_list.card.mask_note': 'Statistics still use the 4-point arena and object positions; detection will prioritize this mask polygon.',
+        'roi_list.card.mask_note': 'Use the mask when the mouse body extends beyond the arena boundary; statistics still use the 4-point arena and object positions.',
         'roi_list.card.object1': 'Object 1',
         'roi_list.card.object2': 'Object 2',
         'roi_list.card.object_name': 'Name',
@@ -523,6 +552,7 @@ const NOR_I18N = {
         'detect.bg_dark': 'Dark Background / Light Mouse',
         'detect.min_area': 'Minimum Area',
         'detect.gray_threshold': 'Gray Threshold',
+        'detect.body_gray_threshold': 'Second Gray Threshold (Body/Tail)',
         'detect.erosion_kernel': 'Erosion Kernel',
         'detect.erosion_iter': 'Erosion Iterations',
         'detect.dilation_kernel': 'Dilation Kernel',
@@ -539,7 +569,9 @@ const NOR_I18N = {
         'stats.min_valid_exploration': 'Minimum Valid Exploration (s)',
         'stats.bin_seconds': 'Bin Length (s)',
         'stats.generate_video': 'Generate Annotated Video',
-        'stats.head_direction_hint': 'Head direction is estimated mainly from the mouse front contour and frame-to-frame continuity, without requiring a full tail. Low-confidence frames automatically fall back to the original proximity rule.',
+        'stats.head_direction_guide_title': 'How to tune the heading thresholds',
+        'stats.head_direction_guide_body': 'The second gray threshold separates trunk and tail first. Use the blue body, purple tail, and yellow nose/heading line in the preview to judge stability. A smaller head-angle threshold is stricter; a higher confidence threshold is more conservative. If the nose line jumps often, tune the second threshold first, then raise confidence or relax the angle.',
+        'stats.head_direction_hint': 'Preview colors: green is the whole mouse contour, blue is the body from the second threshold, purple is the cleaned tail core/root, red is the tail tip, and yellow is the nose point and heading line. Unclear tail evidence falls back to body-contour orientation.',
         'common.frame': 'Frame',
         'common.phase.recognition': 'Recognition',
         'common.phase.familiarization': 'Familiarization',
@@ -571,6 +603,7 @@ let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
 let rois = [];
 let currentROI = { points: [], objects: [] };
 let isDrawingROI = false;
+let activeROIIndex = null;
 let currentMaskPoints = [];
 let isDrawingMask = false;
 let maskEditROIIndex = null;
@@ -579,11 +612,61 @@ const MIN_MASK_POINTS = 3;
 const MAX_MASK_POINTS = 32;
 const MASK_SNAP_RADIUS_PX = 14;
 const totalVideoCount = Math.max(videoInfoList.length, videoList.length, 1);
+function currentProjectAssignmentId() {
+    const map = projectContext && projectContext.video_assignment_map ? projectContext.video_assignment_map : {};
+    return map[String(currentVideoIdx)] || null;
+}
+function currentProjectUnits() {
+    const assignmentId = currentProjectAssignmentId();
+    const unitMap = projectContext && projectContext.unit_map ? projectContext.unit_map : {};
+    return assignmentId && Array.isArray(unitMap[assignmentId]) ? unitMap[assignmentId] : [];
+}
+function projectSubjectById(subjectId) {
+    return (projectSubjects || []).find(subject => subject.subject_id === subjectId) || null;
+}
+function clearProjectSubjectForROI(roi) {
+    if (!roi) return;
+    const previousAnimalCode = roi.animal_code;
+    delete roi.project_unit_id;
+    delete roi.subject_id;
+    delete roi.animal_code;
+    delete roi.group_id;
+    delete roi.group_name;
+    if (previousAnimalCode && roi.name === previousAnimalCode) roi.name = '';
+}
+function applyProjectSubjectToROI(roi, index, subjectId) {
+    if (!isProjectMode || !roi) return;
+    const subject = projectSubjectById(subjectId);
+    if (!subject) {
+        clearProjectSubjectForROI(roi);
+        return;
+    }
+    const units = currentProjectUnits();
+    const unit = units.find(unit => unit.subject_id === subject.subject_id) || null;
+    roi.project_unit_id = unit ? unit.unit_id : null;
+    roi.subject_id = subject.subject_id;
+    roi.animal_code = subject.animal_code;
+    roi.group_id = subject.group_id || '';
+    roi.group_name = subject.group_name || '';
+    roi.name = subject.animal_code || roi.name;
+}
+function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
+    if (!isProjectMode) {
+        return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
+    }
+    const selectedId = roi.subject_id || '';
+    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+        const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
+        return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    })).join('');
+    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateROIProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+}
 function defaultNorTuningParams() {
     return {
         bg_method: 'threshold',
         bg_type: 'light',
         gray_threshold: 127,
+        body_gray_threshold: 95,
         erosion_kernel: 3,
         erosion_iter: 1,
         dilation_kernel: 5,
@@ -606,6 +689,7 @@ function readNorTuningParamsFromControls() {
         bg_method: document.getElementById('bgMethod')?.value || 'threshold',
         bg_type: document.getElementById('bgType')?.value || 'light',
         gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        body_gray_threshold: parseInt(document.getElementById('bodyGrayThreshold')?.value || '95', 10),
         erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
         erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
         dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
@@ -629,6 +713,7 @@ function applyNorTuningParamsToControls(params) {
         bgMethod: merged.bg_method,
         bgType: merged.bg_type,
         grayThreshold: merged.gray_threshold,
+        bodyGrayThreshold: merged.body_gray_threshold,
         erosionKernel: merged.erosion_kernel,
         erosionIter: merged.erosion_iter,
         dilationKernel: merged.dilation_kernel,
@@ -650,7 +735,7 @@ function applyNorTuningParamsToControls(params) {
     });
     const useHeadDirection = document.getElementById('useHeadDirection');
     if (useHeadDirection) useHeadDirection.checked = Boolean(merged.use_head_direction);
-    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    ['grayThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
 }
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
@@ -729,6 +814,7 @@ function persistCurrentVideoState() {
     config.rois = cloneState(rois);
     config.current_roi = cloneState(currentROI);
     config.is_drawing_roi = Boolean(isDrawingROI);
+    config.active_roi_index = activeROIIndex == null ? null : Number(activeROIIndex);
     config.current_mask_points = cloneState(currentMaskPoints);
     config.is_drawing_mask = Boolean(isDrawingMask);
     config.mask_edit_roi_index = maskEditROIIndex == null ? null : Number(maskEditROIIndex);
@@ -741,8 +827,7 @@ function syncVideoSelectors() {
     selector.value = String(currentVideoIdx);
     Array.from(selector.options).forEach((option, index) => {
         const config = ensureVideoConfig(index);
-        const ready = Array.isArray(config.rois) && config.rois.length > 0
-            && config.rois.every(roi => Array.isArray(roi.points) && roi.points.length === 4 && Array.isArray(roi.objects) && roi.objects.length === 2);
+        const ready = allNorRoisReady(config.rois || []);
         option.textContent = `${ready ? '[OK]' : '[ ]'} ${index + 1}. ${currentVideoName(index)}`;
     });
 }
@@ -764,13 +849,24 @@ function applyCurrentVideoState() {
     rois = cloneState(config.rois || []);
     currentROI = cloneState(config.current_roi || { points: [], objects: [] });
     isDrawingROI = Boolean(config.is_drawing_roi);
+    activeROIIndex = config.active_roi_index == null ? null : Number(config.active_roi_index);
+    if (isDrawingROI && (activeROIIndex == null || !rois[activeROIIndex])) {
+        activeROIIndex = rois.findIndex(roi => !isCompleteNorROI(roi));
+        if (activeROIIndex < 0) activeROIIndex = null;
+    }
+    if (isDrawingROI && activeROIIndex != null && rois[activeROIIndex]) {
+        currentROI = {
+            points: cloneState(rois[activeROIIndex].points || []),
+            objects: cloneState(rois[activeROIIndex].objects || [])
+        };
+    }
     currentMaskPoints = cloneState(config.current_mask_points || []);
     isDrawingMask = Boolean(config.is_drawing_mask);
     maskEditROIIndex = config.mask_edit_roi_index == null ? null : Number(config.mask_edit_roi_index);
     applyNorTuningParamsToControls(config.tuning_params);
     document.getElementById('phaseText').textContent = phaseLabel();
     updateROIList();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateNorReadinessUI();
     syncFrameControls();
     syncVideoSelectors();
 }
@@ -793,6 +889,7 @@ function hydrateFromDraftPayload() {
             target.rois = cloneState(workspaceCfg.rois || []);
             target.current_roi = cloneState(workspaceCfg.current_roi || { points: [], objects: [] });
             target.is_drawing_roi = Boolean(workspaceCfg.is_drawing_roi);
+            target.active_roi_index = workspaceCfg.active_roi_index ?? null;
             target.current_mask_points = cloneState(workspaceCfg.current_mask_points || []);
             target.is_drawing_mask = Boolean(workspaceCfg.is_drawing_mask);
             target.mask_edit_roi_index = workspaceCfg.mask_edit_roi_index ?? null;
@@ -863,6 +960,72 @@ function defaultObjectName(index) {
 
 function roiDefaultName(index) {
     return `ROI ${index + 1}`;
+}
+
+function isCompleteNorROI(roi) {
+    return Array.isArray(roi && roi.points)
+        && roi.points.length === 4
+        && Array.isArray(roi.objects)
+        && roi.objects.length === 2
+        && roi.objects.every(obj => obj && obj.point);
+}
+
+function allNorRoisReady(sourceRois = rois) {
+    return Array.isArray(sourceRois) && sourceRois.length > 0 && sourceRois.every(isCompleteNorROI);
+}
+
+function projectSubjectRequiredMessage(noSubjects = false) {
+    const en = typeof getLang === 'function' && getLang() === 'en';
+    if (noSubjects) {
+        return en
+            ? 'Add animals in the project first, then choose one for every ROI.'
+            : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。';
+    }
+    return en
+        ? 'Please choose an existing project animal for every ROI.'
+        : '请为每个 ROI 选择项目中已有的小鼠。';
+}
+
+function projectRoiSubjectsReady(sourceRois = rois, completeFn = isCompleteNorROI) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) return false;
+    return (sourceRois || []).every(roi => !completeFn(roi) || !!projectSubjectById(roi.subject_id));
+}
+
+function validateProjectRoiSubjects(sourceRois = rois, completeFn = isCompleteNorROI) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) {
+        alert(projectSubjectRequiredMessage(true));
+        return false;
+    }
+    const missingIndex = (sourceRois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+    if (missingIndex >= 0) {
+        alert(projectSubjectRequiredMessage(false));
+        return false;
+    }
+    return true;
+}
+
+function addProjectSubjectBatchIssues(incomplete, configs, completeFn = isCompleteNorROI) {
+    if (!isProjectMode) return;
+    if (!(projectSubjects || []).length) {
+        incomplete.push(projectSubjectRequiredMessage(true));
+        return;
+    }
+    (configs || []).forEach((cfg, index) => {
+        const subjectIndex = (cfg.rois || []).findIndex(roi => completeFn(roi) && !projectSubjectById(roi.subject_id));
+        if (subjectIndex >= 0) {
+            const en = typeof getLang === 'function' && getLang() === 'en';
+            incomplete.push(en
+                ? `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} has no project animal selected`
+                : `${index + 1}. ${currentVideoName(index)}: ROI ${subjectIndex + 1} 未选择项目小鼠`);
+        }
+    });
+}
+
+function updateNorReadinessUI() {
+    const toDebugBtn = document.getElementById('toDebugBtn');
+    if (toDebugBtn) toDebugBtn.disabled = !allNorRoisReady() || !projectRoiSubjectsReady();
 }
 
 function currentDrawModeLabel() {
@@ -1027,7 +1190,7 @@ window.onload = function () {
     applyCurrentVideoState();
     syncFrameControls();
     document.getElementById('phaseText').textContent = phaseLabel();
-    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    ['grayThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
     updateROIList();
     loadFrame(0);
@@ -1240,6 +1403,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (currentROI.points.length < 4) {
             currentROI.points.push({ x, y });
+            if (activeROIIndex != null && rois[activeROIIndex]) {
+                rois[activeROIIndex].points = cloneState(currentROI.points);
+            }
+            updateROIList();
             persistCurrentVideoState();
             syncVideoSelectors();
             drawArenaCanvas();
@@ -1253,6 +1420,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 name: defaultObjectName(idx),
                 role: defaultObjectRole(idx)
             });
+            if (activeROIIndex != null && rois[activeROIIndex]) {
+                rois[activeROIIndex].objects = cloneState(currentROI.objects);
+            }
+            updateROIList();
             persistCurrentVideoState();
             syncVideoSelectors();
             if (currentROI.objects.length === 2) {
@@ -1272,8 +1443,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function startNewROI() {
     cancelDetectionMaskEdit();
+    if (isDrawingROI && currentROI.points.length === 4 && currentROI.objects.length === 2) {
+        finishCurrentROI();
+    }
+    if (isDrawingROI && activeROIIndex != null && rois[activeROIIndex] && !isCompleteNorROI(rois[activeROIIndex])) {
+        updateROIList();
+        drawArenaCanvas();
+        return;
+    }
+    const newROI = {
+        points: [],
+        objects: [],
+        name: roiDefaultName(rois.length),
+        time_config: { mode: 'global', start: null, end: null }
+    };
+    rois.push(newROI);
+    activeROIIndex = rois.length - 1;
     currentROI = { points: [], objects: [] };
     isDrawingROI = true;
+    updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -1281,24 +1469,32 @@ function startNewROI() {
 
 function finishCurrentROI() {
     if (currentROI.points.length !== 4 || currentROI.objects.length !== 2) return;
-    rois.push({
-        points: cloneState(currentROI.points),
-        objects: cloneState(currentROI.objects),
-        name: roiDefaultName(rois.length),
-        time_config: { mode: 'global', start: null, end: null }
-    });
+    if (activeROIIndex != null && rois[activeROIIndex]) {
+        rois[activeROIIndex].points = cloneState(currentROI.points);
+        rois[activeROIIndex].objects = cloneState(currentROI.objects);
+    } else {
+        const newROI = {
+            points: cloneState(currentROI.points),
+            objects: cloneState(currentROI.objects),
+            name: roiDefaultName(rois.length),
+            time_config: { mode: 'global', start: null, end: null }
+        };
+        rois.push(newROI);
+    }
     currentROI = { points: [], objects: [] };
     isDrawingROI = false;
+    activeROIIndex = null;
     updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateNorReadinessUI();
 }
 
 function startDetectionMaskEdit(index) {
     currentROI = { points: [], objects: [] };
     isDrawingROI = false;
+    activeROIIndex = null;
     isDrawingMask = true;
     maskEditROIIndex = index;
     currentMaskPoints = cloneState(rois[index].detection_points || []);
@@ -1357,9 +1553,16 @@ function undoCurrentPoint() {
         currentMaskPoints.pop();
     } else if (currentROI.objects.length > 0) {
         currentROI.objects.pop();
+        if (activeROIIndex != null && rois[activeROIIndex]) {
+            rois[activeROIIndex].objects = cloneState(currentROI.objects);
+        }
     } else if (currentROI.points.length > 0) {
         currentROI.points.pop();
+        if (activeROIIndex != null && rois[activeROIIndex]) {
+            rois[activeROIIndex].points = cloneState(currentROI.points);
+        }
     }
+    updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -1370,7 +1573,12 @@ function clearCurrentROI() {
         currentMaskPoints = [];
     } else {
         currentROI = { points: [], objects: [] };
+        if (activeROIIndex != null && rois[activeROIIndex]) {
+            rois[activeROIIndex].points = [];
+            rois[activeROIIndex].objects = [];
+        }
     }
+    updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -1380,6 +1588,7 @@ function clearAllROIs() {
     rois = [];
     currentROI = { points: [], objects: [] };
     isDrawingROI = false;
+    activeROIIndex = null;
     isDrawingMask = false;
     maskEditROIIndex = null;
     currentMaskPoints = [];
@@ -1387,7 +1596,7 @@ function clearAllROIs() {
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = true;
+    updateNorReadinessUI();
 }
 
 function deleteROI(index) {
@@ -1397,17 +1606,25 @@ function deleteROI(index) {
         maskEditROIIndex -= 1;
     }
     rois.splice(index, 1);
+    if (activeROIIndex === index) {
+        activeROIIndex = null;
+        currentROI = { points: [], objects: [] };
+        isDrawingROI = false;
+    } else if (activeROIIndex != null && index < activeROIIndex) {
+        activeROIIndex -= 1;
+    }
     updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
-    document.getElementById('toDebugBtn').disabled = rois.length === 0;
+    updateNorReadinessUI();
 }
 
 function updateROIList() {
     const list = document.getElementById('roiList');
     if (!rois.length) {
         list.innerHTML = `<div class="mini-note">${norTr('roi_list.empty', 'No ROI added yet.')}</div>`;
+        updateNorReadinessUI();
         return;
     }
 
@@ -1415,6 +1632,14 @@ function updateROIList() {
         const timeConfig = roi.time_config || { mode: 'global', start: null, end: null };
         const preciseStyle = timeConfig.mode === 'precise' ? '' : 'display:none;';
         const recognition = currentPhase() === 'recognition';
+        const cornerCount = (roi.points || []).length;
+        const objectCount = (roi.objects || []).length;
+        const complete = isCompleteNorROI(roi);
+        const completeText = norLang() === 'en'
+            ? (complete ? 'Complete' : 'Drawing')
+            : (complete ? '已完成' : '绘制中');
+        const object1Ready = !!(roi.objects && roi.objects[0] && roi.objects[0].point);
+        const object2Ready = !!(roi.objects && roi.objects[1] && roi.objects[1].point);
         const detectionCount = (roi.detection_points || []).length;
         const isEditingMask = isDrawingMask && maskEditROIIndex === index;
         return `
@@ -1422,7 +1647,7 @@ function updateROIList() {
                 <div class="roi-card-head">
                     <div>
                         <div class="roi-card-title">ROI ${index + 1}</div>
-                        <small>${detectionCount >= MIN_MASK_POINTS
+                        <small>${cornerCount} / 4 ${norTr('calib.status.corners', 'Corners:').replace(':', '')} · ${objectCount} / 2 ${norTr('calib.status.objects', 'Objects:').replace(':', '')} · ${completeText} · ${detectionCount >= MIN_MASK_POINTS
                             ? norFormat('roi_list.card.points_hint_mask_custom', [detectionCount], `4 arena corners + 2 object centers · custom detection mask (${detectionCount} points)`)
                             : norTr('roi_list.card.points_hint_mask_default', '4 arena corners + 2 object centers · detection mask follows the arena by default')}</small>
                     </div>
@@ -1433,8 +1658,7 @@ function updateROIList() {
 
                 <div class="compact-grid">
                     <div>
-                        <label class="form-label">${norTr('roi_list.card.name', 'Name')}</label>
-                        <input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updateROIName(${index}, this.value)">
+                        ${projectSubjectSelectMarkup(index, roi, 'updateROIName', norTr('roi_list.card.name', 'Name'))}
                     </div>
                     <div>
                         <label class="form-label">${norTr('roi_list.card.time_mode', 'Statistics Mode')}</label>
@@ -1465,18 +1689,18 @@ function updateROIList() {
                         <i class="fas fa-rotate-left me-1"></i>${norTr('roi_list.card.reset_mask', 'Reset Default Mask')}
                     </button>
                 </div>
-                <div class="mini-note mt-2">${norTr('roi_list.card.mask_note', 'Statistics still use the 4-point arena and object positions; detection will prioritize this mask polygon.')}</div>
+                <div class="mini-note mt-2">${norTr('roi_list.card.mask_note', 'Use the mask when the mouse body extends beyond the arena boundary; statistics still use the 4-point arena and object positions.')}</div>
 
                 <div class="object-card mt-3">
                     <div class="object-card-title"><span class="dot familiar"></span>${norTr('roi_list.card.object1', 'Object 1')}</div>
                     <div class="compact-grid">
                         <div>
                             <label class="form-label">${norTr('roi_list.card.object_name', 'Name')}</label>
-                            <input class="form-control" value="${escapeHtml((roi.objects[0] && roi.objects[0].name) || '')}" onchange="updateObjectName(${index}, 0, this.value)">
+                            <input class="form-control" ${object1Ready ? '' : 'disabled'} value="${escapeHtml((roi.objects[0] && roi.objects[0].name) || '')}" onchange="updateObjectName(${index}, 0, this.value)">
                         </div>
                         <div>
                             <label class="form-label">${norTr('roi_list.card.object_role', 'Role')}</label>
-                            <select class="form-select" ${recognition ? '' : 'disabled'} onchange="updateObjectRole(${index}, 0, this.value)">
+                            <select class="form-select" ${recognition && object1Ready ? '' : 'disabled'} onchange="updateObjectRole(${index}, 0, this.value)">
                                 <option value="familiar" ${((roi.objects[0] && roi.objects[0].role) || 'familiar') === 'familiar' ? 'selected' : ''}>${norTr('roi_list.role.familiar', 'Familiar')}</option>
                                 <option value="novel" ${((roi.objects[0] && roi.objects[0].role) || '') === 'novel' ? 'selected' : ''}>${norTr('roi_list.role.novel', 'Novel')}</option>
                             </select>
@@ -1489,11 +1713,11 @@ function updateROIList() {
                     <div class="compact-grid">
                         <div>
                             <label class="form-label">${norTr('roi_list.card.object_name', 'Name')}</label>
-                            <input class="form-control" value="${escapeHtml((roi.objects[1] && roi.objects[1].name) || '')}" onchange="updateObjectName(${index}, 1, this.value)">
+                            <input class="form-control" ${object2Ready ? '' : 'disabled'} value="${escapeHtml((roi.objects[1] && roi.objects[1].name) || '')}" onchange="updateObjectName(${index}, 1, this.value)">
                         </div>
                         <div>
                             <label class="form-label">${norTr('roi_list.card.object_role', 'Role')}</label>
-                            <select class="form-select" ${recognition ? '' : 'disabled'} onchange="updateObjectRole(${index}, 1, this.value)">
+                            <select class="form-select" ${recognition && object2Ready ? '' : 'disabled'} onchange="updateObjectRole(${index}, 1, this.value)">
                                 <option value="familiar" ${((roi.objects[1] && roi.objects[1].role) || '') === 'familiar' ? 'selected' : ''}>${norTr('roi_list.role.familiar', 'Familiar')}</option>
                                 <option value="novel" ${((roi.objects[1] && roi.objects[1].role) || 'novel') === 'novel' ? 'selected' : ''}>${norTr('roi_list.role.novel', 'Novel')}</option>
                             </select>
@@ -1503,11 +1727,21 @@ function updateROIList() {
             </div>
         `;
     }).join('');
+    updateNorReadinessUI();
     return;
 }
 
 function updateROIName(index, value) {
     rois[index].name = value || roiDefaultName(index);
+    persistCurrentVideoState();
+    syncVideoSelectors();
+    drawArenaCanvas();
+}
+
+function updateROIProjectSubject(index, subjectId) {
+    if (!rois[index]) return;
+    applyProjectSubjectToROI(rois[index], index, subjectId);
+    updateROIList();
     persistCurrentVideoState();
     syncVideoSelectors();
     drawArenaCanvas();
@@ -1578,7 +1812,7 @@ function onVideoChange(value) {
 }
 
 function goToStep(step) {
-    if (step === 2 && rois.length === 0) {
+    if (step === 2 && !allNorRoisReady()) {
         alert(norTr('alerts.need_roi_for_debug', 'Please finish at least one ROI calibration first.'));
         return;
     }
@@ -1607,7 +1841,7 @@ function updateStepNav(activeStep) {
 }
 
 function normalizeNorRois(sourceRois) {
-    return cloneState(sourceRois || []).map(roi => {
+    return cloneState(sourceRois || []).filter(isCompleteNorROI).map(roi => {
         if (!roi.time_config) {
             roi.time_config = { mode: 'global', start: null, end: null };
         }
@@ -1640,6 +1874,7 @@ function buildRequestBody(frameIdx) {
         bg_method: currentTuningParams.bg_method,
         bg_type: currentTuningParams.bg_type,
         gray_threshold: currentTuningParams.gray_threshold,
+        body_gray_threshold: currentTuningParams.body_gray_threshold,
         erosion_kernel: currentTuningParams.erosion_kernel,
         erosion_iter: currentTuningParams.erosion_iter,
         dilation_kernel: currentTuningParams.dilation_kernel,
@@ -1695,7 +1930,7 @@ function drawImageOnCanvas(canvasId, base64Data) {
 }
 
 function updateDebugPreview(frameIdx) {
-    if (!rois.length) return;
+    if (!allNorRoisReady()) return;
     fetch(`/api/debug_preview/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1722,10 +1957,11 @@ function updateDebugPreview(frameIdx) {
 }
 
 function startAnalysis() {
-    if (!rois.length) {
+    if (!allNorRoisReady()) {
         alert(norTr('alerts.need_roi_for_analysis', 'Please finish ROI calibration first.'));
         return;
     }
+    if (!validateProjectRoiSubjects()) return;
     const invalid = rois.findIndex(roi => !roi.points || roi.points.length !== 4 || !roi.objects || roi.objects.length !== 2);
     if (invalid !== -1) {
         alert(norFormat('alerts.roi_missing', [invalid + 1], `ROI ${invalid + 1} is missing arena corners or object centers.`));
@@ -1779,6 +2015,7 @@ function startAnalysis() {
                 );
             }
         });
+        addProjectSubjectBatchIssues(incomplete, body.per_video_configs);
         if (incomplete.length > 0) {
             alert(
                 norFormat(

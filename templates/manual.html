@@ -29,11 +29,6 @@
     margin: 0;
     color: var(--text-secondary);
 }
-.manual-header-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-}
 .manual-switch {
     display: flex;
     justify-content: space-between;
@@ -171,6 +166,7 @@
     padding: 1.4rem;
     margin-bottom: 1.25rem;
     box-shadow: var(--shadow-card);
+    scroll-margin-top: 96px;
 }
 .manual-section h3 {
     color: var(--primary-dark);
@@ -399,37 +395,27 @@
                 </h1>
                 <p data-i18n="manual.subtitle">从视频采集到拿到结果，每一步该怎么做</p>
             </div>
-            <div class="manual-header-actions">
-                {% if manual_return_to %}
-                <a href="{{ manual_return_to }}" class="btn btn-primary">
-                    <i class="fas fa-rotate-left me-2"></i><span data-i18n="manual.btn.return">返回上一界面</span>
-                </a>
-                {% endif %}
-                <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
-                    <i class="fas fa-arrow-left me-2"></i><span data-i18n="manual.btn.back">返回首页</span>
-                </a>
-            </div>
         </div>
 
         <div class="manual-switch">
             <div class="manual-switch-label" data-i18n="manual.switch.label">实验手册</div>
             <div class="manual-switch-group">
-                <a href="{{ url_for('manual', module='tst', return_to=manual_return_to) if manual_return_to else url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
                     <span data-i18n="manual.switch.tst">TST 手册</span>
                 </a>
-                <a href="{{ url_for('manual', module='fst', return_to=manual_return_to) if manual_return_to else url_for('manual', module='fst') }}" class="manual-switch-btn {% if manual_type == 'fst' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='fst') }}" class="manual-switch-btn {% if manual_type == 'fst' %}active{% endif %}">
                     <span data-i18n="manual.switch.fst">FST 手册</span>
                 </a>
-                <a href="{{ url_for('manual', module='oft', return_to=manual_return_to) if manual_return_to else url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
                     <span data-i18n="manual.switch.oft">OFT 手册</span>
                 </a>
-                <a href="{{ url_for('manual', module='nor', return_to=manual_return_to) if manual_return_to else url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
                     <span data-i18n="manual.switch.nor">NOR 手册</span>
                 </a>
-                <a href="{{ url_for('manual', module='epm', return_to=manual_return_to) if manual_return_to else url_for('manual', module='epm') }}" class="manual-switch-btn {% if manual_type == 'epm' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='epm') }}" class="manual-switch-btn {% if manual_type == 'epm' %}active{% endif %}">
                     <span data-i18n="manual.switch.epm">EPM 手册</span>
                 </a>
-                <a href="{{ url_for('manual', module='ymaze', return_to=manual_return_to) if manual_return_to else url_for('manual', module='ymaze') }}" class="manual-switch-btn {% if manual_type == 'ymaze' %}active{% endif %}">
+                <a href="{{ url_for('manual', module='ymaze') }}" class="manual-switch-btn {% if manual_type == 'ymaze' %}active{% endif %}">
                     <span data-i18n="manual.switch.ymaze">Y 迷宫手册</span>
                 </a>
             </div>
@@ -518,44 +504,93 @@ window.manualRenderFlow = function (steps) {
 };
 
 function bindManualNavigation() {
-    const isVisible = (node) => !!(node && node.getClientRects && node.getClientRects().length);
-    const sections = Array.from(document.querySelectorAll('.manual-section')).filter(isVisible);
-    const navLinks = Array.from(document.querySelectorAll('.nav-sidebar .list-group-item')).filter(isVisible);
-    if (!sections.length || !navLinks.length) {
-        return;
+    const isVisible = (node) => {
+        if (!node || !node.getClientRects || !node.getClientRects().length) {
+            return false;
+        }
+        const style = window.getComputedStyle(node);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+
+    const navOffset = () => {
+        const nav = document.querySelector('.navbar');
+        return nav ? Math.max(0, nav.getBoundingClientRect().bottom) : 0;
+    };
+
+    const currentPairs = () => {
+        const nav = Array.from(document.querySelectorAll('.nav-sidebar')).find(isVisible);
+        if (!nav) {
+            return [];
+        }
+        return Array.from(nav.querySelectorAll('.list-group-item')).map(link => {
+            const href = link.getAttribute('href') || '';
+            const section = href.startsWith('#') ? document.getElementById(href.slice(1)) : null;
+            return isVisible(section) ? { link, section } : null;
+        }).filter(Boolean);
+    };
+
+    function setActiveNav(sectionId) {
+        document.querySelectorAll('.nav-sidebar .list-group-item').forEach(link => {
+            const active = link.getAttribute('href') === '#' + sectionId && isVisible(link);
+            link.classList.toggle('active', active);
+            if (active) {
+                link.setAttribute('aria-current', 'true');
+            } else {
+                link.removeAttribute('aria-current');
+            }
+        });
     }
 
-    navLinks.forEach(link => {
+    function updateActiveNav() {
+        const pairs = currentPairs();
+        if (!pairs.length) {
+            return;
+        }
+
+        const activationLine = Math.max(navOffset() + 96, Math.min(window.innerHeight * 0.34, 280));
+        let current = pairs[0];
+        pairs.forEach(pair => {
+            if (pair.section.getBoundingClientRect().top <= activationLine) {
+                current = pair;
+            }
+        });
+
+        const doc = document.documentElement;
+        const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 4;
+        if (atBottom) {
+            current = pairs[pairs.length - 1];
+        }
+        setActiveNav(current.section.id);
+    }
+
+    currentPairs().forEach(({ link, section }) => {
         if (link.dataset.manualBound === '1') {
             return;
         }
         link.dataset.manualBound = '1';
         link.addEventListener('click', function (e) {
             e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setActiveNav(section.id);
+            const top = window.scrollY + section.getBoundingClientRect().top - navOffset() - 16;
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', '#' + section.id);
             }
+            window.setTimeout(updateActiveNav, 80);
+            window.setTimeout(updateActiveNav, 360);
         });
     });
 
-    function updateActiveNav() {
-        let current = (sections.length && sections[0] && sections[0].id) ? sections[0].id : '';
-        sections.forEach(section => {
-            const rect = section.getBoundingClientRect();
-            if (rect.top <= 130) {
-                current = section.id;
-            }
-        });
-        navLinks.forEach(link => {
-            link.classList.toggle('active', link.getAttribute('href') === '#' + current);
-        });
-    }
-
     if (!window.__manualScrollBound) {
-        window.addEventListener('scroll', () => {
-            updateActiveNav();
-        });
+        let scrollRaf = 0;
+        const scheduleUpdate = () => {
+            if (scrollRaf) {
+                window.cancelAnimationFrame(scrollRaf);
+            }
+            scrollRaf = window.requestAnimationFrame(updateActiveNav);
+        };
+        window.addEventListener('scroll', scheduleUpdate, { passive: true });
+        window.addEventListener('resize', scheduleUpdate);
         window.__manualScrollBound = true;
     }
     updateActiveNav();

@@ -84,12 +84,12 @@
                     <h4><i class="fas fa-lightbulb" style="color: var(--primary-color);"></i><span>背景与干扰</span></h4>
                     <ul class="manual-list">
                         <li>保持鼠体与迷宫地面有明显亮度对比，减少阴影、反光和护栏高亮。</li>
-                        <li>开放臂外侧如果有亮背景或实验台边缘，建议优先使用检测遮罩。</li>
+                        <li>当小鼠躯体可能超出已画臂区边界时，建议使用检测遮罩额外框定允许检测鼠体的范围。</li>
                     </ul>
                 </div>
                 <div class="manual-callout info">
                     <h4>不要用缩小统计区来掩盖误检</h4>
-                    <p>如果开放臂外侧背景容易被误检，更推荐加检测遮罩，而不是把开放臂区域硬缩小。</p>
+                    <p>如果小鼠躯体可能越过开放臂边界，更推荐加检测遮罩，而不是把开放臂区域硬缩小。</p>
                 </div>
             </section>
 
@@ -123,7 +123,7 @@
                 <div class="manual-sub-block">
                     <h4><i class="fas fa-mask" style="color: var(--primary-color);"></i><span>检测遮罩 detection mask</span></h4>
                     <ul class="manual-list">
-                        <li>遮罩只限制允许检测前景的区域，不会改变开放臂、封闭臂和中心区的统计边界。</li>
+                        <li>遮罩用于框定允许检测鼠体的范围，不会改变开放臂、封闭臂和中心区的统计边界。</li>
                         <li>如果不单独绘制，系统默认使用 5 个手画区域的并集作为检测区域。</li>
                     </ul>
                 </div>
@@ -303,7 +303,7 @@
                     <li>Use a stable top view or near-top view and avoid camera motion or zoom changes.</li>
                     <li>Keep the center and all four arms visible with minimal clipping.</li>
                     <li>Maintain strong contrast between the mouse and maze floor while minimizing glare and shadow.</li>
-                    <li>If bright background outside an open arm causes false detection, prefer a detection mask.</li>
+                    <li>If the mouse body may extend beyond a drawn arm boundary, use a detection mask to define the allowed detection area.</li>
                 </ul>
             </section>
 
@@ -322,7 +322,7 @@
                     <li>Each ROI represents one full maze with center, open arm 1/2, and closed arm 1/2.</li>
                     <li>Each zone is defined by four corner clicks. Point order is normalized automatically.</li>
                     <li>Enter center size, open-arm length, and closed-arm length so MouseScope can estimate <code>cm_per_px_est</code>.</li>
-                    <li>The detection mask limits where foreground detection is allowed but does not redefine the statistical zones.</li>
+                    <li>The detection mask defines where the mouse body is allowed to be detected but does not redefine the statistical zones.</li>
                 </ul>
                 <table class="manual-data-table">
                     <thead><tr><th>Mode</th><th>Meaning</th><th>Recommended use</th></tr></thead>

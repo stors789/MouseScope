@@ -6,11 +6,17 @@ MouseScope Desktop — PyInstaller 打包配置
 
 import os
 import sys
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
 # 项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(SPEC))
+
+try:
+    IMAGEIO_FFMPEG_DATAS = collect_data_files('imageio_ffmpeg')
+except Exception:
+    IMAGEIO_FFMPEG_DATAS = []
 
 a = Analysis(
     [os.path.join(PROJECT_DIR, 'app.py')],
@@ -24,7 +30,7 @@ a = Analysis(
         (os.path.join(PROJECT_DIR, 'core'), 'core'),
         # 许可证
         (os.path.join(PROJECT_DIR, 'LICENSE'), '.'),
-    ],
+    ] + IMAGEIO_FFMPEG_DATAS,
     hiddenimports=[
         'flask',
         'jinja2',
@@ -70,7 +76,10 @@ a = Analysis(
         'services.payload_geometry',
         'services.session_store',
         'services.tst_session',
+        'services.video_export',
         'services.y_maze_session',
+        'imageio_ffmpeg',
+        'imageio_ffmpeg._utils',
         'routes',
         'routes.api',
         'routes.pages',

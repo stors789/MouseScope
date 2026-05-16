@@ -6,10 +6,8 @@
 build/
 dist/
 
-# User data (never commit experimental data)
-data/history/
-data/uploads/
-data/results/
+# User data (never commit experimental data, local DBs, uploaded videos, and secrets)
+data/
 
 # Python cache
 __pycache__/
@@ -49,3 +47,6 @@ result/
 *.mov
 *.mkv
 *.mp4 
+
+# Root-level scratch screenshots/covers
+/*.png

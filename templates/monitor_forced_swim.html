@@ -120,7 +120,8 @@
             <div class="monitor-card" id="downloadSection" style="display:none;">
                 <h5 class="mb-3" data-fst-i18n="download.title">结果下载</h5>
                 <div class="download-grid">
-                    <a href="#" id="downloadAllBtn" class="btn btn-success"><i class="fas fa-archive me-2"></i><span data-fst-i18n="download.all">全部下载</span></a>
+                    <button type="button" class="btn btn-success" onclick="openResultFolder()"><i class="fas fa-folder-open me-2"></i><span data-fst-i18n="download.folder">打开结果目录</span></button>
+                    <a href="#" id="downloadAllBtn" class="btn btn-outline-primary"><i class="fas fa-archive me-2"></i><span data-fst-i18n="download.all">全部下载</span></a>
                     <a href="#" id="dlVideo" class="btn btn-outline-primary" data-fst-i18n="download.video">标注视频</a>
                     <a href="#" id="dlTrack" class="btn btn-outline-primary" data-fst-i18n="download.track">逐帧 CSV</a>
                     <a href="#" id="dlSummary" class="btn btn-outline-primary" data-fst-i18n="download.summary">汇总 CSV</a>
@@ -128,7 +129,6 @@
                     <a href="#" id="dlReport" class="btn btn-outline-primary" data-fst-i18n="download.report">TXT 报告</a>
                     <a href="#" id="dlEthogram" class="btn btn-outline-primary" data-fst-i18n="download.ethogram">Ethogram</a>
                     <a href="#" id="dlActivity" class="btn btn-outline-primary" data-fst-i18n="download.activity">活动曲线</a>
-                    <button class="btn btn-outline-secondary" onclick="openResultFolder()" data-fst-i18n="download.folder">打开结果目录</button>
                 </div>
                 <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
                     <span data-fst-i18n="download.path">保存位置:</span> <code id="resultPathText"></code>
@@ -315,7 +315,7 @@ function updateStatus() {
             const stats = data.stats || {};
             document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
             document.getElementById('elapsedTime').textContent = `${(stats.elapsed_time || 0).toFixed(1)}s`;
-            document.getElementById('processingSpeed').textContent = (stats.fps || 0).toFixed(1);
+            document.getElementById('processingSpeed').textContent = `${(stats.fps || 0).toFixed(1)} fps`;
 
             const rows = data.realtime_data || [];
             document.getElementById('roiCount').textContent = rows.length || ((data.experiment_stats && data.experiment_stats.roi_count) || 0);

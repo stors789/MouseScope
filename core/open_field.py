@@ -123,6 +123,8 @@ class OpenFieldTracker:
         )
         self.h_img_to_cm = cv2.getPerspectiveTransform(self.arena_points.astype(np.float32), dst_rect)
         self.h_cm_to_img = cv2.getPerspectiveTransform(dst_rect, self.arena_points.astype(np.float32))
+        self._center_rect_cm_cache: Optional[Tuple[float, float, float, float]] = None
+        self._center_polygon_px_cache: Optional[np.ndarray] = None
 
         self.detection_mask: Optional[np.ndarray] = None
         self.detection_bbox: Optional[Tuple[int, int, int, int]] = None
@@ -189,16 +191,24 @@ class OpenFieldTracker:
         self._cropped_detection_mask = self.detection_mask[y : y + h, x : x + w]
 
     def get_center_rect_cm(self) -> Tuple[float, float, float, float]:
+        if self._center_rect_cm_cache is not None:
+            return self._center_rect_cm_cache
         center_w = self.arena_width_cm * self.center_ratio_x
         center_h = self.arena_height_cm * self.center_ratio_y
         x0 = (self.arena_width_cm - center_w) / 2.0
         y0 = (self.arena_height_cm - center_h) / 2.0
-        return (x0, y0, x0 + center_w, y0 + center_h)
+        self._center_rect_cm_cache = (x0, y0, x0 + center_w, y0 + center_h)
+        return self._center_rect_cm_cache
 
     def cm_rect_to_image_polygon(self, rect_cm: Tuple[float, float, float, float]) -> np.ndarray:
         x0, y0, x1, y1 = rect_cm
         pts = np.array([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]], dtype=np.float32)
         return cv2.perspectiveTransform(pts, self.h_cm_to_img)[0].astype(np.int32)
+
+    def get_center_polygon_px(self) -> np.ndarray:
+        if self._center_polygon_px_cache is None:
+            self._center_polygon_px_cache = self.cm_rect_to_image_polygon(self.get_center_rect_cm())
+        return self._center_polygon_px_cache
 
     def project_point_to_cm(self, point_px: Sequence[float]) -> Tuple[float, float]:
         src = np.array([[[float(point_px[0]), float(point_px[1])]]], dtype=np.float32)
@@ -631,7 +641,7 @@ def draw_open_field_results(
     for tracker, result in tracker_results:
         arena_poly = tracker.arena_points.astype(np.int32)
         detection_poly = tracker.detection_points.astype(np.int32)
-        center_poly = tracker.cm_rect_to_image_polygon(tracker.get_center_rect_cm())
+        center_poly = tracker.get_center_polygon_px()
         zone_label = result.get("zone_label", "Unknown")
         detected = bool(result.get("detected"))
         color = _zone_color(zone_label, detected)

@@ -1,0 +1,183 @@
+/* Shared calibration/configuration workbench rules.
+   This file intentionally targets the existing module-specific template classes
+   so the six experiment pages can converge without a risky template rewrite. */
+
+:root {
+    --calibration-shell-width: 1360px;
+    --calibration-side-width: 380px;
+    --calibration-media-max-height: min(62vh, 620px);
+    --calibration-preview-max-height: min(42vh, 360px);
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) {
+    max-width: var(--calibration-shell-width) !important;
+}
+
+:is(.workbench-header, .fst-header, .oft-header, .nor-header, .maze-header) {
+    align-items: flex-start !important;
+    margin-bottom: 1rem !important;
+}
+
+:is(.workbench-subtitle, .fst-header .text-secondary, .oft-header .text-secondary, .nor-header .text-secondary, .maze-header .text-secondary) {
+    max-width: 760px;
+    line-height: 1.65;
+}
+
+:is(.workbench-header, .fst-header, .oft-header, .nor-header, .maze-header) a[href*="/manual"] {
+    display: none !important;
+}
+
+.side-card:has(#manualGuideTitle) {
+    display: none !important;
+}
+
+:is(.calibration-steps, .fst-steps, .oft-steps, .nor-steps, .maze-steps) {
+    display: inline-flex !important;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem !important;
+    padding: 0.35rem !important;
+    border: 1px solid var(--border-card) !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.72) !important;
+    box-shadow: var(--shadow-card);
+}
+
+:is(.calibration-step, .fst-step, .oft-step, .nor-step, .maze-step) {
+    min-height: 2.3rem;
+    border: 0 !important;
+    border-radius: 999px !important;
+    padding: 0.52rem 0.9rem !important;
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    font-size: 0.9rem;
+    font-weight: 750 !important;
+}
+
+:is(.calibration-step, .fst-step, .oft-step, .nor-step, .maze-step).active {
+    background: rgba(201, 100, 66, 0.12) !important;
+    color: var(--primary-color) !important;
+}
+
+:is(.calibration-step, .fst-step, .oft-step, .nor-step, .maze-step).completed,
+:is(.calibration-step, .fst-step, .oft-step, .nor-step, .maze-step).done {
+    color: var(--success-color) !important;
+}
+
+:is(.workbench-stage, .fst-panel, .oft-panel, .nor-panel, .maze-panel) {
+    border: 1px solid var(--border-card) !important;
+    border-radius: 20px !important;
+    background: rgba(250, 249, 245, 0.92) !important;
+    box-shadow: var(--shadow-card);
+}
+
+.calibration-action-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.analysis-action-group {
+    justify-content: flex-end;
+}
+
+:is(.stage-grid, .fst-row, .oft-row, .nor-row, .maze-row) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, var(--calibration-side-width)) !important;
+    gap: 1rem !important;
+    align-items: start !important;
+}
+
+:is(.stage-side, .fst-row > .fst-panel:nth-child(2), .oft-row > .oft-panel:nth-child(2), .nor-row > .nor-panel:nth-child(2), .maze-row > .maze-panel:nth-child(2)) {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+}
+
+:is(.fst-panel, .oft-panel, .nor-panel, .maze-panel) > :is(.compact-grid, .three-grid, .maze-grid):first-child {
+    padding: 0.85rem;
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.55);
+}
+
+:is(.canvas-stage, .canvas-container, .fst-canvas-wrap, .oft-canvas-wrap, .nor-canvas-wrap, .maze-canvas-wrap) {
+    box-sizing: border-box;
+}
+
+:is(.canvas-container, .fst-canvas-wrap, .oft-canvas-wrap, .nor-canvas-wrap, .maze-canvas-wrap) {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-height: calc(var(--calibration-media-max-height) + 1.6rem);
+    overflow: auto;
+}
+
+:is(.canvas-container, .fst-canvas-wrap, .oft-canvas-wrap, .nor-canvas-wrap, .maze-canvas-wrap) canvas {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    max-height: var(--calibration-media-max-height) !important;
+    object-fit: contain;
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) :is(.preview-card, .fst-preview, .oft-preview, .nor-preview, .preview-grid) :is(canvas, .preview-frame) {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    max-height: var(--calibration-preview-max-height) !important;
+    object-fit: contain;
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) :is(.fst-preview, .oft-preview, .nor-preview, .preview-grid) {
+    align-items: start;
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) :is(.toolbar-row, .toolbar-actions, .fst-toolbar, .oft-toolbar, .nor-toolbar, .maze-toolbar, .status-strip, .zone-inline) {
+    gap: 0.6rem !important;
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) #primaryActionBtn {
+    white-space: nowrap;
+}
+
+:is(.tst-shell, .fst-shell, .oft-shell, .nor-shell, .maze-shell) :is(.status-pill, .zone-badge) {
+    min-height: 2rem;
+    font-size: 0.86rem;
+}
+
+@media (max-width: 1180px) {
+    :is(.stage-grid, .fst-row, .oft-row, .nor-row, .maze-row) {
+        grid-template-columns: 1fr !important;
+    }
+
+    :is(.stage-side, .fst-row > .fst-panel:nth-child(2), .oft-row > .oft-panel:nth-child(2), .nor-row > .nor-panel:nth-child(2), .maze-row > .maze-panel:nth-child(2)) {
+        position: static;
+        max-height: none;
+    }
+}
+
+@media (max-width: 720px) {
+    :root {
+        --calibration-media-max-height: min(58vh, 520px);
+    }
+
+    :is(.calibration-step, .fst-step, .oft-step, .nor-step, .maze-step) {
+        font-size: 0.84rem;
+        padding: 0.45rem 0.7rem !important;
+    }
+
+    .calibration-action-head,
+    .analysis-action-group {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}
