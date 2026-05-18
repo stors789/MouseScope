@@ -30,28 +30,26 @@
 
 ## MouseScope 是什么 | Overview
 
-MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程。v3.1.0 在 `项目工作台 Project Workspace` 基础上，重点提升真实实验视频的时间轴可靠性、TST 悬尾识别稳定性、上传防呆和打包发布可靠性。
+MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程。v3.1.0 的核心变化是新增 `项目工作台 Project Workspace`，让正式实验可以按项目、组别、小鼠、视频和结果来管理，而临时任务仍然可以通过 `快速分析 Quick Analysis` 保持原有轻量流程。
 
-MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. Version v3.1.0 builds on the `Project Workspace` release with stronger real-video timebase handling, more stable TST scoring, safer upload validation, and more reliable packaging.
+MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. In v3.1.0, the major addition is the `Project Workspace`: formal studies can now be organized by project, group, animal, video, and result, while one-off work still uses the lightweight `Quick Analysis` flow.
 
 ## v3.1.0 主要更新 | What Is New
 
-- TST 默认启用微小挣扎优化的 LIS 主算法，并保留旧逻辑作为兼容开关。
-  Enables the subtle-struggle optimized LIS path as the default TST algorithm while keeping the legacy path as a compatibility option.
-- 新增视频元数据和 PTS 时间轴服务，更好处理可变帧率、异常 FPS 和时长不准确的视频。
-  Adds video metadata and PTS timebase services for variable-frame-rate videos, unreliable FPS metadata, and duration edge cases.
-- 分析结果新增时间轴、采样帧率和降采样摘要字段，便于复核真实处理帧数。
-  Adds timebase, sampling FPS, and downsampling summary fields for reviewable outputs.
-- 分析运行时新增 0 解码帧防护，避免生成看似成功但没有有效样本的空结果。
-  Adds a zero-decoded-frame guard so failed decoding is reported as an error instead of producing empty results.
-- 快速分析上传页新增真实本机路径验证，并提前拦截非法 FPS、负数时间窗和结束时间早于开始时间等输入。
-  Adds real local-path validation and rejects invalid FPS or time windows before analysis starts.
-- 任务中心补充分页加载和非法参数保护，历史任务较多时浏览更稳定。
-  Adds Task Center load-more metadata and invalid-parameter handling for larger histories.
-- 许可协议同意状态在软件重启后可自动同步并回到原页面，减少首次进入流程卡顿。
-  Synchronizes accepted license state after restart and returns users to their original page.
-- 打包配置补齐新模块和可选 ffprobe 收集，提升 PyInstaller 发布包可靠性。
-  Updates packaging metadata for new modules and optional ffprobe collection.
+- 新增项目工作台：创建项目，管理组别、小鼠、视频库、实验记录和项目分析结果。
+  Adds Project Workspace for projects, groups, animals, video library, experiment assignments, and project run records.
+- 保留快速分析入口：临时视频或小批量分析不需要先创建项目。
+  Keeps Quick Analysis for temporary videos and small batch work without project setup.
+- 项目分析与现有 6 个实验模块打通：从项目选择同类实验记录后进入原有标定、ROI、参数和监控流程。
+  Connects project analysis to the existing six assay workflows.
+- 项目模式支持 ROI/arena/cylinder/maze unit 与项目小鼠绑定，便于后续结果归档和汇总。
+  Allows each ROI, arena, cylinder, or maze unit to bind to a registered project animal.
+- 任务中心升级：合并项目任务、快速分析任务和历史记录，支持搜索、筛选、聚合、打开结果目录和批量清理记录。
+  Upgrades Task Center with project runs, quick runs, history search, filtering, grouping, result-folder access, and bulk record cleanup.
+- 分析管线新增快速评分采样、批量并行、线程安全状态更新和更稳的结果视频编码。
+  Adds fast scoring, batch parallelism, thread-safe runtime status, and more robust annotated-video encoding.
+- NOR 头向判断增强：增加第二灰度阈值、躯干/尾巴分割、尾尖/尾根辅助判断和可视化调参提示。
+  Improves NOR head-direction scoring with a second threshold, body/tail segmentation, tail-tip/root cues, and richer preview overlays.
 
 ## 两种入口 | Two Entry Points
 
