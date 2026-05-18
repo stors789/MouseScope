@@ -1,479 +1,324 @@
-﻿# MouseScope 系统设计文档
+# MouseScope 系统信息架构文档
 
-当前基线版本：`v3.0.0`
+> 当前基线：v3.1.0 时间轴、TST LIS 与项目工作区版本
+> 文档状态：按 2026-05-18 代码实现更新
+> 适用范围：项目真实架构、主要流程、运行时数据、打包和验证路径
 
-本文档是 MouseScope 后续演进的统一设计约束。以后新增实验、重构 UI、调整批量逻辑或拆分后端时，都应优先遵守这里的结构与原则，避免再次出现“功能逐步叠加后，各模块交互和代码组织越来越不一致”的问题。
+## 1. 文档定位
 
-## 1. 产品目标
+本文是 MouseScope 当前代码架构的中文主文档，用来回答“系统由哪些部分组成、数据怎样流动、各实验模块怎样接入、哪些目录承担什么职责”。
 
-MouseScope 是一个面向小鼠行为学视频分析的桌面软件平台，当前支持：
+需要特别区分：
 
-- `TST` 悬尾实验
-- `FST` 强迫游泳
-- `OFT` 旷场实验
-- `NOR` 新奇物体识别
-- `EPM` 高架十字迷宫
-- `Y-Maze` Y 迷宫
+- `docs/system_design.md`：当前系统信息架构的主文档，应跟随真实代码更新。
+- `docs/plans/*.md`：历史规划和阶段计划，可作为背景材料，但不是当前实现的唯一依据。
+- `DESIGN.md`：外部下载的英文视觉/界面规则参考，不是 MouseScope 系统架构文档。
+- `BUILD_GUIDE.md`：打包和发布说明。
+- `README.md`：面向使用者和开发者的入口说明。
 
-统一产品目标：
+## 2. 产品形态
 
-- 所有实验共享一致的上传、配置、批量、监控、导出主流程
-- ROI / zone / mask / time window / 参数调试逻辑在不同实验之间尽量同构
-- 批量模式必须是“批次工作台 -> 单视频编辑 -> 返回工作台 -> 统一启动”
-- 保留中文优先体验，同时保证英文切换完整可用
-- 所有会写文件的结果都要兼容中文路径与中文文件名显示
+MouseScope 是一个本地运行的鼠标行为视频分析平台。当前实现是 Flask Web 应用，但使用方式接近桌面软件：用户在本机启动 `app.py`，浏览器访问 `http://127.0.0.1:8080` 完成上传、校准、分析、监控和结果导出。
 
-## 2. 核心设计原则
+系统当前支持 6 类实验：
 
-### 2.1 薄入口
+- TST：Tail Suspension Test，悬尾实验。
+- FST：Forced Swim Test，强迫游泳。
+- OFT：Open Field Test，开放场。
+- NOR：Novel Object Recognition，新物体识别。
+- EPM：Elevated Plus Maze，高架十字迷宫。
+- Y-Maze：Y 迷宫。
 
-`app.py` 负责：
+当前有两条主要使用路径：
 
-- Flask 应用初始化
-- 路由注册
-- 调用服务层和分析会话层
+- 快速分析：适合直接上传一个或多个视频，完成校准后立即分析。
+- 项目工作区：适合按项目、分组、受试个体、视频、实验类型组织长期数据，并保留运行记录。
 
-`app.py` 不应继续承担：
+系统不依赖云端账号、远程服务或多用户权限体系。`data/` 下的上传、结果、项目数据库和历史记录是本机用户数据。
 
-- 越来越多的实验元数据分发
-- 批量状态规则定义
-- 草稿持久化策略
-- 大量重复的配置校验逻辑
+## 3. 总体架构
 
-### 2.2 单一来源
+整体调用链可以概括为：
 
-以下信息必须只有一个权威来源：
-
-- 实验列表、实验标签、手册模块、配置页模板、监控页模板：`services/experiment_registry.py`
-- 会话草稿与恢复：`services/session_store.py`
-- 版本号与发布说明：发布文档和公共文案
-- 公共 UI 规则：本设计文档
-
-### 2.3 批量优先一致性
-
-批量模式不是在单视频页面上硬塞一个视频切换器，而是一个单独的工作流：
-
-1. 上传多个视频
-2. 进入批量工作台
-3. 每个视频用单独入口进入配置页
-4. 保存草稿并返回工作台
-5. 工作台统一检查完整性
-6. 从工作台统一启动分析
-
-### 2.4 ROI 与检测区域分离
-
-以后所有实验都遵守：
-
-- `统计区域` 决定行为学指标归属
-- `检测遮罩` 决定前景检测实际参与的图像范围
-- 如果用户未单独绘制检测遮罩，则默认回退到统计区域或其并集
-
-这条规则已经适用于 `FST / OFT / NOR / EPM / Y-Maze`。
-
-## 3. 当前目录结构
-
-建议长期维持以下职责边界：
-
-### 3.1 Web 层
-
-- `app.py`
-  - Flask 入口
-  - 路由注册
-  - 许可拦截
-  - 运行时服务装配
-- `routes/pages.py`
-  - 页面路由
-  - 上传、批量工作台、标定页、监控页、任务中心
-- `routes/api.py`
-  - API 路由
-  - 分析启动、状态查询、下载、任务中心数据接口
-
-### 3.2 核心分析层
-
-- `core/vision_tracker.py`
-  - TST 分析底层
-- `core/forced_swim.py`
-  - FST 分析底层
-- `core/open_field.py`
-  - OFT 分析底层
-- `core/novel_object.py`
-  - NOR 分析底层
-- `core/elevated_plus.py`
-  - EPM 分析底层
-- `core/y_maze.py`
-  - Y-Maze 分析底层
-- `core/maze_zone_utils.py`
-  - 迷宫几何与多边形工具
-- `core/file_utils.py`
-  - 中文路径 / 安全文件名工具
-
-### 3.3 服务层
-
-- `services/experiment_registry.py`
-  - 实验注册表
-  - 批量完整性校验
-  - 手册映射
-- `services/analysis_builders.py`
-  - 各实验 `start_analysis` 配置构建
-  - 会话公共参数与 `per_video_configs` 的统一归一化
-  - 新实验接入时的分析 payload 入口
-- `services/session_store.py`
-  - 会话内存态
-  - 草稿磁盘快照
-  - TTL 清理
-- `services/analysis_history.py`
-  - SQLite 分析历史索引
-  - 任务中心搜索、筛选、重启后历史展示
-  - 软件关闭时未完成任务标记为 `interrupted`
-- `services/analysis_sessions.py`
-  - TST / FST / OFT / NOR / EPM / Y-Maze 分析会话类
-- `services/debug_preview.py`
-  - 各实验参数调试预览
-- `services/payload_geometry.py`
-  - ROI / zone / mask 几何 payload 归一化
-
-### 3.4 模板层
-
-- `templates/upload.html`
-  - 上传与入口页
-- `templates/batch_workspace.html`
-  - 批量工作台
-- `templates/calibrate*.html`
-  - 各实验配置页
-- `templates/monitor*.html`
-  - 各实验监控页
-- `templates/manual*.html`
-  - 模块手册
-
-### 3.5 资产层
-
-- `static/js/i18n.js`
-  - 公共中英文文案
-- `static/css/tech-theme.css`
-  - 全局主题样式
-
-### 3.6 质量保障
-
-- `tools/smoke_routes_v2.py`
-  - 页面渲染、批量路由、inline JS 语法的最小回归检查
-- `tools/smoke_short_analyses_v2.py`
-  - 使用样例视频对 6 个实验模块做短程端到端分析
-  - 用于发现“页面能打开，但真实分析配置已失效”的问题
-
-## 4. 实验注册表设计
-
-每个实验在注册表中至少声明：
-
-- `key`
-- `label`
-- `short_label`
-- `manual_module`
-- `calibrate_template`
-- `monitor_template`
-- `validator`
-- `maze_module`（迷宫类实验可选）
-
-未来新增实验时，优先按照以下顺序接入：
-
-1. 在 `services/experiment_registry.py` 注册实验元数据
-2. 准备 core 分析器
-3. 新增或复用配置页模板
-4. 新增或复用监控页模板
-5. 接入 debug preview
-6. 接入 start_analysis builder
-7. 补手册和 smoke 验证
-
-不要再采用“先在模板里做一份，再在 app.py 里零散补分支”的方式。
-
-## 5. 会话与草稿模型
-
-### 5.1 会话对象
-
-会话至少包含：
-
-- `experiment_type`
-- `video_paths`
-- `video_infos`
-- `video_info`
-- `start_seconds`
-- `end_seconds`
-- `output_dir`
-- `fps_override`
-- `is_batch`
-- `draft_payload`
-- `draft_updated_at`
-- `selected_video_idx`
-- `created_at`
-- `last_accessed_at`
-- `analysis`
-
-### 5.2 草稿模型
-
-草稿分为两层：
-
-- `per_video_configs`
-  - 用于正式分析启动
-  - 只保留完成态配置
-- `workspace_video_configs`
-  - 用于配置页编辑中的过程态
-  - 允许保留正在编辑的 ROI、多边形点、mask 编辑状态等
-
-这两层必须同时存在，原因是：
-
-- 工作台需要看到“哪些视频已经可启动”
-- 配置页需要保存“还没画完但不能丢”的中间状态
-
-### 5.3 持久化策略
-
-`SessionStore` 负责：
-
-- 内存里的运行态会话
-- 将可序列化字段写入 `data/results/_work/<session_id>/session_state.json`
-- 恢复草稿
-- 清理过期会话
-
-约束：
-
-- `analysis` 实例不写入 JSON
-- JSON 必须用 `utf-8`
-- JSON 写出时 `ensure_ascii=False`
-
-`AnalysisHistoryStore` 负责：
-
-- 将已经启动的分析写入 `data/history/analysis_history.sqlite`
-- 记录实验类型、视频名、输出目录、状态、进度、结果文件与错误信息
-- 任务中心必须展示当次分析的结果目录；旧记录缺少输出目录时，可从已有结果文件反推父目录
-- 任务完成、停止、出错时更新历史记录
-- 软件重新启动时，将仍处于 `waiting` / `analyzing` 的历史记录标记为 `interrupted`
-
-约束：
-
-- 历史库只负责“可搜索、可追溯、可下载”的任务索引
-- 不承诺断点续跑；软件关闭后后台线程已经终止，重启后只能显示中断状态
-- 任务中心删除记录默认只删除历史索引和非运行内存会话，不删除结果文件
-- 历史库属于用户数据，不能提交到版本库
-
-## 6. 批量工作流设计
-
-### 6.1 上传页
-
-上传页负责：
-
-- 选择实验模块
-- 导入单个或多个视频
-- 指定全局时间窗
-- 指定输出目录
-- 指定 FPS 覆盖
-
-多视频上传后：
-
-- 不直接进入配置页
-- 必须先进入 `batch_workspace`
-
-### 6.2 批量工作台
-
-工作台页面必须包含：
-
-- 批次摘要
-- 每个视频一张卡片
-- 完成 / 未完成状态
-- 缺项清单
-- 进入编辑按钮
-- 复制配置快捷操作
-- 重置当前视频草稿
-- 从工作台统一启动分析
-
-### 6.3 单视频编辑页
-
-批量模式下，配置页是“单视频编辑视图”：
-
-- 只编辑当前视频
-- 顶部明确显示当前视频索引和返回工作台入口
-- 主按钮变成“保存并返回批量工作台”
-- 不再要求用户在配置页里反复切换视频
-
-## 7. 配置页统一规则
-
-所有 `calibrate*.html` 应尽量遵守同一信息架构：
-
-### 7.1 顶部
-
-- 实验名称
-- 简短说明
-- 手册入口
-- 返回批量工作台按钮（批量模式）
-- 步骤条
-
-### 7.2 左主区
-
-- 视频帧与画布
-- ROI / zone / object / mask 绘制
-- 当前状态条
-
-### 7.3 右侧区
-
-- ROI 卡片列表
-- 名称编辑
-- 时间窗模式
-- 精确时间范围
-- 遮罩编辑入口
-
-### 7.4 第二步
-
-- 调试预览
-- 检测参数
-- 统计参数
-- 主操作按钮
-
-### 7.5 监控页统一规则
-
-所有 `monitor*.html` 尽量遵守同一信息层次：
-
-- 顶部：实验标题、简短说明、停止 / 刷新操作
-- 第一主卡：处理状态、消息、进度条
-- 第二主卡：会话概览指标
-- 第三主卡：ROI / arena / zone 实时结果表
-- 侧栏：实时流式状态和日志
-- 完成后：统一显示下载区与结果目录入口
-
-### 7.6 时间窗规则
-
-所有实验统一：
-
-- `global` 模式下隐藏精确开始 / 结束输入
-- `precise` 模式下再展示开始 / 结束输入
-
-不要继续保留“明明是全局模式，但界面上还展示被禁用输入框”的旧行为。
-
-### 7.7 Mask 规则
-
-支持 mask 的页面必须统一：
-
-- ROI 卡片内有 `编辑检测遮罩 / 重置默认遮罩`
-- 画布有明确的 mask 编辑模式
-- 未完成的 mask 不进入正式分析 payload
-- 若 mask 已存在但点数少于 4，启动前必须阻止
-
-## 8. 迷宫实验特殊规则
-
-### 8.1 EPM
-
-每个 ROI 必须显式手动画：
-
-- `center`
-- `open_1`
-- `open_2`
-- `closed_1`
-- `closed_2`
-
-不再允许用中心点自动推导所有臂。
-
-### 8.2 Y-Maze
-
-每个 ROI 必须显式手动画：
-
-- `center`
-- `arm_a`
-- `arm_b`
-- `arm_c`
-
-### 8.3 点顺序规则
-
-四边形区域的点击顺序不应影响结果：
-
-- 保存前统一做多边形归一化排序
-- 入臂、区域归属和统计只能依赖命名后的区域，不依赖用户点击顺序
-
-## 9. 中文编码与路径规则
-
-必须始终遵守：
-
-- Python 文件使用 `utf-8`
-- CSV 使用 `utf-8-sig`
-- 会话快照 JSON 使用 `utf-8`
-- 文件显示名和文件实际保存名分离
-- 内部结果文件名优先使用安全 ASCII stem
-- UI 上向用户显示原始中文文件名
-
-所有新增代码都应继续复用：
-
-- `core/file_utils.py`
-- `_stage_local_video_if_needed`
-- `_register_original_name`
-- `_safe_display_stem`
-
-## 10. 中英文切换规则
-
-多语言设计原则：
-
-- 通用文案优先进入 `static/js/i18n.js`
-- 模块特有且高度动态的配置页文案可以保留页内 `PAGE_I18N`
-- 同一条文案不要同时在模板硬编码和 i18n 文件各维护一份不同版本
-
-新增页面时优先判断：
-
-- 如果是全局导航、上传页、首页、公共页脚：放入 `i18n.js`
-- 如果是复杂的实验配置页细节：允许页内局部 i18n，但必须中英文成对出现
-
-## 11. 测试与回归要求
-
-每次较大改动后，至少执行：
-
-1. `mouse` 环境下 Python 编译检查
-2. 公共页面路由渲染检查
-3. 单视频 / 批量模式配置页路由检查
-4. 批量工作台接口检查
-5. inline JS 语法检查
-
-建议命令：
-
-```powershell
-E:\miniconda\envs\mouse\python.exe -m py_compile app.py services\analysis_builders.py services\session_store.py services\experiment_registry.py
-E:\miniconda\envs\mouse\python.exe tools\smoke_routes_v2.py
-E:\miniconda\envs\mouse\python.exe tools\smoke_short_analyses_v2.py
+```text
+Browser UI
+  -> Flask routes
+  -> services 配置、存储、运行时
+  -> experiment session
+  -> core 视觉算法和指标计算
+  -> data/results、history、project store
 ```
 
-如果涉及真实算法调整，还应补：
+更具体地说：
 
-- 真实样例视频回归
-- 导出 CSV 字段核对
-- 热图 / 轨迹图抽查
-- 配置选项覆盖关系检查，例如 `generate_video`、时间窗和 `fps_override`
+- 页面和静态资源由 `templates/`、`static/` 提供。
+- HTTP 入口由 `routes/` 下的页面路由和 API 路由拆分维护。
+- 上传、草稿、批量状态、任务历史、项目数据等由 `services/` 层负责。
+- 每类实验有对应的 session 类，负责读取视频、执行逐帧分析、写出 CSV/JSON/视频结果。
+- 底层视觉算法、轨迹、区域判定、TST 特征和绘制逻辑位于 `core/`。
+- 打包版本通过 `MouseScope.spec` 收集 Python 模块、模板、静态资源和必要二进制依赖。
 
-## 12. 后续拆分建议
+## 4. 目录职责
 
-当前 `app.py` 仍然偏大，下一阶段应继续朝以下方向收敛：
+### 4.1 根目录入口
 
-- `routes/pages.py`
-  - 页面路由
-- `routes/api.py`
-  - API 路由
-- `services/analysis_builders.py`
-  - 按实验构建 `vision_config`
-- `services/debug_preview.py`
-  - preview 分发
-- `services/analysis_sessions.py`
-  - 各实验 session 类
+- `app.py`：应用入口。负责解析开发态/打包态路径、初始化 Flask、配置上传目录和结果目录、注册路由、初始化任务历史和项目存储、启动本地浏览器。
+- `MouseScope.spec`：PyInstaller 打包配置。收集 `templates/`、`static/`、`core/`、`imageio_ffmpeg` 数据，以及可选 `ffprobe` 二进制。
+- `requirements.txt`：运行依赖，当前核心依赖包括 Flask、OpenCV、NumPy、Pandas、imageio-ffmpeg。
+- `BUILD_GUIDE.md`：构建、打包和 ffmpeg/ffprobe 相关说明。
+- `README.md`：项目介绍、运行方式、功能概览。
 
-拆分原则：
+### 4.2 路由层
 
-- 先抽重复最重、风险最高的部分
-- 每拆一层都保留现有 URL 和 payload 兼容
-- 优先通过“注册表 + builder + service”减少 `if / elif` 扩散
+- `routes/pages.py`：页面路由，包括首页、上传页、任务页、手动说明、许可证、上传处理、批量页、校准页和监控页。
+- `routes/api.py`：快速分析相关 API，包括任务列表、历史记录、首帧读取、批量状态、草稿保存、调试预览、启动分析、状态查询、停止任务、下载结果、打开结果目录等。
+- `routes/projects.py`：项目工作区页面路由。
+- `routes/project_api.py`：项目 API，包括项目、分组、受试个体、视频、实验分配、运行记录和项目模式启动分析。
 
-## 13. 新增实验的标准流程
+路由层只承担请求解析、参数校验、响应组织和页面跳转。实验类型定义、配置归一化、任务运行、视频处理和存储细节都下沉到 `services/`。
 
-以后如果新增实验模块，必须按这个顺序做：
+### 4.3 服务层
 
-1. 明确实验 protocol 和 ROI / zone / mask / time-window 规则
-2. 在 `core/` 实现分析器
-3. 在 `services/experiment_registry.py` 注册元数据和完整性校验
-4. 接入上传页实验入口
-5. 实现配置页 / 监控页 / 手册
-6. 接入批量工作台缺项摘要
-7. 接入 debug preview 和 start_analysis
-8. 补 i18n
-9. 补 smoke 回归
-10. 更新本设计文档
+- `services/experiment_registry.py`：实验注册表。定义实验类型、显示名、默认配置、校准字段、批量配置字段和校验逻辑。
+- `services/analysis_builders.py`：把前端草稿、批量配置和项目上下文归一化为 session 可执行配置，核心结构是 `per_video_configs`。
+- `services/analysis_runtime.py`：分析运行时基类和通用处理器。负责批量循环、进度更新、采样/降采样、时间基准辅助、结果登记和“0 帧完成”防护。
+- `services/analysis_sessions.py`：实验 session 的兼容导出层，保留旧引用入口。
+- `services/*_session.py`：各实验的实际分析 session，包括 `tst_session.py`、`forced_swim_session.py`、`open_field_session.py`、`novel_object_session.py`、`elevated_plus_session.py`、`y_maze_session.py`。
+- `services/debug_preview.py`：各实验调试预览入口。
+- `services/payload_geometry.py`：ROI、zone、mask 等几何 payload 归一化工具。
+- `services/session_store.py`：运行中任务存储。内存保存 session，同时把关键状态快照写入 `data/results/_work/<session_id>/session_state.json`，便于页面和 API 恢复。
+- `services/analysis_history.py`：SQLite 分析历史，位于 `data/history/analysis_history.sqlite`。
+- `services/project_store.py`：项目索引和项目数据库。索引位于 `data/projects/project_index.sqlite`，每个项目有自己的 `project.sqlite`。
+- `services/video_metadata.py`：视频元数据探测，整合 OpenCV、ffprobe/ffmpeg 和 FPS 覆盖逻辑。
+- `services/video_timebase.py`：视频时间轴服务。优先使用 PTS 时间戳，无法取得时回退为基于 FPS 的均匀时间轴。
+- `services/video_frame_reader.py`：预览帧读取。按可用性使用 PyAV、FFmpeg、OpenCV 等 fallback。
+- `services/video_export.py`：结果视频导出。优先使用 FFmpeg H.264，必要时回退 OpenCV writer。
 
-如果没更新文档，就视为设计没有真正完成。
+### 4.4 算法层
+
+- `core/tst_lis.py`：当前 TST 主算法。基于轮廓残差、形状、外周、高频变化、周期性等特征计算不动状态。
+- `core/tst_legacy.py`：TST 旧算法兼容实现。当前默认不作为主路径，仅在配置开关启用时使用。
+- `core/vision_tracker.py`：TST 共享视觉组件、绘制辅助和部分旧算法兼容逻辑。
+- `core/forced_swim.py`、`core/open_field.py`、`core/novel_object.py`、`core/elevated_plus.py`、`core/y_maze.py`：对应实验的区域判定、运动指标和绘制逻辑。
+- `core/maze_zone_utils.py`、`core/spatial_render.py`：迷宫/空间类实验的几何和可视化辅助。
+- `core/file_utils.py`、`core/performance_utils.py`：文件路径和性能优化辅助。
+
+当前运行时没有 `core/tst_v2.py` 这个主模块。TST 的真实主路径是 `services/tst_session.py` 调用 `core/tst_lis.py`，旧路径由 `core/tst_legacy.py` 保留。
+
+### 4.5 前端层
+
+- `templates/base.html`：全局布局、导航和公共资源入口。
+- `templates/home.html`：入口页，承载快速分析和项目工作区入口。
+- `templates/upload.html`：上传和本地路径选择。
+- `templates/calibrate.html`、`templates/calibrate_forced_swim.html`、`templates/calibrate_openfield.html`、`templates/calibrate_nor.html`、`templates/calibrate_maze.html`：单视频校准、ROI/区域设置、调试预览和启动分析。
+- `templates/batch_workspace.html`：批量配置工作台。
+- `templates/monitor.html`、`templates/monitor_forced_swim.html`、`templates/monitor_openfield.html`、`templates/monitor_nor.html`、`templates/monitor_maze.html`：分析进度和结果入口。
+- `templates/tasks.html`：任务和历史记录。
+- `templates/projects.html`、`templates/project_home.html`：项目工作区页面。
+- `static/js/`：页面交互、国际化、项目工作区、批量配置和引导逻辑。
+- `static/css/`：主题、校准工作台和引导样式。
+
+前端当前以服务端模板加原生 JavaScript 为主，没有独立前端构建系统。
+
+### 4.6 测试和开发工具
+
+- `tests/`：单元和集成测试。
+- `tools/smoke_routes_v2.py`：路由/API 冒烟测试。
+- `tools/smoke_short_analyses_v2.py`：短视频分析冒烟测试。
+- `tools/tst_*.py`：TST 研发、诊断、对比和标定相关工具。它们不属于用户主流程，但对算法回归和研究仍有价值，不应仅因主程序不直接 import 就删除。
+
+## 5. 数据目录和持久化
+
+当前默认数据目录为项目根下的 `data/`。开发态和打包态都通过 `app.py` 里的路径解析统一处理。
+
+主要子目录：
+
+- `data/uploads/`：上传视频和项目视频缓存。
+- `data/uploads/_staged/<session_id>/`：本次分析启动前的安全 staging 区，避免原始上传路径变化影响后台任务。
+- `data/results/`：分析输出结果。
+- `data/results/_work/<session_id>/session_state.json`：任务状态快照。
+- `data/history/analysis_history.sqlite`：快速分析和通用任务历史。
+- `data/projects/project_index.sqlite`：项目索引。
+- `data/projects/<project_id>/project.sqlite`：单个项目数据库。
+
+注意：
+
+- `data/uploads/`、`data/results/`、`data/history/`、`data/projects/` 都可能包含用户真实数据。
+- 清理时不能把整个 `data/` 当成缓存目录删除。
+- 临时审计目录、发布冒烟目录和 `__pycache__` 这类生成物可以在确认没有被引用后清理，但应逐项确认。
+
+## 6. 快速分析流程
+
+快速分析流程如下：
+
+```text
+/upload
+  -> /do_upload
+  -> 创建 session
+  -> /calibrate/<session_id> 或 /batch/<session_id>
+  -> 保存 draft_payload
+  -> /api/debug_preview/<session_id>
+  -> /api/start_analysis/<session_id>
+  -> /monitor/<session_id>
+  -> /api/status、/api/result_dir、下载或打开结果目录
+```
+
+单视频通常进入 `calibrate.html`。多视频进入 `batch_workspace.html`，并为每个视频维护独立配置。无论入口来自快速分析还是项目工作区，最终都会通过 `services/analysis_builders.py` 形成 session 可执行的 `per_video_configs`。
+
+启动分析前会进行实验级校验，例如：
+
+- TST/FST 需要有效 ROI。
+- OFT 需要场地区域和中心区参数。
+- NOR 需要场地 ROI、两个物体 ROI 和对象尺寸。
+- EPM/Y-Maze 需要对应臂区/区域配置。
+
+## 7. 项目工作区流程
+
+项目工作区用于长期组织实验数据：
+
+```text
+项目
+  -> 分组
+  -> 受试个体
+  -> 视频导入
+  -> 实验类型分配
+  -> 项目模式启动分析
+  -> 运行记录和结果同步
+```
+
+项目模式的关键特征：
+
+- 视频可以链接原路径，也可以复制到项目上传缓存。
+- 分析前需要把 ROI/配置绑定到具体受试个体。
+- `project_context` 会随 session 保存，用于结果和运行记录回写。
+- 项目分析完成后，会同步 run 状态、输出目录、汇总指标，并清理可安全释放的上传缓存。
+
+项目工作区不是快速分析的替代实现，而是在相同分析 session 和算法层之上增加数据组织、分组、个体、分配和运行历史。
+
+## 8. Session 配置模型
+
+session 是快速分析和项目分析之间的核心桥梁。常见字段包括：
+
+- `experiment_type`：实验类型。
+- `video_paths`：待分析视频列表。
+- `video_infos`：每个视频的元数据。
+- `video_info`：兼容单视频页面的当前视频元数据。
+- `start_time` / `end_time`：分析时间范围。
+- `output_dir`：结果输出目录。
+- `fps_override`：用户指定 FPS，用于处理元数据不可靠的视频。
+- `is_batch`：是否批量模式。
+- `draft_payload`：前端保存的校准草稿。
+- `per_video_configs`：每个视频最终执行配置。
+- `selected_video_idx`：当前预览/编辑的视频索引。
+- `project_context`：项目模式上下文。
+- `analysis`：后台线程、进度、状态、错误和结果。
+
+当前应把 `per_video_configs` 视为分析执行的权威配置。前端可能存在 `workspace_video_configs` 等编辑态字段，但启动分析前必须归一化到 `per_video_configs`。
+
+## 9. TST 当前实现
+
+TST 是当前变化最多的模块，真实实现状态如下：
+
+- 默认主算法是 LIS 路径：`use_tst_lis_primary=True`。
+- 旧算法默认不作为主路径：`use_tst_legacy_primary=False`。
+- `services/tst_session.py` 负责 TST 视频循环、特征计算、状态平滑、CSV/JSON 写出和结果视频生成。
+- `core/tst_lis.py` 是当前主要识别逻辑，使用多类特征综合判定不动状态。
+- `core/tst_legacy.py` 保留旧版背景差分/阈值逻辑，用于兼容和回归对照。
+- 自动行为阈值相关逻辑仅适用于 legacy 路径，LIS 主路径不依赖该阈值作为核心判定。
+- 结果视频采用最终标签回填绘制，避免在线状态抖动导致导出视频和最终 CSV 不一致。
+
+TST 当前重点不再是单一像素变化阈值，而是围绕整鼠形态、尾部固定约束下的身体摆动、运动残差、频域/周期性和连续状态机做综合判断。
+
+## 10. 其他实验模块
+
+### FST
+
+FST 使用水池 ROI、运动强度、质心变化和状态阈值输出不动/活动相关指标。结果包含逐帧状态、汇总 JSON/CSV 和标注视频。
+
+### OFT
+
+OFT 使用场地 ROI 和中心区定义，计算总距离、速度、中心区时间、边缘区时间、进入次数和轨迹相关指标。支持 PTS 时间轴和批量分析。
+
+### NOR
+
+NOR 需要场地 ROI、两个物体 ROI、对象尺寸和互动距离参数。输出对两个物体的探索时间、次数、偏好和识别指数。
+
+### EPM
+
+EPM 需要开放臂、闭合臂和中心区配置，输出各区域时间、进入次数、风险相关指标和轨迹标注。
+
+### Y-Maze
+
+Y-Maze 需要三臂区域配置，输出进入序列、自发交替、臂停留时间和运动指标。
+
+## 11. 视频时间轴和解码策略
+
+视频处理当前有三层关注点：
+
+- 元数据探测：`services/video_metadata.py` 使用 OpenCV 和可用的 ffprobe/ffmpeg 获取帧数、FPS、时长、编码等信息。
+- 时间轴计算：`services/video_timebase.py` 优先使用 PTS 时间戳，无法取得时回退为均匀 FPS 时间轴。
+- 帧读取：预览和分析路径不同。预览可以通过 `video_frame_reader.py` 使用多种 fallback；分析主循环通常依赖 OpenCV 解码。
+
+“0 帧完成”的本质风险是：元数据可以显示视频有帧，预览也可能正常，但分析主循环实际没有成功解码任何帧。如果没有防护，任务可能看起来完成却没有有效样本。
+
+当前已在通用运行时增加防护：每个实验分析结束前会检查实际处理帧数/样本数。如果源视频声明有帧但分析结果为 0 帧，会抛出错误并把任务标记为失败，而不是生成一个看似正常的空结果。
+
+这不影响正常视频分析。用户实际使用中能正常处理的视频，会显示真实 source frames 和 analyzed samples，例如 OFT 日志里的 `902 source frames (902 analyzed samples)`。
+
+## 12. 打包和二进制依赖
+
+打包入口为 `MouseScope.spec`。当前打包策略包括：
+
+- 收集 `templates/` 和 `static/`。
+- 收集 `core/` 算法模块。
+- 收集 `imageio_ffmpeg` 相关数据。
+- 从 `MOUSESCOPE_FFPROBE_EXE` 或 PATH 中可选收集 `ffprobe`。
+- 补充 PyInstaller 可能静态分析不到的 hidden imports。
+
+建议发布前检查：
+
+- `BUILD_GUIDE.md` 中的构建步骤是否与当前环境一致。
+- 打包环境里是否能找到 ffmpeg/ffprobe。
+- 打包产物是否可以完成上传、校准、预览、启动分析和打开结果目录。
+
+ffprobe 不是所有视频都绝对必需，但它能显著提升 PTS/VFR 视频的元数据和时间轴可靠性，建议随发布包一起准备。
+
+## 13. 校验建议
+
+代码变更后建议至少运行：
+
+```powershell
+E:\miniconda\envs\mouse\python.exe -B -m unittest discover -s tests -v
+E:\miniconda\envs\mouse\python.exe -B tools\smoke_routes_v2.py
+E:\miniconda\envs\mouse\python.exe -B tools\smoke_short_analyses_v2.py
+```
+
+涉及打包时还应额外做人工路径：
+
+- 启动打包产物。
+- 上传单视频并读取首帧。
+- 保存校准草稿。
+- 执行一次 debug preview。
+- 启动至少一个短视频分析。
+- 检查 `data/results/` 输出、任务历史和打开结果目录。
+
+涉及项目工作区时还应检查：
+
+- 创建项目、分组、受试个体。
+- 导入视频。
+- 分配实验类型。
+- 启动项目分析。
+- 完成后 run 状态和输出路径正确回写。
+
+## 14. 文档维护规则
+
+当以下内容变化时，应同步更新本文：
+
+- 新增或删除实验类型。
+- 修改 `routes/` API 或页面主流程。
+- 修改 session 配置模型，尤其是 `draft_payload`、`per_video_configs`、`project_context`。
+- 修改视频解码、时间轴、导出或打包策略。
+- 修改 TST 主算法路径或 legacy/LIS 开关语义。
+- 修改项目工作区数据模型。
+
+历史规划文档可以保留，但如果与本文冲突，以当前代码和本文为准。

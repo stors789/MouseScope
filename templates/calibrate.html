@@ -372,12 +372,19 @@
                             </label>
                         </div>
                         <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="useTstLegacyPrimary" onchange="syncBehaviorThresholdUI()">
+                            <label class="form-check-label" for="useTstLegacyPrimary">
+                                <span data-page-i18n="debug.legacy.title">使用原本判断逻辑</span>
+                                <span class="text-muted small" data-page-i18n="debug.legacy.hint">当前版本默认优化微小挣扎识别；如果感觉挣扎误判很多，可以打开此开关切回原本逻辑。</span>
+                            </label>
+                        </div>
+                        <div class="form-check form-switch mb-3" id="autoBehaviorThresholdBox" style="display: none;">
                             <input class="form-check-input" type="checkbox" id="autoBehaviorThreshold" onchange="syncBehaviorThresholdUI()">
                             <label class="form-check-label" for="autoBehaviorThreshold">
                                 <span data-i18n="calib.debug.auto.behavior">自动估计行为阈值（可选）</span>
                             </label>
                         </div>
-                        <div class="mb-3" id="behaviorSensitivityBox">
+                        <div class="mb-3" id="behaviorSensitivityBox" style="display: none;">
                             <label class="form-label" data-i18n="calib.debug.behavior.sensitivity">行为阈值灵敏度</label>
                             <input type="range" class="form-range" id="behaviorThresholdSensitivity" min="-3" max="3" step="0.5" value="0" oninput="syncBehaviorThresholdUI()">
                             <div class="d-flex justify-content-between text-small"><span>-3</span><span id="behaviorThresholdSensitivityVal">0</span><span>3</span></div>
@@ -492,9 +499,27 @@
             min_area: 100,
             auto_behavior_threshold: false,
             behavior_threshold_sensitivity: 0,
+            use_tst_lis_primary: true,
+            use_tst_legacy_primary: false,
         };
     }
+    function normalizeTstAlgorithmParams(params) {
+        const sourceParams = params || {};
+        const merged = { ...defaultDebugParams(), ...sourceParams };
+        if (Object.prototype.hasOwnProperty.call(sourceParams, 'use_tst_legacy_primary')) {
+            merged.use_tst_legacy_primary = Boolean(sourceParams.use_tst_legacy_primary);
+            merged.use_tst_lis_primary = !merged.use_tst_legacy_primary;
+        } else {
+            merged.use_tst_lis_primary = Boolean(merged.use_tst_lis_primary);
+            merged.use_tst_legacy_primary = !merged.use_tst_lis_primary;
+        }
+        if (merged.use_tst_lis_primary) {
+            merged.auto_behavior_threshold = false;
+        }
+        return merged;
+    }
     function readDebugParamsFromControls() {
+        const useLegacyPrimary = document.getElementById('useTstLegacyPrimary')?.checked ?? false;
         return {
             bg_method: document.getElementById('bgMethod')?.value || 'threshold',
             bg_type: document.getElementById('bgType')?.value || 'light',
@@ -504,12 +529,14 @@
             dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
             dilation_iter: parseInt(document.getElementById('dilationIter')?.value || '3', 10),
             min_area: parseInt(document.getElementById('minArea')?.value || '100', 10),
-            auto_behavior_threshold: document.getElementById('autoBehaviorThreshold')?.checked ?? false,
+            auto_behavior_threshold: useLegacyPrimary && (document.getElementById('autoBehaviorThreshold')?.checked ?? false),
             behavior_threshold_sensitivity: parseFloat(document.getElementById('behaviorThresholdSensitivity')?.value || '0'),
+            use_tst_lis_primary: !useLegacyPrimary,
+            use_tst_legacy_primary: useLegacyPrimary,
         };
     }
     function applyDebugParamsToControls(params) {
-        const merged = { ...defaultDebugParams(), ...(params || {}) };
+        const merged = normalizeTstAlgorithmParams(params);
         const bgMethod = document.getElementById('bgMethod');
         const bgType = document.getElementById('bgType');
         const grayThreshold = document.getElementById('grayThreshold');
@@ -520,6 +547,7 @@
         const minArea = document.getElementById('minArea');
         const autoBehaviorThreshold = document.getElementById('autoBehaviorThreshold');
         const behaviorThresholdSensitivity = document.getElementById('behaviorThresholdSensitivity');
+        const useTstLegacyPrimary = document.getElementById('useTstLegacyPrimary');
         if (bgMethod) bgMethod.value = merged.bg_method;
         if (bgType) bgType.value = merged.bg_type;
         if (grayThreshold) grayThreshold.value = String(merged.gray_threshold);
@@ -530,6 +558,7 @@
         if (minArea) minArea.value = String(merged.min_area);
         if (autoBehaviorThreshold) autoBehaviorThreshold.checked = Boolean(merged.auto_behavior_threshold);
         if (behaviorThresholdSensitivity) behaviorThresholdSensitivity.value = String(merged.behavior_threshold_sensitivity ?? 0);
+        if (useTstLegacyPrimary) useTstLegacyPrimary.checked = Boolean(merged.use_tst_legacy_primary);
         toggleDetectionParams();
         syncBehaviorThresholdUI();
         ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(id => {
@@ -540,9 +569,18 @@
     }
     function syncBehaviorThresholdUI() {
         const autoBehaviorThreshold = document.getElementById('autoBehaviorThreshold');
+        const autoBehaviorThresholdBox = document.getElementById('autoBehaviorThresholdBox');
         const sensitivity = document.getElementById('behaviorThresholdSensitivity');
+        const sensitivityBox = document.getElementById('behaviorSensitivityBox');
         const sensitivityVal = document.getElementById('behaviorThresholdSensitivityVal');
-        const enabled = autoBehaviorThreshold?.checked ?? false;
+        const useLegacyPrimary = document.getElementById('useTstLegacyPrimary')?.checked ?? false;
+        if (autoBehaviorThresholdBox) autoBehaviorThresholdBox.style.display = useLegacyPrimary ? '' : 'none';
+        if (sensitivityBox) sensitivityBox.style.display = useLegacyPrimary ? '' : 'none';
+        if (autoBehaviorThreshold) {
+            autoBehaviorThreshold.disabled = !useLegacyPrimary;
+            if (!useLegacyPrimary) autoBehaviorThreshold.checked = false;
+        }
+        const enabled = useLegacyPrimary && (autoBehaviorThreshold?.checked ?? false);
         if (sensitivity) sensitivity.disabled = !enabled;
         if (sensitivityVal && sensitivity) sensitivityVal.textContent = sensitivity.value;
     }
@@ -673,7 +711,9 @@
             'project.subject_required': '项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入参数调试或启动分析。',
             'debug.output_title': '分析输出',
             'debug.preview_body': '调参目标是让检测轮廓大致包住小鼠除尾巴外的主体躯干，越贴合越好；不要把尾巴、胶带、背景或隔板一起包进去。',
-            'debug.output_body': '当前调参与 ROI 配置会随视频一起保存。批量模式下，主按钮会保存当前设置并返回批次页面；单视频模式下则直接开始分析。'
+            'debug.output_body': '当前调参与 ROI 配置会随视频一起保存。当前版本默认优化微小挣扎识别；如感觉挣扎误判很多，可在下方切回原本判断逻辑。批量模式下，主按钮会保存当前设置并返回批次页面；单视频模式下则直接开始分析。',
+            'debug.legacy.title': '使用原本判断逻辑',
+            'debug.legacy.hint': '当前版本默认优化微小挣扎识别；如果感觉挣扎误判很多，可以打开此开关切回原本逻辑。自动阈值只在原本逻辑下可用。'
         },
         en: {
             'header.title': 'Tail Suspension Test Setup',
@@ -697,7 +737,9 @@
             'project.subject_required': 'In project mode, every complete ROI must be assigned to an existing project animal before parameter tuning or analysis can start.',
             'debug.output_title': 'Analysis Output',
             'debug.preview_body': 'Tune until the contour roughly wraps the mouse body trunk excluding the tail; tighter is better. Do not include the tail, tape, background, or dividers.',
-            'debug.output_body': 'Current tuning and ROI settings are saved with the video. In batch mode the primary button saves the current setup and returns to the batch page; in single-video mode it starts analysis directly.'
+            'debug.output_body': 'Current tuning and ROI settings are saved with the video. This version defaults to logic optimized for subtle struggling; if struggling looks over-called, switch back to the original decision logic below. In batch mode the primary button saves the current setup and returns to the batch page; in single-video mode it starts analysis directly.',
+            'debug.legacy.title': 'Use original decision logic',
+            'debug.legacy.hint': 'This version defaults to logic optimized for subtle struggling. If struggling looks over-called, turn this on to switch back to the original logic. Auto threshold is available only with the original logic.'
         }
     };
     function pageTr(key, fallback) {
@@ -848,7 +890,7 @@
                 target.current_roi = cloneState(workspaceCfg.current_roi || []);
                 target.is_drawing_roi = Boolean(workspaceCfg.is_drawing_roi);
                 target.active_roi_index = workspaceCfg.active_roi_index ?? null;
-                target.debug_params = { ...defaultDebugParams(), ...(workspaceCfg.debug_params || {}) };
+                target.debug_params = normalizeTstAlgorithmParams(workspaceCfg.debug_params || {});
                 continue;
             }
             const savedCfg = savedConfigs[index];
@@ -857,7 +899,7 @@
                 target.rois = cloneState(savedCfg.rois || []);
                 target.current_roi = [];
                 target.is_drawing_roi = false;
-                target.debug_params = { ...defaultDebugParams(), ...(savedCfg.debug_params || {}) };
+                target.debug_params = normalizeTstAlgorithmParams(savedCfg.debug_params || {});
             }
         }
         const generateVideo = document.getElementById('generateVideo');
@@ -1419,12 +1461,14 @@
         persistCurrentVideoState();
         const processedROIs = normalizeRoisForPayload(rois);
         const currentDebugParams = readDebugParamsFromControls();
-        const perVideoConfigs = videoConfigs.map((cfg, index) => ({
-            ...defaultDebugParams(),
-            ...(cfg.debug_params || (index === currentVideoIdx ? currentDebugParams : {})),
-            pixel_to_mm: cfg.pixel_to_mm !== null ? cfg.pixel_to_mm : ((index === currentVideoIdx ? pixelToMm : null) || 1.0),
-            rois: normalizeRoisForPayload(cfg.rois || []),
-        }));
+        const perVideoConfigs = videoConfigs.map((cfg, index) => {
+            const debugParams = normalizeTstAlgorithmParams(cfg.debug_params || (index === currentVideoIdx ? currentDebugParams : {}));
+            return {
+                ...debugParams,
+                pixel_to_mm: cfg.pixel_to_mm !== null ? cfg.pixel_to_mm : ((index === currentVideoIdx ? pixelToMm : null) || 1.0),
+                rois: normalizeRoisForPayload(cfg.rois || []),
+            };
+        });
         return {
             currentDebugParams,
             perVideoConfigs,
@@ -1439,6 +1483,9 @@
                 min_area: currentDebugParams.min_area,
                 auto_behavior_threshold: currentDebugParams.auto_behavior_threshold,
                 behavior_threshold_sensitivity: currentDebugParams.behavior_threshold_sensitivity,
+                use_tst_lis_primary: currentDebugParams.use_tst_lis_primary,
+                use_tst_legacy_primary: currentDebugParams.use_tst_legacy_primary,
+                enable_tst_lis: currentDebugParams.use_tst_lis_primary,
                 pixel_to_mm: pixelToMm || 1.0,
                 rois: processedROIs,
                 per_video_configs: perVideoConfigs,
@@ -1522,7 +1569,7 @@
         const disableIds = [
             'frameSliderDebug', 'bgMethod', 'grayThreshold', 'bgType',
             'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea',
-            'autoBehaviorThreshold', 'behaviorThresholdSensitivity'
+            'autoBehaviorThreshold', 'behaviorThresholdSensitivity', 'useTstLegacyPrimary'
         ];
         disableIds.forEach(id => {
             const el = document.getElementById(id);

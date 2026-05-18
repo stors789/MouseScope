@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import secrets
@@ -10,6 +11,9 @@ from pathlib import Path
 from flask import jsonify, request, url_for
 
 from services.experiment_registry import get_experiment_spec, normalize_experiment_type
+
+
+logger = logging.getLogger(__name__)
 
 
 def register_project_api_routes(app, ctx) -> None:
@@ -35,6 +39,7 @@ def register_project_api_routes(app, ctx) -> None:
         try:
             runs = project_store.list_project_runs(project_id)
         except Exception:
+            logger.exception("Failed to list project runs while syncing history: project_id=%s", project_id)
             return
         for run in runs:
             run_id = str(run.get("run_id") or "").strip()
@@ -45,6 +50,7 @@ def register_project_api_routes(app, ctx) -> None:
                 if sess and sess.get("analysis") is not None:
                     record = analysis_history.upsert_runtime(session_id, sess, analysis=sess.get("analysis"))
             except Exception:
+                logger.debug("Failed to upsert runtime project run status: session_id=%s", session_id, exc_info=True)
                 record = None
             if record is None:
                 for key in (run_id, session_id):
@@ -53,6 +59,7 @@ def register_project_api_routes(app, ctx) -> None:
                     try:
                         record = analysis_history.get_record(key)
                     except Exception:
+                        logger.debug("Failed to read analysis history record: run_or_session_id=%s", key, exc_info=True)
                         record = None
                     if record:
                         break

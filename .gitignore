@@ -8,12 +8,20 @@ dist/
 
 # User data (never commit experimental data, local DBs, uploaded videos, and secrets)
 data/
+*.sqlite
+*.sqlite3
+*.db
 
 # Python cache
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Virtual environments
 venv/
@@ -46,6 +54,10 @@ result/
 *.avi
 *.mov
 *.mkv
+*.webm
+*.wmv
+*.mpg
+*.mpeg
 *.mp4 
 
 # Root-level scratch screenshots/covers

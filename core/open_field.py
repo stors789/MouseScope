@@ -139,6 +139,13 @@ class OpenFieldTracker:
         self.wall_frames = 0
         self.moving_frames = 0
         self.immobile_frames = 0
+        self.time_in_window_s = 0.0
+        self.detected_time_in_window_s = 0.0
+        self.center_time_s = 0.0
+        self.outer_time_s = 0.0
+        self.wall_time_s = 0.0
+        self.moving_time_s = 0.0
+        self.immobile_time_s = 0.0
         self.center_entries = 0
         self.center_latency_s: Optional[float] = None
         self.total_distance_cm = 0.0
@@ -156,6 +163,8 @@ class OpenFieldTracker:
         self.prev_in_center_stats = False
         self.missing_frames = 0
         self.max_gap_frames = 5
+        self.missing_time_s = 0.0
+        self.max_gap_s = self.max_gap_frames / max(float(self.fps), 1e-6)
 
         self.trajectory_px_live: deque[Tuple[float, float]] = deque(maxlen=900)
         self.trajectory_px_stats: List[Tuple[float, float]] = []
@@ -372,8 +381,14 @@ class OpenFieldTracker:
         bg_subtractor,
         morph_processor,
         detector,
+        dt_s: Optional[float] = None,
     ) -> Dict[str, Any]:
         self.total_frames += 1
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
 
         centroid_px: Optional[Tuple[float, float]] = None
@@ -390,15 +405,18 @@ class OpenFieldTracker:
             self.last_all_arena_xy_cm = arena_xy_cm
             self.prev_centroid_px = centroid_px
             self.missing_frames = 0
+            self.missing_time_s = 0.0
             if self.first_detected_time_abs is None:
                 self.first_detected_time_abs = float(current_time)
-        elif self.last_all_arena_xy_cm is not None and self.missing_frames < self.max_gap_frames:
+        elif self.last_all_arena_xy_cm is not None and self.missing_time_s < self.max_gap_s:
             arena_xy_cm = self.last_all_arena_xy_cm
             centroid_px = self.prev_centroid_px
             self.missing_frames += 1
+            self.missing_time_s += current_dt
         else:
             arena_xy_cm = None
             self.missing_frames += 1
+            self.missing_time_s += current_dt
 
         instant_distance_cm = 0.0
         speed_cm_s = 0.0
@@ -410,7 +428,7 @@ class OpenFieldTracker:
                 dx = arena_xy_cm[0] - self.prev_all_arena_xy_cm[0]
                 dy = arena_xy_cm[1] - self.prev_all_arena_xy_cm[1]
                 instant_distance_cm = float(math.hypot(dx, dy))
-                speed_cm_s = instant_distance_cm * self.fps
+                speed_cm_s = instant_distance_cm / current_dt
             self.prev_all_arena_xy_cm = arena_xy_cm
             zone_flags = self._zone_flags(arena_xy_cm)
             zone_label = self._zone_label(zone_flags)
@@ -427,8 +445,10 @@ class OpenFieldTracker:
 
         if in_stats_window:
             self.frames_in_window += 1
+            self.time_in_window_s += current_dt
             if detected:
                 self.detected_frames_in_window += 1
+                self.detected_time_in_window_s += current_dt
 
             if arena_xy_cm is not None:
                 if self.prev_stats_arena_xy_cm is not None:
@@ -449,11 +469,19 @@ class OpenFieldTracker:
                 self.center_frames += int(zone_flags["in_center"])
                 self.outer_frames += int(zone_flags["in_outer"])
                 self.wall_frames += int(zone_flags["in_wall"])
+                if zone_flags["in_center"]:
+                    self.center_time_s += current_dt
+                if zone_flags["in_outer"]:
+                    self.outer_time_s += current_dt
+                if zone_flags["in_wall"]:
+                    self.wall_time_s += current_dt
 
                 if speed_cm_s >= self.movement_threshold_cm_s:
                     self.moving_frames += 1
+                    self.moving_time_s += current_dt
                 else:
                     self.immobile_frames += 1
+                    self.immobile_time_s += current_dt
 
                 if zone_flags["in_center"] and not self.prev_in_center_stats:
                     self.center_entries += 1
@@ -469,6 +497,7 @@ class OpenFieldTracker:
                 self.prev_stats_arena_xy_cm = None
                 self.prev_in_center_stats = False
                 self.immobile_frames += 1
+                self.immobile_time_s += current_dt
         else:
             self.prev_stats_arena_xy_cm = None
             self.prev_in_center_stats = False
@@ -481,6 +510,7 @@ class OpenFieldTracker:
             "roi_name": self.roi_name,
             "frame": self.total_frames - 1,
             "time_s": round(float(current_time), 3),
+            "dt_s": round(float(current_dt), 6),
             "window_time_s": round(float(current_time - self._stats_window_origin_abs()), 3) if in_stats_window else None,
             "detected": bool(detected),
             "in_stats_window": bool(in_stats_window),
@@ -518,14 +548,14 @@ class OpenFieldTracker:
         }
 
     def build_summary(self) -> Dict[str, Any]:
-        total_time_s = self.frames_in_window / self.fps if self.fps > 0 else 0.0
-        center_time_s = self.center_frames / self.fps if self.fps > 0 else 0.0
-        outer_time_s = self.outer_frames / self.fps if self.fps > 0 else 0.0
-        wall_time_s = self.wall_frames / self.fps if self.fps > 0 else 0.0
-        moving_time_s = self.moving_frames / self.fps if self.fps > 0 else 0.0
-        immobile_time_s = self.immobile_frames / self.fps if self.fps > 0 else 0.0
+        total_time_s = self.time_in_window_s or (self.frames_in_window / self.fps if self.fps > 0 else 0.0)
+        center_time_s = self.center_time_s or (self.center_frames / self.fps if self.fps > 0 else 0.0)
+        outer_time_s = self.outer_time_s or (self.outer_frames / self.fps if self.fps > 0 else 0.0)
+        wall_time_s = self.wall_time_s or (self.wall_frames / self.fps if self.fps > 0 else 0.0)
+        moving_time_s = self.moving_time_s or (self.moving_frames / self.fps if self.fps > 0 else 0.0)
+        immobile_time_s = self.immobile_time_s or (self.immobile_frames / self.fps if self.fps > 0 else 0.0)
         mean_speed_cm_s = self.total_distance_cm / max(total_time_s, 1e-6)
-        detection_rate = self.detected_frames_in_window / max(self.frames_in_window, 1) * 100.0
+        detection_rate = (self.detected_time_in_window_s / max(total_time_s, 1e-9) * 100.0) if total_time_s > 0 else 0.0
 
         summary = {
             "roi_id": self.roi_id,
@@ -587,21 +617,32 @@ class OpenFieldTracker:
                     "center_frames": 0,
                     "wall_frames": 0,
                     "moving_frames": 0,
+                    "duration_s": 0.0,
+                    "center_time_s": 0.0,
+                    "wall_time_s": 0.0,
+                    "moving_time_s": 0.0,
                 },
             )
+            duration = float(row.get("dt_s") or (1.0 / max(self.fps, 1e-6)))
             bucket["frames"] += 1
+            bucket["duration_s"] += duration
             bucket["distance_cm"] += float(row.get("step_distance_cm") or 0.0)
             bucket["center_distance_cm"] += float(row.get("step_center_distance_cm") or 0.0)
             bucket["outer_distance_cm"] += float(row.get("step_outer_distance_cm") or 0.0)
             bucket["center_frames"] += int(bool(row.get("in_center")))
             bucket["wall_frames"] += int(bool(row.get("in_wall")))
             bucket["moving_frames"] += int(float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s)
+            if row.get("in_center"):
+                bucket["center_time_s"] += duration
+            if row.get("in_wall"):
+                bucket["wall_time_s"] += duration
+            if float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s:
+                bucket["moving_time_s"] += duration
 
         out: List[Dict[str, Any]] = []
         for idx in sorted(bins):
             bucket = bins[idx]
-            frames = max(bucket["frames"], 1)
-            duration_s = frames / self.fps
+            duration_s = float(bucket.get("duration_s") or (max(bucket["frames"], 1) / self.fps))
             out.append(
                 {
                     "roi_id": bucket["roi_id"],
@@ -614,9 +655,9 @@ class OpenFieldTracker:
                     "center_distance_cm": round(bucket["center_distance_cm"], 3),
                     "outer_distance_cm": round(bucket["outer_distance_cm"], 3),
                     "mean_speed_cm_s": round(bucket["distance_cm"] / max(duration_s, 1e-6), 3),
-                    "center_time_s": round(bucket["center_frames"] / self.fps, 3),
-                    "wall_time_s": round(bucket["wall_frames"] / self.fps, 3),
-                    "moving_time_s": round(bucket["moving_frames"] / self.fps, 3),
+                    "center_time_s": round(bucket["center_time_s"], 3),
+                    "wall_time_s": round(bucket["wall_time_s"], 3),
+                    "moving_time_s": round(bucket["moving_time_s"], 3),
                 }
             )
         return out

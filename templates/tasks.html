@@ -369,14 +369,23 @@
             <div data-i18n="tasks.empty.quick">没有匹配的快速分析记录。</div>
         </div>
     </section>
+
+    <div class="text-center mt-3" id="taskLoadMoreWrap" style="display: none;">
+        <button type="button" class="btn btn-outline-primary" id="loadMoreTasksBtn">
+            <i class="fas fa-angles-down me-2"></i><span>加载更多</span>
+        </button>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const TASK_REFRESH_MS = 2500;
+const TASK_PAGE_STEP = 200;
+const TASK_MAX_LIMIT = 1000;
 let taskTimer = null;
 let taskAbort = null;
+let taskLimit = TASK_PAGE_STEP;
 let currentTasks = [];
 let selectedTaskIds = new Set();
 
@@ -630,6 +639,33 @@ function updateCounts(counts) {
     document.getElementById('countError').textContent = counts.error || 0;
 }
 
+function resetTaskLimit() {
+    taskLimit = TASK_PAGE_STEP;
+}
+
+function updateLoadMoreState(data, tasks) {
+    const wrap = document.getElementById('taskLoadMoreWrap');
+    const btn = document.getElementById('loadMoreTasksBtn');
+    if (!wrap || !btn) return;
+    const counts = data.counts || {};
+    const filteredTotal = Number(counts.filtered || tasks.length || 0);
+    const shown = Number(data.returned || tasks.length || 0);
+    const hasMore = Boolean(data.has_more) || shown < filteredTotal;
+    wrap.style.display = hasMore ? 'block' : 'none';
+    const reachedMax = hasMore && shown >= TASK_MAX_LIMIT;
+    btn.disabled = reachedMax;
+    const label = fillText(
+        reachedMax
+            ? t('tasks.action.load_more_limit', '已显示前 {shown}/{total} 条')
+            : t('tasks.action.load_more', '加载更多 ({shown}/{total})'),
+        {
+        shown: shown,
+        total: filteredTotal
+        }
+    );
+    btn.innerHTML = `<i class="fas fa-angles-down me-2"></i><span>${escapeHtml(label)}</span>`;
+}
+
 function queryParams() {
     const params = new URLSearchParams();
     const q = document.getElementById('taskSearch').value.trim();
@@ -638,6 +674,7 @@ function queryParams() {
     if (q) params.set('q', q);
     if (status) params.set('status', status);
     if (experiment) params.set('experiment', experiment);
+    params.set('limit', String(taskLimit));
     return params.toString();
 }
 
@@ -661,6 +698,7 @@ function loadTasks() {
             document.getElementById('emptyQuickTasks').style.display = quickTasks.length ? 'none' : 'block';
             document.getElementById('projectTaskCount').textContent = sectionCountText(projectTasks.length);
             document.getElementById('quickTaskCount').textContent = sectionCountText(quickTasks.length);
+            updateLoadMoreState(data, tasks);
             updateBulkControls();
         })
         .catch(err => {
@@ -673,6 +711,7 @@ function loadTasks() {
             document.getElementById('emptyQuickTasks').style.display = 'block';
             document.getElementById('projectTaskCount').textContent = sectionCountText(0);
             document.getElementById('quickTaskCount').textContent = sectionCountText(0);
+            document.getElementById('taskLoadMoreWrap').style.display = 'none';
             updateBulkControls();
         });
 }
@@ -771,6 +810,11 @@ document.addEventListener('change', function(event) {
 
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('refreshTasksBtn').addEventListener('click', loadTasks);
+    document.getElementById('loadMoreTasksBtn').addEventListener('click', function() {
+        taskLimit = Math.min(taskLimit + TASK_PAGE_STEP, TASK_MAX_LIMIT);
+        this.disabled = true;
+        loadTasks();
+    });
     document.getElementById('clearTaskSelectionBtn').addEventListener('click', function() {
         selectedTaskIds.clear();
         document.querySelectorAll('[data-select-task]').forEach(input => {
@@ -785,12 +829,16 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('statusFilter').value = '';
         document.getElementById('experimentFilter').value = '';
         selectedTaskIds.clear();
+        resetTaskLimit();
         loadTasks();
     });
     ['taskSearch', 'statusFilter', 'experimentFilter'].forEach(id => {
         document.getElementById(id).addEventListener(id === 'taskSearch' ? 'input' : 'change', function() {
             window.clearTimeout(this._taskDelay);
-            this._taskDelay = window.setTimeout(loadTasks, 180);
+            this._taskDelay = window.setTimeout(function() {
+                resetTaskLimit();
+                loadTasks();
+            }, 180);
         });
     });
     document.addEventListener('mousescope:langchange', loadTasks);

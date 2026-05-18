@@ -181,6 +181,8 @@ const PAGE_I18N = {
         'status.expired': '分析会话不存在或已过期',
         'state.struggling': '挣扎',
         'state.immobile': '静止',
+        'algorithm.lis': '微小挣扎优化逻辑',
+        'algorithm.legacy': '原本判断逻辑',
         'alert.stop_sent': '已发送停止命令',
         'alert.folder_failed': '打开结果目录失败'
     },
@@ -230,6 +232,8 @@ const PAGE_I18N = {
         'status.expired': 'Analysis session not found or expired',
         'state.struggling': 'Struggling',
         'state.immobile': 'Immobile',
+        'algorithm.lis': 'Subtle-struggle optimized logic',
+        'algorithm.legacy': 'Original decision logic',
         'alert.stop_sent': 'Stop command sent',
         'alert.folder_failed': 'Failed to open result folder'
     }
@@ -279,6 +283,12 @@ function stateText(item) {
         : pageTr('state.immobile', 'Immobile');
 }
 
+function algorithmText(row) {
+    return row && row.behavior_algorithm === 'tst_lis'
+        ? pageTr('algorithm.lis', 'Subtle-struggle optimized logic')
+        : pageTr('algorithm.legacy', 'Original decision logic');
+}
+
 function renderTable(rows) {
     const body = document.getElementById('roiTableBody');
     if (!rows.length) {
@@ -290,7 +300,7 @@ function renderTable(rows) {
             <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
             <td><span class="state-pill ${stateClass(row)}">${stateText(row)}</span></td>
             <td>${Number(row.flow_value || 0).toFixed(1)}</td>
-            <td>${row.is_struggling ? pageTr('table.note.struggling', 'Currently struggling') : pageTr('table.note.immobile', 'Currently immobile')}</td>
+            <td>${algorithmText(row)} · ${row.is_struggling ? pageTr('table.note.struggling', 'Currently struggling') : pageTr('table.note.immobile', 'Currently immobile')}</td>
         </tr>
     `).join('');
 }
@@ -307,7 +317,7 @@ function renderRealtime(rows) {
                 <div class="live-name">${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</div>
                 <span class="state-pill ${stateClass(row)}">${stateText(row)}</span>
             </div>
-            <div class="live-meta">${pageTr('live.flow', 'Flow')}: ${Number(row.flow_value || 0).toFixed(1)}</div>
+            <div class="live-meta">${algorithmText(row)} · ${pageTr('live.flow', 'Flow')}: ${Number(row.flow_value || 0).toFixed(1)}</div>
         </div>
     `).join('');
 }

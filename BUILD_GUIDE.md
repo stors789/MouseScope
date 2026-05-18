@@ -14,6 +14,8 @@
 
 3. **分发方式**：将 `dist/MouseScope/` 整个文件夹压缩为 ZIP 发给用户。
 
+> 可选但推荐：如果打包机安装了 `ffprobe`，`MouseScope.spec` 会自动把它打进发布目录；也可以先设置环境变量 `MOUSESCOPE_FFPROBE_EXE` 指向 `ffprobe.exe`，用于可变帧率视频的精确时间轴。
+
 ### 用户使用
 1. 解压 ZIP
 2. 双击 `MouseScope.exe`
@@ -31,7 +33,8 @@ pip install pyinstaller
 # 打包
 pyinstaller MouseScope.spec
 
-# 或者不用 spec 文件，直接命令行打包
+# 或者不用 spec 文件，直接命令行打包。推荐仍以 MouseScope.spec 为准；
+# 新增实验模块或服务后，需要同步维护下面的 hidden-import 列表。
 pyinstaller --name MouseScope \
     --add-data "templates;templates" \
     --add-data "static;static" \
@@ -41,17 +44,50 @@ pyinstaller --name MouseScope \
     --hidden-import cv2 \
     --hidden-import numpy \
     --hidden-import pandas \
+    --hidden-import core \
+    --hidden-import core.forced_swim \
+    --hidden-import core.open_field \
+    --hidden-import core.novel_object \
+    --hidden-import core.elevated_plus \
+    --hidden-import core.y_maze \
+    --hidden-import core.maze_zone_utils \
+    --hidden-import core.spatial_render \
+    --hidden-import core.file_utils \
+    --hidden-import core.vision_tracker \
+    --hidden-import core.tst_lis \
+    --hidden-import core.tst_legacy \
+    --hidden-import core.performance_utils \
+    --hidden-import file_utils \
     --hidden-import vision_tracker \
     --hidden-import performance_utils \
+    --hidden-import services \
+    --hidden-import services.analysis_builders \
     --hidden-import services.analysis_history \
+    --hidden-import services.analysis_runtime \
     --hidden-import services.analysis_sessions \
     --hidden-import services.debug_preview \
+    --hidden-import services.elevated_plus_session \
+    --hidden-import services.experiment_registry \
+    --hidden-import services.forced_swim_session \
+    --hidden-import services.novel_object_session \
+    --hidden-import services.open_field_session \
     --hidden-import services.payload_geometry \
+    --hidden-import services.project_store \
+    --hidden-import services.session_store \
+    --hidden-import services.tst_session \
     --hidden-import services.video_export \
+    --hidden-import services.video_frame_reader \
+    --hidden-import services.video_metadata \
+    --hidden-import services.video_timebase \
+    --hidden-import services.y_maze_session \
     --hidden-import imageio_ffmpeg \
+    --hidden-import imageio_ffmpeg._utils \
     --collect-data imageio_ffmpeg \
+    --hidden-import routes \
     --hidden-import routes.pages \
     --hidden-import routes.api \
+    --hidden-import routes.projects \
+    --hidden-import routes.project_api \
     --exclude-module tkinter \
     --exclude-module matplotlib \
     --exclude-module torch \

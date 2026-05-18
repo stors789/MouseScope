@@ -292,6 +292,11 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
 
 
 def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    def _resolve_lis_primary(raw_cfg: dict[str, Any], default: bool = True) -> bool:
+        if "use_tst_legacy_primary" in raw_cfg:
+            return not bool(raw_cfg.get("use_tst_legacy_primary", False))
+        return bool(raw_cfg.get("use_tst_lis_primary", default))
+
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
     default_gray_threshold = int(data.get("gray_threshold", 127))
@@ -300,13 +305,22 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
     default_dilation_kernel = int(data.get("dilation_kernel", 5))
     default_dilation_iter = int(data.get("dilation_iter", 3))
     default_min_area = int(data.get("min_area", 100))
-    default_auto_behavior_threshold = bool(data.get("auto_behavior_threshold", False))
     default_behavior_threshold_sensitivity = float(data.get("behavior_threshold_sensitivity", 0.0))
+    default_use_tst_lis_primary = _resolve_lis_primary(data, True)
+    default_use_tst_legacy_primary = not default_use_tst_lis_primary
+    default_auto_behavior_threshold = (
+        False if default_use_tst_lis_primary else bool(data.get("auto_behavior_threshold", False))
+    )
+    default_enable_tst_lis = default_use_tst_lis_primary
 
-    per_video_configs = _iter_video_configs(
-        sess,
-        data,
-        lambda raw_cfg: {
+    def _build_video_config(raw_cfg: dict[str, Any]) -> dict[str, Any]:
+        use_tst_lis_primary = _resolve_lis_primary(raw_cfg, default_use_tst_lis_primary)
+        auto_behavior_threshold = (
+            False
+            if use_tst_lis_primary
+            else bool(raw_cfg.get("auto_behavior_threshold", default_auto_behavior_threshold))
+        )
+        return {
             "bg_method": raw_cfg.get("bg_method", default_bg_method),
             "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
             "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
@@ -315,11 +329,19 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
             "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
             "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
             "min_area": int(raw_cfg.get("min_area", default_min_area)),
-            "auto_behavior_threshold": bool(raw_cfg.get("auto_behavior_threshold", default_auto_behavior_threshold)),
+            "auto_behavior_threshold": auto_behavior_threshold,
             "behavior_threshold_sensitivity": float(raw_cfg.get("behavior_threshold_sensitivity", default_behavior_threshold_sensitivity)),
+            "use_tst_lis_primary": use_tst_lis_primary,
+            "use_tst_legacy_primary": not use_tst_lis_primary,
+            "enable_tst_lis": use_tst_lis_primary,
             "pixel_to_mm": float(raw_cfg.get("pixel_to_mm", data.get("pixel_to_mm", 1.0))),
             "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
-        },
+        }
+
+    per_video_configs = _iter_video_configs(
+        sess,
+        data,
+        _build_video_config,
     )
 
     return {
@@ -333,6 +355,9 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
         "min_area": default_min_area,
         "auto_behavior_threshold": default_auto_behavior_threshold,
         "behavior_threshold_sensitivity": default_behavior_threshold_sensitivity,
+        "use_tst_lis_primary": default_use_tst_lis_primary,
+        "use_tst_legacy_primary": default_use_tst_legacy_primary,
+        "enable_tst_lis": default_enable_tst_lis,
         "pixel_to_mm": float(data.get("pixel_to_mm", 1.0)),
         "rois": data.get("rois", []),
         "per_video_configs": per_video_configs,

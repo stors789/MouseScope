@@ -32,11 +32,11 @@ _configure_console_streams()
 
 
 def _configure_http_access_logging():
-    """Keep local status polling from flooding VS Code's terminal."""
-    enabled = str(os.environ.get('MOUSESCOPE_HTTP_ACCESS_LOG', '')).strip().lower()
-    if enabled in {'1', 'true', 'yes', 'on'}:
-        return
-    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    """Show backend request logs by default during local desktop runs."""
+    raw = str(os.environ.get('MOUSESCOPE_HTTP_ACCESS_LOG', '')).strip().lower()
+    enabled = raw not in {'0', 'false', 'no', 'off', 'quiet'}
+    logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s in %(name)s: %(message)s')
+    logging.getLogger('werkzeug').setLevel(logging.INFO if enabled else logging.WARNING)
 
 
 _configure_http_access_logging()
@@ -84,6 +84,7 @@ from performance_utils import enable_opencv_optimizations
 from services.session_store import SessionStore
 from services.analysis_history import AnalysisHistoryStore
 from services.project_store import ProjectStore
+from services.video_metadata import probe_video_info
 from services.experiment_registry import (
     get_manual_module,
     list_experiments,
@@ -480,24 +481,7 @@ def _write_dataframe_csv(rows, path):
 
 
 def _probe_video_info(video_path, fps_override=None):
-    cap = cv2.VideoCapture(str(video_path))
-    detected_fps = 30.0
-    width = 0
-    height = 0
-    total_frames = 0
-    if cap.isOpened():
-        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    cap.release()
-    return {
-        'fps': float(fps_override) if fps_override else float(detected_fps),
-        'detected_fps': float(detected_fps),
-        'width': int(width),
-        'height': int(height),
-        'total_frames': int(total_frames),
-    }
+    return probe_video_info(video_path, fps_override=fps_override)
 
 
 def _extract_video_info_from_entry(video_info, fps_override=None):
@@ -633,13 +617,18 @@ app = Flask(__name__,
             template_folder=str(BUNDLE_DIR / 'templates'),
             static_folder=str(BUNDLE_DIR / 'static'))
 app.secret_key = _load_or_create_secret_key()
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB
+app.config['MAX_CONTENT_LENGTH'] = None
 
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_request_entity_too_large(_exc):
-    message = '上传文件超过 2GB 限制，请压缩视频、拆分批次，或改用本地路径方式选择文件。'
-    if request.path.startswith('/api/'):
+    message = '上传请求过大，已被运行环境拒绝。请拆分批次，或改用本地路径方式选择文件。'
+    wants_json = (
+        request.path.startswith('/api/')
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.accept_mimetypes.best == 'application/json'
+    )
+    if wants_json:
         return jsonify({'success': False, 'error': message}), 413
     flash(message, 'error')
     return redirect(url_for('upload_page'))
@@ -829,7 +818,8 @@ def _license_not_accepted_response():
     if request.path.startswith('/api/') or request.method != 'GET':
         return jsonify({'success': False, 'error': message}), 403
     flash(message, 'warning')
-    return redirect(url_for('license_page'))
+    next_url = request.full_path.rstrip('?') if request.query_string else request.path
+    return redirect(url_for('license_page', next=next_url))
 
 
 @app.before_request

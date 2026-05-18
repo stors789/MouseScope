@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import logging
 import os
 import platform
 import re
@@ -26,6 +27,9 @@ from services.analysis_sessions import (
 from services.debug_preview import build_debug_preview_response
 from services.experiment_registry import get_experiment_spec, summarize_batch_state
 from services.video_frame_reader import read_video_frame
+
+
+logger = logging.getLogger(__name__)
 
 
 def register_api_routes(app, ctx) -> None:
@@ -174,6 +178,7 @@ def register_api_routes(app, ctx) -> None:
         try:
             projects = project_store.list_projects(include_archived=True)
         except Exception:
+            logger.exception("Failed to list projects while building task index.")
             return lookup, project_tasks
         for project in projects:
             project_id = str(project.get('project_id') or '')
@@ -182,6 +187,7 @@ def register_api_routes(app, ctx) -> None:
             try:
                 runs = project_store.list_project_runs(project_id)
             except Exception:
+                logger.debug("Failed to list project runs: project_id=%s", project_id, exc_info=True)
                 runs = []
             for run in runs:
                 run_id = str(run.get('run_id') or run.get('session_id') or '').strip()
@@ -191,6 +197,7 @@ def register_api_routes(app, ctx) -> None:
                 try:
                     assignments = project_store.get_assignments(project_id, assignment_ids) if assignment_ids else []
                 except Exception:
+                    logger.debug("Failed to read project assignments: project_id=%s", project_id, exc_info=True)
                     assignments = []
                 video_names = [str(item.get('original_name') or '') for item in assignments if item.get('original_name')]
                 result_files = [str(path) for path in (run.get('result_files') or []) if path]
@@ -466,6 +473,11 @@ def register_api_routes(app, ctx) -> None:
         query = str(request.args.get('q') or '').strip().lower()
         status_filter = str(request.args.get('status') or '').strip().lower()
         experiment_filter = str(request.args.get('experiment') or '').strip().lower()
+        try:
+            limit = int(request.args.get('limit') or 200)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': '任务数量参数无效'}), 400
+        limit = max(1, min(limit, 1000))
         project_lookup, project_only_tasks = _project_task_indexes()
 
         merged: dict[str, dict] = {}
@@ -510,19 +522,22 @@ def register_api_routes(app, ctx) -> None:
             task for task in tasks
             if _task_matches_filters(task, query, status_filter, experiment_filter)
         ]
-        limit = max(1, min(int(request.args.get('limit') or 200), 1000))
-        filtered = filtered[:limit]
+        filtered_total = len(filtered)
+        limited_tasks = filtered[:limit]
 
         return jsonify({
             'success': True,
-            'tasks': [] if request.args.get('summary') else filtered,
+            'tasks': [] if request.args.get('summary') else limited_tasks,
+            'limit': limit,
+            'returned': len(limited_tasks),
+            'has_more': filtered_total > len(limited_tasks),
             'counts': {
                 'all': all_count,
                 'active': active_count,
                 'completed': completed_count,
                 'interrupted': interrupted_count,
                 'error': error_count,
-                'filtered': len(filtered),
+                'filtered': filtered_total,
             },
         })
 
@@ -785,8 +800,17 @@ def register_api_routes(app, ctx) -> None:
         while len(per_video_configs) < total_videos:
             per_video_configs.append({})
 
+        def _payload_int(value, label: str) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f'{label}无效')
+
         if action == 'copy':
-            source_index = int(payload.get('source_index', -1))
+            try:
+                source_index = _payload_int(payload.get('source_index', -1), '源视频索引')
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
             target_indices = payload.get('target_indices') or []
             if not (0 <= source_index < total_videos):
                 return jsonify({'error': '源视频索引无效'}), 400
@@ -794,11 +818,17 @@ def register_api_routes(app, ctx) -> None:
                 return jsonify({'error': '目标视频索引无效'}), 400
             source_config = copy.deepcopy(per_video_configs[source_index] or {})
             for raw_idx in target_indices:
-                idx = int(raw_idx)
+                try:
+                    idx = _payload_int(raw_idx, '目标视频索引')
+                except ValueError as exc:
+                    return jsonify({'error': str(exc)}), 400
                 if 0 <= idx < total_videos:
                     per_video_configs[idx] = copy.deepcopy(source_config)
         elif action == 'reset':
-            target_index = int(payload.get('target_index', -1))
+            try:
+                target_index = _payload_int(payload.get('target_index', -1), '目标视频索引')
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
             if not (0 <= target_index < total_videos):
                 return jsonify({'error': '目标视频索引无效'}), 400
             per_video_configs[target_index] = {}

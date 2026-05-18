@@ -325,6 +325,11 @@ class NovelObjectTracker:
         self.center_frames = 0
         self.moving_frames = 0
         self.immobile_frames = 0
+        self.time_in_window_s = 0.0
+        self.detected_time_in_window_s = 0.0
+        self.center_time_s = 0.0
+        self.moving_time_s = 0.0
+        self.immobile_time_s = 0.0
         self.center_entries = 0
         self.center_latency_s: Optional[float] = None
         self.total_distance_cm = 0.0
@@ -339,6 +344,8 @@ class NovelObjectTracker:
         self.prev_in_center_stats = False
         self.missing_frames = 0
         self.max_gap_frames = 5
+        self.missing_time_s = 0.0
+        self.max_gap_s = self.max_gap_frames / max(float(self.fps), 1e-6)
         self.prev_head_vector_cm: Optional[Tuple[float, float]] = None
         self.last_head_point_px: Optional[Tuple[float, float]] = None
         self.last_head_point_cm: Optional[Tuple[float, float]] = None
@@ -346,9 +353,13 @@ class NovelObjectTracker:
         self.head_confident_frames = 0
         self.head_supported_exploration_frames = 0
         self.fallback_exploration_frames = 0
+        self.head_supported_exploration_time_s = 0.0
+        self.fallback_exploration_time_s = 0.0
 
         self.object_zone_frames = [0, 0]
         self.object_exploration_frames = [0, 0]
+        self.object_zone_time_s = [0.0, 0.0]
+        self.object_exploration_time_s = [0.0, 0.0]
         self.object_zone_entries = [0, 0]
         self.object_bouts = [0, 0]
         self.object_latency_s: List[Optional[float]] = [None, None]
@@ -1259,8 +1270,14 @@ class NovelObjectTracker:
         morph_processor,
         detector,
         include_trajectory: bool = True,
+        dt_s: Optional[float] = None,
     ) -> Dict[str, Any]:
         self.total_frames += 1
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
 
         detected = detection is not None
@@ -1276,14 +1293,17 @@ class NovelObjectTracker:
             self.last_all_arena_xy_cm = arena_xy_cm
             self.prev_centroid_px = centroid_px
             self.missing_frames = 0
+            self.missing_time_s = 0.0
             if self.first_detected_time_abs is None:
                 self.first_detected_time_abs = float(current_time)
-        elif self.last_all_arena_xy_cm is not None and self.missing_frames < self.max_gap_frames:
+        elif self.last_all_arena_xy_cm is not None and self.missing_time_s < self.max_gap_s:
             arena_xy_cm = self.last_all_arena_xy_cm
             centroid_px = self.prev_centroid_px
             self.missing_frames += 1
+            self.missing_time_s += current_dt
         else:
             self.missing_frames += 1
+            self.missing_time_s += current_dt
 
         instant_distance_cm = 0.0
         speed_cm_s = 0.0
@@ -1295,7 +1315,7 @@ class NovelObjectTracker:
                 dx = arena_xy_cm[0] - self.prev_all_arena_xy_cm[0]
                 dy = arena_xy_cm[1] - self.prev_all_arena_xy_cm[1]
                 instant_distance_cm = float(math.hypot(dx, dy))
-                speed_cm_s = instant_distance_cm * self.fps
+                speed_cm_s = instant_distance_cm / current_dt
                 motion_vector_cm = (float(dx), float(dy))
             self.prev_all_arena_xy_cm = arena_xy_cm
             zone_flags = self._zone_flags(arena_xy_cm)
@@ -1309,8 +1329,10 @@ class NovelObjectTracker:
 
         if in_stats_window:
             self.frames_in_window += 1
+            self.time_in_window_s += current_dt
             if detected:
                 self.detected_frames_in_window += 1
+                self.detected_time_in_window_s += current_dt
 
             if arena_xy_cm is not None:
                 if self.prev_stats_arena_xy_cm is not None:
@@ -1323,10 +1345,14 @@ class NovelObjectTracker:
                 self.max_speed_cm_s = max(self.max_speed_cm_s, speed_cm_s)
 
                 self.center_frames += int(zone_flags["in_center"])
+                if zone_flags["in_center"]:
+                    self.center_time_s += current_dt
                 if speed_cm_s >= self.movement_threshold_cm_s:
                     self.moving_frames += 1
+                    self.moving_time_s += current_dt
                 else:
                     self.immobile_frames += 1
+                    self.immobile_time_s += current_dt
 
                 if zone_flags["in_center"] and not self.prev_in_center_stats:
                     self.center_entries += 1
@@ -1341,6 +1367,7 @@ class NovelObjectTracker:
                 self.prev_stats_arena_xy_cm = None
                 self.prev_in_center_stats = False
                 self.immobile_frames += 1
+                self.immobile_time_s += current_dt
                 if centroid_px is not None:
                     self.trajectory_px_live.append(centroid_px)
         else:
@@ -1420,15 +1447,19 @@ class NovelObjectTracker:
             for idx, is_near in enumerate(near_flags):
                 if is_near:
                     self.object_zone_frames[idx] += 1
+                    self.object_zone_time_s[idx] += current_dt
                     if not self.prev_zone_flags[idx]:
                         self.object_zone_entries[idx] += 1
 
             if exploring_idx is not None:
                 self.object_exploration_frames[exploring_idx] += 1
+                self.object_exploration_time_s[exploring_idx] += current_dt
                 if exploration_mode == "head":
                     self.head_supported_exploration_frames += 1
+                    self.head_supported_exploration_time_s += current_dt
                 elif exploration_mode == "fallback":
                     self.fallback_exploration_frames += 1
+                    self.fallback_exploration_time_s += current_dt
                 if self.object_latency_s[exploring_idx] is None:
                     self.object_latency_s[exploring_idx] = max(0.0, float(current_time) - self._stats_window_origin_abs())
                 if self.first_explored_object_idx is None:
@@ -1452,6 +1483,7 @@ class NovelObjectTracker:
             "roi_name": self.roi_name,
             "frame": self.total_frames - 1,
             "time_s": round(float(current_time), 3),
+            "dt_s": round(float(current_dt), 6),
             "window_time_s": round(float(current_time - self._stats_window_origin_abs()), 3) if in_stats_window else None,
             "detected": bool(detected),
             "in_stats_window": bool(in_stats_window),
@@ -1527,12 +1559,12 @@ class NovelObjectTracker:
         }
 
     def build_summary(self) -> Dict[str, Any]:
-        total_time_s = self.frames_in_window / self.fps if self.fps > 0 else 0.0
-        center_time_s = self.center_frames / self.fps if self.fps > 0 else 0.0
-        moving_time_s = self.moving_frames / self.fps if self.fps > 0 else 0.0
-        immobile_time_s = self.immobile_frames / self.fps if self.fps > 0 else 0.0
+        total_time_s = self.time_in_window_s or (self.frames_in_window / self.fps if self.fps > 0 else 0.0)
+        center_time_s = self.center_time_s or (self.center_frames / self.fps if self.fps > 0 else 0.0)
+        moving_time_s = self.moving_time_s or (self.moving_frames / self.fps if self.fps > 0 else 0.0)
+        immobile_time_s = self.immobile_time_s or (self.immobile_frames / self.fps if self.fps > 0 else 0.0)
         mean_speed_cm_s = self.total_distance_cm / max(total_time_s, 1e-6)
-        detection_rate = self.detected_frames_in_window / max(self.frames_in_window, 1) * 100.0
+        detection_rate = (self.detected_time_in_window_s / max(total_time_s, 1e-9) * 100.0) if total_time_s > 0 else 0.0
         head_estimated_rate = self.head_estimated_frames / max(self.frames_in_window, 1) * 100.0
         head_confident_rate = self.head_confident_frames / max(self.frames_in_window, 1) * 100.0
 
@@ -1573,8 +1605,8 @@ class NovelObjectTracker:
         total_exploration = 0.0
         role_times: Dict[str, float] = {}
         for idx, obj in enumerate(self.objects):
-            exploration_s = self.object_exploration_frames[idx] / self.fps
-            zone_s = self.object_zone_frames[idx] / self.fps
+            exploration_s = self.object_exploration_time_s[idx] or (self.object_exploration_frames[idx] / self.fps)
+            zone_s = self.object_zone_time_s[idx] or (self.object_zone_frames[idx] / self.fps)
             total_exploration += exploration_s
             role_times[obj["role"]] = role_times.get(obj["role"], 0.0) + exploration_s
 
@@ -1588,8 +1620,14 @@ class NovelObjectTracker:
             summary[f"{prefix}_latency_s"] = round(self.object_latency_s[idx], 3) if self.object_latency_s[idx] is not None else None
 
         summary["total_object_exploration_s"] = round(total_exploration, 3)
-        summary["head_supported_exploration_s"] = round(self.head_supported_exploration_frames / self.fps, 3)
-        summary["fallback_exploration_s"] = round(self.fallback_exploration_frames / self.fps, 3)
+        summary["head_supported_exploration_s"] = round(
+            self.head_supported_exploration_time_s or (self.head_supported_exploration_frames / self.fps),
+            3,
+        )
+        summary["fallback_exploration_s"] = round(
+            self.fallback_exploration_time_s or (self.fallback_exploration_frames / self.fps),
+            3,
+        )
         summary["meets_min_exploration"] = bool(total_exploration >= self.min_valid_exploration_s)
         summary["first_explored_object"] = self.objects[self.first_explored_object_idx]["name"] if self.first_explored_object_idx is not None else None
         summary["first_explored_role"] = self.objects[self.first_explored_object_idx]["role"] if self.first_explored_object_idx is not None else None
@@ -1611,8 +1649,8 @@ class NovelObjectTracker:
             summary["difference_seconds"] = round(novel_time - familiar_time, 3)
             summary["novel_preference"] = bool(novel_time > familiar_time)
         else:
-            obj1 = self.object_exploration_frames[0] / self.fps
-            obj2 = self.object_exploration_frames[1] / self.fps
+            obj1 = self.object_exploration_time_s[0] or (self.object_exploration_frames[0] / self.fps)
+            obj2 = self.object_exploration_time_s[1] or (self.object_exploration_frames[1] / self.fps)
             balance_index = None
             if (obj1 + obj2) > 0:
                 balance_index = (obj1 - obj2) / (obj1 + obj2)
@@ -1644,20 +1682,31 @@ class NovelObjectTracker:
                     "center_frames": 0,
                     "moving_frames": 0,
                     "object_exploration_frames": [0, 0],
+                    "duration_s": 0.0,
+                    "center_time_s": 0.0,
+                    "moving_time_s": 0.0,
+                    "object_exploration_time_s": [0.0, 0.0],
                 },
             )
+            duration = float(row.get("dt_s") or (1.0 / max(self.fps, 1e-6)))
             bucket["frames"] += 1
+            bucket["duration_s"] += duration
             bucket["distance_cm"] += float(row.get("step_distance_cm") or 0.0)
             bucket["center_frames"] += int(bool(row.get("in_center")))
             bucket["moving_frames"] += int(float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s)
+            if row.get("in_center"):
+                bucket["center_time_s"] += duration
+            if float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s:
+                bucket["moving_time_s"] += duration
             for obj_idx in range(2):
-                bucket["object_exploration_frames"][obj_idx] += int(bool(row.get(f"object_{obj_idx + 1}_exploring")))
+                if bool(row.get(f"object_{obj_idx + 1}_exploring")):
+                    bucket["object_exploration_frames"][obj_idx] += 1
+                    bucket["object_exploration_time_s"][obj_idx] += duration
 
         out: List[Dict[str, Any]] = []
         for idx in sorted(bins):
             bucket = bins[idx]
-            frames = max(bucket["frames"], 1)
-            duration_s = frames / self.fps
+            duration_s = float(bucket.get("duration_s") or (max(bucket["frames"], 1) / self.fps))
             row: Dict[str, Any] = {
                 "roi_id": bucket["roi_id"],
                 "roi_name": bucket["roi_name"],
@@ -1667,14 +1716,14 @@ class NovelObjectTracker:
                 "duration_s": round(duration_s, 3),
                 "distance_cm": round(bucket["distance_cm"], 3),
                 "mean_speed_cm_s": round(bucket["distance_cm"] / max(duration_s, 1e-6), 3),
-                "center_time_s": round(bucket["center_frames"] / self.fps, 3),
-                "moving_time_s": round(bucket["moving_frames"] / self.fps, 3),
+                "center_time_s": round(bucket["center_time_s"], 3),
+                "moving_time_s": round(bucket["moving_time_s"], 3),
             }
 
             total_exp = 0.0
             role_times: Dict[str, float] = {}
             for obj_idx, obj in enumerate(self.objects):
-                exp_s = bucket["object_exploration_frames"][obj_idx] / self.fps
+                exp_s = bucket["object_exploration_time_s"][obj_idx]
                 row[f"object_{obj_idx + 1}_exploration_s"] = round(exp_s, 3)
                 total_exp += exp_s
                 role_times[obj["role"]] = role_times.get(obj["role"], 0.0) + exp_s

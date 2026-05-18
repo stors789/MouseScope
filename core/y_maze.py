@@ -205,6 +205,12 @@ class YMazeTracker:
         self.arm_frames = {name: 0 for name in self.ARM_NAMES}
         self.moving_frames = 0
         self.immobile_frames = 0
+        self.time_in_window_s = 0.0
+        self.detected_time_in_window_s = 0.0
+        self.center_time_s = 0.0
+        self.arm_time_s = {name: 0.0 for name in self.ARM_NAMES}
+        self.moving_time_s = 0.0
+        self.immobile_time_s = 0.0
         self.arm_entries = {name: 0 for name in self.ARM_NAMES}
         self.total_arm_entries = 0
         self.alternation_count = 0
@@ -217,6 +223,7 @@ class YMazeTracker:
         self.center_entry_reset_s = 0.2
         self.center_entry_reset_frames = max(1, int(round(self.fps * self.center_entry_reset_s)))
         self.center_entry_streak = 0
+        self.center_entry_streak_s = 0.0
         self.first_detected_time_abs: Optional[float] = None
         self.prev_all_centroid_px: Optional[Tuple[float, float]] = None
         self.last_all_centroid_px: Optional[Tuple[float, float]] = None
@@ -224,6 +231,8 @@ class YMazeTracker:
         self.prev_centroid_px: Optional[Tuple[float, float]] = None
         self.missing_frames = 0
         self.max_gap_frames = 5
+        self.missing_time_s = 0.0
+        self.max_gap_s = self.max_gap_frames / max(float(self.fps), 1e-6)
 
         self.trajectory_px_live: deque[Tuple[float, float]] = deque(maxlen=1000)
         self.trajectory_px_stats: List[Tuple[float, float]] = []
@@ -433,8 +442,14 @@ class YMazeTracker:
         bg_subtractor,
         morph_processor,
         detector,
+        dt_s: Optional[float] = None,
     ) -> Dict[str, Any]:
         self.total_frames += 1
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
 
         centroid_px: Optional[Tuple[float, float]] = None
@@ -450,13 +465,16 @@ class YMazeTracker:
             self.last_all_centroid_px = centroid_px
             self.prev_centroid_px = centroid_px
             self.missing_frames = 0
+            self.missing_time_s = 0.0
             if self.first_detected_time_abs is None:
                 self.first_detected_time_abs = float(current_time)
-        elif self.last_all_centroid_px is not None and self.missing_frames < self.max_gap_frames:
+        elif self.last_all_centroid_px is not None and self.missing_time_s < self.max_gap_s:
             centroid_px = self.last_all_centroid_px
             self.missing_frames += 1
+            self.missing_time_s += current_dt
         else:
             self.missing_frames += 1
+            self.missing_time_s += current_dt
 
         speed_cm_s = 0.0
         if centroid_px is not None:
@@ -467,7 +485,7 @@ class YMazeTracker:
                         centroid_px[1] - self.prev_all_centroid_px[1],
                     )
                 )
-                speed_cm_s = step_px * self.cm_per_px * self.fps
+                speed_cm_s = step_px * self.cm_per_px / current_dt
             self.prev_all_centroid_px = centroid_px
         else:
             self.prev_all_centroid_px = None
@@ -486,8 +504,10 @@ class YMazeTracker:
 
         if in_stats_window:
             self.frames_in_window += 1
+            self.time_in_window_s += current_dt
             if detected:
                 self.detected_frames_in_window += 1
+                self.detected_time_in_window_s += current_dt
 
             if centroid_px is not None:
                 if self.prev_stats_centroid_px is not None:
@@ -505,21 +525,27 @@ class YMazeTracker:
 
                 if zone_key == "center":
                     self.center_frames += 1
+                    self.center_time_s += current_dt
                 elif zone_key in self.ARM_NAMES:
                     self.arm_frames[zone_key] += 1
+                    self.arm_time_s[zone_key] += current_dt
 
                 if speed_cm_s >= self.movement_threshold_cm_s:
                     self.moving_frames += 1
+                    self.moving_time_s += current_dt
                 else:
                     self.immobile_frames += 1
+                    self.immobile_time_s += current_dt
 
                 inside_entry_zone = zone_key in self.ARM_NAMES and self._is_inside_entry_zone(zone_key, centroid_px)
                 if zone_key == "center":
                     self.center_entry_streak += 1
-                    if self.center_entry_streak >= self.center_entry_reset_frames:
+                    self.center_entry_streak_s += current_dt
+                    if self.center_entry_streak_s >= self.center_entry_reset_s:
                         self.current_entry_arm = None
                 elif inside_entry_zone:
                     self.center_entry_streak = 0
+                    self.center_entry_streak_s = 0.0
                     if self.current_entry_arm != zone_key:
                         arm_entry_event = True
                         entry_arm_name = zone_key
@@ -534,6 +560,7 @@ class YMazeTracker:
                                 alternation_event = True
                 else:
                     self.center_entry_streak = 0
+                    self.center_entry_streak_s = 0.0
 
                 self.trajectory_px_stats.append(centroid_px)
                 template_xy = self.project_point_to_template_cm(centroid_px, zone_key)
@@ -543,11 +570,14 @@ class YMazeTracker:
             else:
                 self.prev_stats_centroid_px = None
                 self.center_entry_streak = 0
+                self.center_entry_streak_s = 0.0
                 self.immobile_frames += 1
+                self.immobile_time_s += current_dt
         else:
             self.prev_stats_centroid_px = None
             self.current_entry_arm = None
             self.center_entry_streak = 0
+            self.center_entry_streak_s = 0.0
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
@@ -558,6 +588,7 @@ class YMazeTracker:
             "roi_name": self.roi_name,
             "frame": self.total_frames - 1,
             "time_s": format_seconds(current_time),
+            "dt_s": format_seconds(current_dt),
             "window_time_s": format_seconds(current_time - self._stats_window_origin_abs()) if in_stats_window else None,
             "detected": bool(detected),
             "in_stats_window": bool(in_stats_window),
@@ -604,12 +635,12 @@ class YMazeTracker:
         }
 
     def build_summary(self) -> Dict[str, Any]:
-        total_time_s = self.frames_in_window / self.fps if self.fps > 0 else 0.0
-        center_time_s = self.center_frames / self.fps if self.fps > 0 else 0.0
-        moving_time_s = self.moving_frames / self.fps if self.fps > 0 else 0.0
-        immobile_time_s = self.immobile_frames / self.fps if self.fps > 0 else 0.0
+        total_time_s = self.time_in_window_s or (self.frames_in_window / self.fps if self.fps > 0 else 0.0)
+        center_time_s = self.center_time_s or (self.center_frames / self.fps if self.fps > 0 else 0.0)
+        moving_time_s = self.moving_time_s or (self.moving_frames / self.fps if self.fps > 0 else 0.0)
+        immobile_time_s = self.immobile_time_s or (self.immobile_frames / self.fps if self.fps > 0 else 0.0)
         mean_speed_cm_s = self.total_distance_cm / max(total_time_s, 1e-6)
-        detection_rate = self.detected_frames_in_window / max(self.frames_in_window, 1) * 100.0
+        detection_rate = (self.detected_time_in_window_s / max(total_time_s, 1e-9) * 100.0) if total_time_s > 0 else 0.0
         alternation_opportunities = max(self.total_arm_entries - 2, 0)
         alternation_percent = None
         if alternation_opportunities > 0:
@@ -646,7 +677,7 @@ class YMazeTracker:
         }
         for arm_name in self.ARM_NAMES:
             label = self.ARM_LABELS[arm_name].lower()
-            arm_time_s = self.arm_frames[arm_name] / self.fps if self.fps > 0 else 0.0
+            arm_time_s = self.arm_time_s.get(arm_name, 0.0) or (self.arm_frames[arm_name] / self.fps if self.fps > 0 else 0.0)
             summary[f"arm_{label}_time_s"] = format_seconds(arm_time_s)
             summary[f"arm_{label}_percent"] = round(arm_time_s / max(total_time_s, 1e-6) * 100.0, 2)
             summary[f"arm_{label}_entries"] = int(self.arm_entries[arm_name])
@@ -675,19 +706,30 @@ class YMazeTracker:
                     "distance_cm": 0.0,
                     "center_frames": 0,
                     "moving_frames": 0,
+                    "duration_s": 0.0,
+                    "center_time_s": 0.0,
+                    "moving_time_s": 0.0,
                     "alternation_count": 0,
                     "arm_entries": {name: 0 for name in self.ARM_NAMES},
                     "arm_frames": {name: 0 for name in self.ARM_NAMES},
+                    "arm_time_s": {name: 0.0 for name in self.ARM_NAMES},
                 },
             )
+            duration = float(row.get("dt_s") or (1.0 / max(self.fps, 1e-6)))
             bucket["frames"] += 1
+            bucket["duration_s"] += duration
             bucket["distance_cm"] += float(row.get("step_distance_cm") or 0.0)
             bucket["center_frames"] += int(bool(row.get("in_center")))
             bucket["moving_frames"] += int(float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s)
+            if row.get("in_center"):
+                bucket["center_time_s"] += duration
+            if float(row.get("speed_cm_s") or 0.0) >= self.movement_threshold_cm_s:
+                bucket["moving_time_s"] += duration
             bucket["alternation_count"] += int(bool(row.get("alternation_event")))
             current_arm = row.get("current_arm")
             if current_arm in self.ARM_NAMES:
                 bucket["arm_frames"][current_arm] += 1
+                bucket["arm_time_s"][current_arm] += duration
             entry_arm_name = row.get("arm_entry_name")
             if entry_arm_name in self.ARM_NAMES:
                 bucket["arm_entries"][entry_arm_name] += 1
@@ -695,8 +737,7 @@ class YMazeTracker:
         out: List[Dict[str, Any]] = []
         for idx in sorted(bins):
             bucket = bins[idx]
-            frames = max(bucket["frames"], 1)
-            duration_s = frames / self.fps
+            duration_s = float(bucket.get("duration_s") or (max(bucket["frames"], 1) / self.fps))
             row: Dict[str, Any] = {
                 "roi_id": bucket["roi_id"],
                 "roi_name": bucket["roi_name"],
@@ -706,14 +747,14 @@ class YMazeTracker:
                 "duration_s": format_seconds(duration_s),
                 "distance_cm": format_metric(bucket["distance_cm"]),
                 "mean_speed_cm_s": format_metric(bucket["distance_cm"] / max(duration_s, 1e-6)),
-                "center_time_s": format_seconds(bucket["center_frames"] / self.fps),
-                "moving_time_s": format_seconds(bucket["moving_frames"] / self.fps),
+                "center_time_s": format_seconds(bucket["center_time_s"]),
+                "moving_time_s": format_seconds(bucket["moving_time_s"]),
                 "alternation_count": int(bucket["alternation_count"]),
             }
             total_entries = 0
             for arm_name in self.ARM_NAMES:
                 label = self.ARM_LABELS[arm_name].lower()
-                row[f"arm_{label}_time_s"] = format_seconds(bucket["arm_frames"][arm_name] / self.fps)
+                row[f"arm_{label}_time_s"] = format_seconds(bucket["arm_time_s"][arm_name])
                 row[f"arm_{label}_entries"] = int(bucket["arm_entries"][arm_name])
                 total_entries += int(bucket["arm_entries"][arm_name])
             row["total_arm_entries"] = total_entries

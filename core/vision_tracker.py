@@ -8,8 +8,13 @@
 import cv2
 import numpy as np
 from collections import deque, defaultdict
+from typing import Tuple
 import time
 from file_utils import write_image_unicode
+from tst_lis import (
+    TSTLISFeatureExtractor,
+    default_tst_lis_features,
+)
 
 # GPU 检测（用于 OpenCV CUDA，如果可用）
 USE_GPU = False
@@ -277,7 +282,7 @@ class OpticalFlowAnalyzer:
         self.prev_gray = None
         self.frame_count = 0
     
-    def analyze(self, curr_frame, mask, curr_gray=None, bbox=None, mask_offset=None):
+    def analyze(self, curr_frame, mask, curr_gray=None, bbox=None, mask_offset=None, dt_s=None):
         """
         分析光流（只在 mask 区域内）
         
@@ -466,10 +471,14 @@ class OpticalFlowAnalyzer:
         
         flow_std_px_frame = float(np.std(mouse_flow_mag))
         
-        # 转换为归一化单位
-        flow_mean_mm_s = flow_mean_px_frame * self.pixel_to_mm * self.fps
-        flow_p90_mm_s = flow_p90_px_frame * self.pixel_to_mm * self.fps
-        flow_max_mm_s = flow_max_px_frame * self.pixel_to_mm * self.fps
+        # Keep legacy TST flow scores on the original frame-normalized scale.
+        # The fixed v1 thresholds were calibrated against pixel displacement per
+        # analyzed frame multiplied by fps; using per-frame PTS deltas here makes
+        # duplicate/jittery timestamps explode the scores.
+        frame_rate = max(float(self.fps), 1e-6)
+        flow_mean_mm_s = flow_mean_px_frame * self.pixel_to_mm * frame_rate
+        flow_p90_mm_s = flow_p90_px_frame * self.pixel_to_mm * frame_rate
+        flow_max_mm_s = flow_max_px_frame * self.pixel_to_mm * frame_rate
         
         # coherence 已在上面以“强光流像素”方式计算（更抗端点噪声）
         
@@ -518,7 +527,7 @@ class PeriodicityAnalyzer:
         # 0.6 表示信号与其延迟版本有显著的正相关
         self.ACF_THRESHOLD = 0.6
 
-    def update(self, centroid_x, centroid_y=None):
+    def update(self, centroid_x, centroid_y=None, dt_s=None):
         self.x_history.append(centroid_x)
         # 兼容旧调用：如果没有传 y，则不更新 y_history
         if centroid_y is not None:
@@ -686,7 +695,8 @@ class MouseTracker:
                  coherence_thr=0.8,  # 方向一致性阈值
                  coherence_calm_seconds=0.5,  # 方向一致性判定时长（秒，默认0.5s）
                  auto_behavior_threshold=False,
-                 behavior_threshold_sensitivity=0.0):  # 自动行为阈值灵敏度
+                 behavior_threshold_sensitivity=0.0,
+                 enable_tst_lis=False):  # 自动行为阈值灵敏度
         """
         初始化追踪器
         
@@ -740,6 +750,10 @@ class MouseTracker:
         self.pixel_to_mm = pixel_to_mm
         
         # 将时间参数转换为帧数
+        self.win_seconds = max(1e-6, float(win_seconds))
+        self.min_active_seconds = max(0.0, float(min_active_seconds))
+        self.calm_seconds = max(0.0, float(calm_seconds))
+        self.coherence_calm_seconds = max(1e-6, float(coherence_calm_seconds))
         self.win = max(1, int(win_seconds * fps))  # 0.3秒 * 30fps = 9帧
         self.min_frames_active = max(1, int(min_active_seconds * fps))  # 0.2秒 * 30fps = 6帧
         self.calm_frames = max(1, int(calm_seconds * fps))  # 0.5秒 * 30fps = 15帧
@@ -755,6 +769,7 @@ class MouseTracker:
         self.behavior_threshold_sensitivity = float(np.clip(behavior_threshold_sensitivity, -3.0, 3.0))
         self.behavior_threshold_samples = []
         self.collect_behavior_threshold_samples = self.auto_behavior_threshold
+        self.enable_tst_lis = bool(enable_tst_lis)
         
         # 创建ROI掩码
         self.roi_mask = None
@@ -769,17 +784,26 @@ class MouseTracker:
         self.speeds = deque(maxlen=self.win)  # 速度序列（归一化值）
         self.flows = deque(maxlen=self.win)  # 光流序列（归一化值）
         self.coherences = deque(maxlen=self.coherence_calm_frames)  # 方向一致性序列（只需要0.5秒）
+        self._speed_dts = deque()
+        self._flow_dts = deque()
+        self._coherence_dts = deque()
 
         # 加速度/jerk（用于区分“整体摆动”与“局部乱动”）
         accel_win = max(self.win, int(0.5 * fps))
         self._prev_speed = None
         self.accels = deque(maxlen=accel_win)
+        self._accel_dts = deque()
+        self._accel_window_seconds = max(self.win_seconds, 0.5)
         
         # 判定状态
         self.is_struggling = False
         self.frames_active = 0
+        self.active_time_s = 0.0
         self.calm_counter = 0
+        self.calm_time_s = 0.0
         self.moderate_activity_counter = 0
+        self.moderate_activity_time_s = 0.0
+        self.moderate_entry_seconds = 0.45
         self.moderate_entry_frames = max(1, int(0.45 * fps))
         self.frame_count = 0
         self.detected_count = 0  # 检测到老鼠的帧数
@@ -796,6 +820,13 @@ class MouseTracker:
             'struggling_episodes': 0,
             'latency_to_immobility': None,
             'last_state': None,
+            'first_time': None,
+            'total_time_s': 0.0,
+            'detected_time_s': 0.0,
+            'undetected_time_s': 0.0,
+            'immobility_time_s': 0.0,
+            'struggling_time_s': 0.0,
+            'latency_to_immobility_s': None,
         }
 
         # 周期性分析器
@@ -804,19 +835,28 @@ class MouseTracker:
         # 自适应基线：用于“近景/视角变化”时的形态阈值与尺度归一化
         baseline_len = max(5, int(2.0 * fps))
         self._bbox_h_history = deque(maxlen=baseline_len)
+        self._bbox_h_dts = deque()
         self._aspect_ratio_history = deque(maxlen=baseline_len)
+        self._aspect_ratio_dts = deque()
+        self._baseline_window_seconds = 2.0
+        self._baseline_ready_seconds = 1.0
         self._baseline_ready_frames = max(5, int(1.0 * fps))
         
         # 摆动判定状态机
         self.is_in_confirmed_swing = False # 是否处于确认的摆动状态
+        self.min_swing_seconds = 1.5
+        self.swing_rigidity_seconds = 1.0
         self.min_swing_frames = int(1.5 * fps) # 摆动确认窗口（约1.5秒）
         # 说明：旧实现要求“连续满足条件 >= min_swing_frames”，在摆动端点/短暂遮挡时会频繁清零。
         # 新实现用滑窗证据（命中数）做迟滞确认，更符合“摆动是连续行为”的物理直觉。
         self.swing_rigidity_frames = max(5, int(1.0 * fps))
         self.swing_buffer = deque(maxlen=self.min_swing_frames + self.swing_rigidity_frames)  # [{'is_struggling': bool, 'swing_candidate': bool}, ...]
         self.swing_evidence = deque(maxlen=self.min_swing_frames)  # 0/1
-        self.swing_confirm_hits = max(1, int(0.65 * self.min_swing_frames))
-        self.swing_release_hits = max(0, int(0.35 * self.min_swing_frames))
+        self.swing_evidence_dts = deque()
+        self.swing_confirm_hit_ratio = 0.65
+        self.swing_release_hit_ratio = 0.35
+        self.swing_confirm_hits = max(1, int(self.swing_confirm_hit_ratio * self.min_swing_frames))
+        self.swing_release_hits = max(0, int(self.swing_release_hit_ratio * self.min_swing_frames))
         self.swing_aspect_range_ratio_max = 0.24
         self.swing_y_range_body_max = 0.025
         self.swing_area_range_ratio_max = 0.10
@@ -825,10 +865,14 @@ class MouseTracker:
         self._swing_cx_history = deque(maxlen=self.swing_rigidity_frames)
         self._swing_cy_history = deque(maxlen=self.swing_rigidity_frames)
         self._swing_bbox_h_history = deque(maxlen=self.swing_rigidity_frames)
+        self._swing_shape_dts = deque()
         
         # 旧变量保留（兼容性），但不再主要使用
         self.swing_persistence = 0
+        self.swing_persistence_s = 0.0
         self.swing_duration_counter = 0
+
+        self.tst_lis_extractor = TSTLISFeatureExtractor(fps=fps) if self.enable_tst_lis else None
     
     def initialize_roi_mask(self, frame_shape):
         """初始化ROI掩码"""
@@ -838,8 +882,58 @@ class MouseTracker:
         # 计算ROI边界框
         x, y, w, h = cv2.boundingRect(self.roi_polygon)
         self.roi_bbox = (x, y, w, h)
+
+    def _append_timed_value(self, values, durations, value, dt_s, window_s):
+        values.append(value)
+        durations.append(max(float(dt_s), 1e-6))
+        while len(values) > 1 and sum(durations) > max(float(window_s), 1e-6):
+            values.popleft()
+            durations.popleft()
+
+    def _timed_duration(self, durations) -> float:
+        return float(sum(float(v) for v in durations))
+
+    def _trim_swing_windows(self):
+        evidence_window_s = max(float(self.min_swing_seconds), 1e-6)
+        while len(self.swing_evidence) > 1 and self._timed_duration(self.swing_evidence_dts) > evidence_window_s:
+            self.swing_evidence.popleft()
+            self.swing_evidence_dts.popleft()
+
+        buffer_window_s = max(float(self.min_swing_seconds + self.swing_rigidity_seconds), evidence_window_s)
+        while len(self.swing_buffer) > 1:
+            total_s = sum(float(item.get('dt_s') or 0.0) for item in self.swing_buffer)
+            if total_s <= buffer_window_s:
+                break
+            self.swing_buffer.popleft()
+
+    def _append_timed_swing_shape(self, area, aspect, cx, cy, bbox_h, dt_s):
+        current_dt = max(float(dt_s), 1e-6)
+        self._swing_area_history.append(float(area))
+        self._swing_aspect_history.append(float(aspect))
+        self._swing_cx_history.append(float(cx))
+        self._swing_cy_history.append(float(cy))
+        self._swing_bbox_h_history.append(float(bbox_h))
+        self._swing_shape_dts.append(current_dt)
+        while len(self._swing_shape_dts) > 1 and self._timed_duration(self._swing_shape_dts) > self.swing_rigidity_seconds:
+            self._swing_shape_dts.popleft()
+            self._swing_area_history.popleft()
+            self._swing_aspect_history.popleft()
+            self._swing_cx_history.popleft()
+            self._swing_cy_history.popleft()
+            self._swing_bbox_h_history.popleft()
+
+    def _swing_evidence_seconds(self) -> Tuple[float, float]:
+        total_s = self._timed_duration(self.swing_evidence_dts)
+        hit_s = 0.0
+        for hit, duration_s in zip(self.swing_evidence, self.swing_evidence_dts):
+            if hit:
+                hit_s += float(duration_s)
+        return float(hit_s), float(total_s)
+
+    def _has_min_active_time(self) -> bool:
+        return self.active_time_s >= max(float(self.min_active_seconds), 0.0)
     
-    def update(self, frame, current_time=None, gray=None):
+    def update(self, frame, current_time=None, gray=None, dt_s=None):
         """
         更新追踪（处理一帧）
         
@@ -860,6 +954,11 @@ class MouseTracker:
             self.initialize_roi_mask(frame.shape)
         
         self.frame_count += 1
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         
         # 【性能优化】预计算灰度图
         if gray is None:
@@ -899,9 +998,12 @@ class MouseTracker:
             # 注意：这里不增加frames_active，因为没有检测到活动
             # 但是我们需要更新时间统计（如果已经在时间段内）
             # Missed detections are tracked as uncertain, not immobile.
-            self._update_immobility_stats(False, current_time, detected=False)
+            self._update_immobility_stats(False, current_time, detected=False, dt_s=current_dt)
             self.last_centroid = None
+            if self.tst_lis_extractor is not None:
+                self.tst_lis_extractor.mark_missed(gray)
             self.moderate_activity_counter = 0
+            self.moderate_activity_time_s = 0.0
             if self.flow_analyzer is not None:
                 self.flow_analyzer.prev_gray = gray
             
@@ -917,6 +1019,8 @@ class MouseTracker:
                 'is_swinging': False,
                 'state': 'uncertain',
                 'is_in_stats_window': self._is_in_stats_window(current_time),
+                'dt_s': current_dt,
+                'tst_lis': default_tst_lis_features(detected=False),
                 'fg_mask': fg_mask,
                 'roi_offset': (x, y)  # 记录偏移量
             }
@@ -924,11 +1028,11 @@ class MouseTracker:
         # 选择最大的检测（假设是小鼠）
         detection = max(detections, key=lambda d: d.get('area', 0))
 
-        # 统一 detection 坐标系：检测在 ROI-crop 上完成，需要加 (x, y) 偏移到全局。
+        # Normalize detection coordinates from the ROI crop back to the full frame.
         local_centroid = detection['centroid']
         global_centroid = (local_centroid[0] + x, local_centroid[1] + y)
 
-        local_bbox = detection['bbox']  # (bx, by, bw, bh)
+        local_bbox = detection['bbox']
         global_bbox = (local_bbox[0] + x, local_bbox[1] + y, local_bbox[2], local_bbox[3])
 
         local_contour = detection.get('contour')
@@ -939,21 +1043,21 @@ class MouseTracker:
         detection['centroid'] = global_centroid
         detection['bbox'] = global_bbox
         detection['contour'] = global_contour
-        
-        # 记录首次检测时间
+
         if self.first_detected_time is None:
             self.first_detected_time = current_time if current_time is not None else (self.frame_count / self.fps)
-        
-        # 5. 计算速度（mm/s）
+
         centroid = detection['centroid']
         if self.last_centroid is None:
             speed = 0.0
         else:
             dist_px = np.linalg.norm(np.array(centroid) - np.array(self.last_centroid))
             dist_mm = dist_px * self.pixel_to_mm
-            speed = dist_mm * self.fps  # 归一化速度值
+            # Legacy TST thresholds expect the original frame-normalized speed
+            # scale, not a value divided by a potentially jittery PTS delta.
+            speed = dist_mm * self.fps
         self.last_centroid = centroid
-        
+
         # 6. 光流分析（使用预计算灰度图和边界框）
         t0 = time.time()
         # 从检测结果获取边界框（全局坐标）
@@ -970,7 +1074,8 @@ class MouseTracker:
             frame, fg_mask, 
             curr_gray=gray, 
             bbox=flow_bbox, 
-            mask_offset=(x, y)  # x, y 是 ROI 的 bbox 偏移
+            mask_offset=(x, y),  # x, y 是 ROI 的 bbox 偏移
+            dt_s=current_dt,
         )
         self._perf_times['flow'].append(time.time() - t0)
         
@@ -1009,6 +1114,7 @@ class MouseTracker:
         
         # 9. 复杂判定逻辑（引入形态学 + 熵的科学判定）
         self.frames_active += 1
+        self.active_time_s += current_dt
         
         # A. 周期性检测 (基于质心轨迹，使用相对尺度避免近景幅度失真)
         cx = detection['centroid'][0]
@@ -1228,6 +1334,7 @@ class MouseTracker:
                 'swing_candidate': bool(is_swinging_condition),
                 'motion_swing_candidate': bool(motion_swing_candidate),
                 'in_stats_window': bool(self._is_in_stats_window(current_time)),
+                'dt_s': float(current_dt),
             })
         self.swing_evidence.append(1 if is_swinging_condition else 0)
 
@@ -1249,17 +1356,27 @@ class MouseTracker:
                             and frame_info.get('is_struggling')
                             and self.immobility_stats['struggling_frames'] > 0
                         ):
+                            frame_duration_s = float(frame_info.get('dt_s') or (1.0 / max(float(self.fps), 1e-6)))
                             self.immobility_stats['struggling_frames'] -= 1
                             self.immobility_stats['immobility_frames'] += 1
+                            self.immobility_stats['struggling_time_s'] = max(
+                                0.0,
+                                self.immobility_stats.get('struggling_time_s', 0.0) - frame_duration_s,
+                            )
+                            self.immobility_stats['immobility_time_s'] = (
+                                self.immobility_stats.get('immobility_time_s', 0.0) + frame_duration_s
+                            )
 
                     self.swing_buffer.clear()
                     self.swing_evidence.clear()
+                    self.swing_evidence_dts.clear()
         else:
             # 已确认：当证据持续不足时退出
             if len(self.swing_evidence) >= self.min_swing_frames:
                 if int(sum(self.swing_evidence)) <= int(self.swing_release_hits):
                     self.is_in_confirmed_swing = False
                     self.swing_evidence.clear()
+                    self.swing_evidence_dts.clear()
             
         # 最终生效的摆动状态
         is_swinging_state = self.is_in_confirmed_swing
@@ -1281,12 +1398,16 @@ class MouseTracker:
             # 确认为摆动 -> 强制不动
             self.is_struggling = False
             self.calm_counter = 0
+            self.calm_time_s = 0.0
             self.moderate_activity_counter = 0
+            self.moderate_activity_time_s = 0.0
             self.swing_persistence = self.fps * 0.2
+            self.swing_persistence_s = 0.2
         else:
             # 非摆动状态 -> 正常判定
             if self.swing_persistence > 0:
                 self.swing_persistence -= 1
+                self.swing_persistence_s = max(0.0, self.swing_persistence_s - current_dt)
                 self.is_struggling = False
             else:
                 # 挣扎判定逻辑（稳定版）：保持原有双阈值 + 迟滞
@@ -1320,23 +1441,29 @@ class MouseTracker:
                         self.moderate_activity_counter += 1
                     else:
                         self.moderate_activity_counter = 0
+                        self.moderate_activity_time_s = 0.0
                     enter_by_sustained_flow = self.moderate_activity_counter >= self.moderate_entry_frames
                     if enter_by_speed or enter_by_flow or enter_by_sustained_flow:
                         self.is_struggling = True
                         self.calm_counter = 0
+                        self.calm_time_s = 0.0
                         self.moderate_activity_counter = 0
+                        self.moderate_activity_time_s = 0.0
                 else:
                     # 当前挣扎：使用低阈值判断退出
                     self.moderate_activity_counter = 0
+                    self.moderate_activity_time_s = 0.0
                     if flow_p90 < self.flow_thr_lo and speed_std < self.speed_std_thr_lo:
                         self.calm_counter += 1
                     else:
                         self.calm_counter = 0
+                        self.calm_time_s = 0.0
 
                     # 连续 calm_frames 帧都低于阈值才退出
                     if self.calm_counter >= self.calm_frames:
                         self.is_struggling = False
                         self.calm_counter = 0
+                        self.calm_time_s = 0.0
         
         # 最终判定（需要足够激活帧数）
         final_struggling = bool(self.is_struggling if self.frames_active >= self.min_frames_active else False)
@@ -1346,18 +1473,30 @@ class MouseTracker:
         # 以便将来如果确认为摆动，可以回溯修正
         if len(self.swing_buffer) > 0:
             self.swing_buffer[-1]['is_struggling'] = final_struggling
+
+        effective_is_swinging = is_swinging_state or (self.swing_persistence > 0)
+        if self.tst_lis_extractor is not None:
+            tst_lis_result = self.tst_lis_extractor.update(
+                frame_idx=self.frame_count,
+                gray_frame=gray,
+                contour=detection.get('contour'),
+                bbox=detection.get('bbox'),
+                centroid=detection.get('centroid'),
+                area=detection.get('area'),
+                solidity=detection.get('solidity'),
+                roi_bbox=self.roi_bbox,
+                dt_s=current_dt,
+            )
+        else:
+            tst_lis_result = default_tst_lis_features(detected=True)
         
         # 10. 更新统计
-        self._update_immobility_stats(final_struggling, current_time)
+        self._update_immobility_stats(final_struggling, current_time, dt_s=current_dt)
         
         # 11. 记录轨迹
         self.trajectory.append(detection['centroid'])
         self.detected_count += 1  # 检测成功计数
         
-        # 【关键修复】可视化状态同步
-        # 如果处于抑制期，也应该显示为Swinging，否则用户会困惑为什么判为不动
-        effective_is_swinging = is_swinging_state or (self.swing_persistence > 0)
-
         return {
             'roi_id': self.roi_id,
             'roi_name': self.roi_name,
@@ -1369,6 +1508,7 @@ class MouseTracker:
             'bbox': detection['bbox'],
             'flow': flow_result,
             'is_struggling': final_struggling,
+            'tst_lis': tst_lis_result,
             'fg_mask': fg_mask,
             'roi_offset': (0, 0),
             'trajectory': list(self.trajectory),
@@ -1414,6 +1554,7 @@ class MouseTracker:
             'y_range_body': float(y_range_body),
             'area_range_ratio': float(area_range_ratio),
             'is_in_stats_window': self._is_in_stats_window(current_time),
+            'dt_s': current_dt,
         }
 
     def get_behavior_thresholds(self):
@@ -1518,7 +1659,7 @@ class MouseTracker:
             return True
         return True
 
-    def _update_immobility_stats(self, is_struggling, current_time=None, detected=True):
+    def _update_immobility_stats(self, is_struggling, current_time=None, detected=True, dt_s=None):
         """更新不动时间统计"""
         # 检查时间配置
         if self.time_config:
@@ -1548,18 +1689,27 @@ class MouseTracker:
                     return
 
         stats = self.immobility_stats
+        try:
+            duration_s = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            duration_s = 1.0 / max(float(self.fps), 1e-6)
+        duration_s = max(duration_s, 0.0)
         
         # 设置第一帧
         if stats['first_frame'] == 0:
             stats['first_frame'] = self.frame_count
+            stats['first_time'] = current_time
         
         stats['total_frames'] += 1
+        stats['total_time_s'] = stats.get('total_time_s', 0.0) + duration_s
         if not detected:
             stats['undetected_frames'] += 1
+            stats['undetected_time_s'] = stats.get('undetected_time_s', 0.0) + duration_s
             stats['last_state'] = None
             return
 
         stats['detected_frames'] += 1
+        stats['detected_time_s'] = stats.get('detected_time_s', 0.0) + duration_s
         
         # 只要在时间段内，就应该统计（无论是否active）
         # 如果未激活（frames_active < min），默认为不动
@@ -1569,9 +1719,11 @@ class MouseTracker:
         
         if is_struggling and self.frames_active >= self.min_frames_active:
             stats['struggling_frames'] += 1
+            stats['struggling_time_s'] = stats.get('struggling_time_s', 0.0) + duration_s
         else:
             # 不动（包括未激活状态）
             stats['immobility_frames'] += 1
+            stats['immobility_time_s'] = stats.get('immobility_time_s', 0.0) + duration_s
         
         # 检测状态切换
         if stats['last_state'] is not None and stats['last_state'] != is_struggling:
@@ -1581,6 +1733,9 @@ class MouseTracker:
                 stats['immobility_episodes'] += 1
                 if stats['latency_to_immobility'] is None:
                     stats['latency_to_immobility'] = self.frame_count - stats['first_frame']
+                    first_time = stats.get('first_time')
+                    if current_time is not None and first_time is not None:
+                        stats['latency_to_immobility_s'] = max(0.0, float(current_time) - float(first_time))
         
         stats['last_state'] = is_struggling
     
@@ -1625,24 +1780,26 @@ class MouseTracker:
                 'uncertain_percent': 0.0,
                 'total_frames': 0,
             }
-        
-        total_time = stats['total_frames'] / fps
-        detected_time = stats.get('detected_frames', 0) / fps
-        uncertain_time = stats.get('undetected_frames', 0) / fps
-        immobile_time = stats['immobility_frames'] / fps
-        struggling_time = stats['struggling_frames'] / fps
-        
-        immobile_percent = (stats['immobility_frames'] / stats['total_frames']) * 100
-        struggling_percent = (stats['struggling_frames'] / stats['total_frames']) * 100
-        detected_rate = (stats.get('detected_frames', 0) / stats['total_frames']) * 100
-        uncertain_percent = (stats.get('undetected_frames', 0) / stats['total_frames']) * 100
-        
+
+        total_time = float(stats.get('total_time_s') or (stats['total_frames'] / fps))
+        detected_time = float(stats.get('detected_time_s') or (stats.get('detected_frames', 0) / fps))
+        uncertain_time = float(stats.get('undetected_time_s') or (stats.get('undetected_frames', 0) / fps))
+        immobile_time = float(stats.get('immobility_time_s') or (stats['immobility_frames'] / fps))
+        struggling_time = float(stats.get('struggling_time_s') or (stats['struggling_frames'] / fps))
+
+        immobile_percent = (immobile_time / max(total_time, 1e-9)) * 100
+        struggling_percent = (struggling_time / max(total_time, 1e-9)) * 100
+        detected_rate = (detected_time / max(total_time, 1e-9)) * 100
+        uncertain_percent = (uncertain_time / max(total_time, 1e-9)) * 100
+
         duration_minutes = total_time / 60.0
         immobile_freq = stats['immobility_episodes'] / max(duration_minutes, 1/60.0)
         struggling_freq = stats['struggling_episodes'] / max(duration_minutes, 1/60.0)
-        
+
         latency_seconds = None
-        if stats['latency_to_immobility'] is not None:
+        if stats.get('latency_to_immobility_s') is not None:
+            latency_seconds = float(stats.get('latency_to_immobility_s'))
+        elif stats['latency_to_immobility'] is not None:
             latency_seconds = stats['latency_to_immobility'] / fps
         
         return {
@@ -1738,12 +1895,16 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         is_struggling = result['is_struggling']
         
         # 颜色：挣扎=红色，不动=绿色
-        if result.get('is_swinging', False):
+        if result.get('is_swinging', False) and not is_struggling:
             color = (0, 255, 0) # 绿色
             status_text = 'Swing'
         else:
             color = (0, 0, 255) if is_struggling else (0, 255, 0)
-            status_text = 'Struggle' if is_struggling else 'Immobile'
+            primary_algorithm = result.get('primary_behavior_algorithm')
+            if primary_algorithm == 'tst_lis':
+                status_text = 'LIS Struggle' if is_struggling else 'LIS Immobile'
+            else:
+                status_text = 'Struggle' if is_struggling else 'Immobile'
             
         # 绘制轮廓
         if contour is not None and isinstance(contour, np.ndarray) and contour.size > 0:
@@ -1774,6 +1935,12 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
             flow_val = result.get('flow_p90', 0.0)
             ar = result.get('aspect_ratio', 0.0)
             info_lines.append(f"F:{flow_val:.1f} AR:{ar:.2f}")
+        if result.get('primary_behavior_algorithm') == 'tst_lis':
+            lis_reason = str(result.get('lis_reason') or '')
+            if result.get('lis_passive_swing'):
+                info_lines.append("LIS passive")
+            elif lis_reason:
+                info_lines.append(lis_reason[:24])
         
         # 绘制简化的信息（不使用半透明叠加，直接绘制）
         # 用轮廓顶端作为信息框锚点；若无轮廓则用 bbox 顶端
@@ -1953,7 +2120,7 @@ def _tst_row_state(row, distinguish_swing=True):
 
     is_swinging = _as_bool(row.get('is_swinging', False))
     is_struggling = _as_bool(row.get('is_struggling', False))
-    if distinguish_swing and is_swinging:
+    if distinguish_swing and is_swinging and not is_struggling:
         return 'swing'
     if is_struggling:
         return 'struggle'
@@ -2065,10 +2232,10 @@ def render_tst_activity_curve(logs, trackers, path):
             if last_x is None:
                 last_x = x
                 continue
-            if row.get('is_swinging'):
-                color = (180, 95, 30)
-            elif row.get('is_struggling'):
+            if row.get('is_struggling'):
                 color = (25, 25, 220)
+            elif row.get('is_swinging'):
+                color = (180, 95, 30)
             else:
                 color = (150, 165, 155)
             cv2.rectangle(image, (last_x, strip_y), (max(x, last_x + 1), strip_y + strip_h), color, -1)

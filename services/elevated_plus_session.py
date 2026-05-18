@@ -80,8 +80,8 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
 
     @staticmethod
     def _live_row(tracker, result):
-        total_time_s = tracker.frames_in_window / tracker.fps if tracker.fps > 0 else 0.0
-        open_time_s = tracker.open_frames / tracker.fps if tracker.fps > 0 else 0.0
+        total_time_s = getattr(tracker, 'time_in_window_s', 0.0) or (tracker.frames_in_window / tracker.fps if tracker.fps > 0 else 0.0)
+        open_time_s = getattr(tracker, 'open_time_s', 0.0) or (tracker.open_frames / tracker.fps if tracker.fps > 0 else 0.0)
         open_percent = round(open_time_s / max(total_time_s, 1e-6) * 100.0, 2)
         open_entry_percent = None
         if tracker.total_arm_entries > 0:
@@ -146,13 +146,20 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
             self._log(f"Unable to open video: {video_path}")
             raise RuntimeError(f"Unable to open video: {video_path}")
 
-        detected_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         fps_override = vision_config.get('fps_override')
-        fps = fps_override if fps_override else detected_fps
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_meta = probe_video_info(video_path, fps_override=fps_override, cap=cap)
+        detected_fps = float(video_meta.get('detected_fps') or 30.0)
+        fps = float(video_meta.get('fps') or detected_fps or 30.0)
+        width = int(video_meta.get('width') or 0)
+        height = int(video_meta.get('height') or 0)
+        total_frames = int(video_meta.get('total_frames') or 0)
         self._log(f"EPM video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
+        timebase, timebase_summary, total_frames = self._build_timebase_for_video(
+            video_path,
+            fps,
+            total_frames,
+            label='EPM',
+        )
 
         sampling = self._resolve_video_sampling(
             width,
@@ -185,17 +192,15 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
         trackers = self._create_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
         self._log(f"Configured {len(trackers)} EPM mazes")
 
-        start_frame = int(float(start_sec) * fps) if start_sec is not None else 0
-        end_frame = int(float(end_sec) * fps) if end_sec is not None else (total_frames - 1)
-        start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
-        end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
+        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            self._log(f"Start EPM analysis from frame {start_frame} ({start_frame / max(fps, 1e-6):.1f}s)")
+            self._log(f"Start EPM analysis from frame {start_frame} ({timebase.time_at(start_frame):.1f}s)")
 
         frames_to_process = max(0, end_frame - start_frame + 1)
         frame_idx = 0
         source_frames_done = 0
+        previous_analyzed_frame = None
 
         while self.is_running:
             ret, frame = cap.read()
@@ -210,11 +215,20 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
             if current_frame_no > end_frame:
                 break
 
-            current_time = current_frame_no / max(fps, 1e-6)
+            current_time = timebase.time_at(current_frame_no)
+            current_dt = timebase.duration_between(
+                previous_analyzed_frame,
+                current_frame_no,
+                sample_fps=sampling['effective_fps'],
+            )
             analysis_frame = self._resize_for_sampling(frame, sampling)
             gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
             begin_frame_cache(bg_subtractor, current_frame_no)
-            results = [tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector) for tracker in trackers]
+            results = [
+                tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector, dt_s=current_dt)
+                for tracker in trackers
+            ]
+            previous_analyzed_frame = current_frame_no
             for result in results:
                 self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
 
@@ -235,14 +249,21 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
             if frame_idx % 20 == 0:
                 analysis_fraction = source_frames_done / max(frames_to_process, 1)
                 analysis_phase = 0.82 if generate_video else 0.94
-                if batch_index is not None:
-                    per_video = 100.0 / max(len(self.video_paths), 1)
-                    self.progress = int(batch_index * per_video + analysis_fraction * analysis_phase * per_video)
-                else:
-                    self.progress = int(analysis_fraction * analysis_phase * 100)
-                self.message = f'Frame {source_frames_done}/{frames_to_process} ({self.progress}%)'
+                self._set_video_progress(
+                    batch_index,
+                    analysis_fraction * analysis_phase,
+                    f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
+                )
 
         cap.release()
+        if not self.is_running:
+            return
+        self._ensure_analysis_frames_processed(
+            video_path=video_path,
+            label='EPM',
+            frame_idx=frame_idx,
+            source_frames_done=source_frames_done,
+        )
 
         summary_rows = []
         track_rows = []
@@ -250,6 +271,7 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
         for tracker in trackers:
             summary = tracker.build_summary()
             self._add_sampling_summary_fields(summary, sampling)
+            self._add_timebase_summary_fields(summary, timebase_summary)
             summary['video_name'] = video_info.get('original_name', video_name)
             summary_rows.append(summary)
 
@@ -353,6 +375,7 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
                 frames_to_process,
                 global_start_time_s,
                 sampling,
+                timebase,
                 batch_index=batch_index,
             )
 
@@ -406,6 +429,7 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
         frames_to_process,
         global_start_time_s,
         sampling,
+        timebase,
         batch_index=None,
     ):
         cap = cv2.VideoCapture(video_path)
@@ -441,6 +465,7 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         frame_idx = 0
         source_frames_done = 0
+        previous_analyzed_frame = None
         try:
             while self.is_running:
                 ret, frame = cap.read()
@@ -453,14 +478,20 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
                 if current_frame_no > end_frame:
                     break
 
-                current_time = current_frame_no / max(float(sampling.get('source_fps', fps)), 1e-6)
+                current_time = timebase.time_at(current_frame_no)
+                current_dt = timebase.duration_between(
+                    previous_analyzed_frame,
+                    current_frame_no,
+                    sample_fps=fps,
+                )
                 analysis_frame = self._resize_for_sampling(frame, sampling)
                 gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
                 begin_frame_cache(bg_subtractor, current_frame_no)
                 results = [
-                    tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector)
+                    tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector, dt_s=current_dt)
                     for tracker in render_trackers
                 ]
+                previous_analyzed_frame = current_frame_no
                 result_frame = draw_elevated_plus_results(analysis_frame, list(zip(render_trackers, results)))
                 writer.write(result_frame)
                 if frame_idx % 30 == 0:
@@ -471,12 +502,11 @@ class ElevatedPlusMultiArenaAnalysisSession(AnalysisSessionBase):
                 source_frames_done += covered
                 self._advance_frame_counters(covered, processed=False)
                 if frame_idx % 60 == 0:
-                    if batch_index is not None:
-                        per_video = 100.0 / max(len(self.video_paths), 1)
-                        self.progress = int(batch_index * per_video + (0.82 + 0.16 * source_frames_done / max(frames_to_process, 1)) * per_video)
-                    else:
-                        self.progress = max(self.progress, int(82 + 16 * source_frames_done / max(frames_to_process, 1)))
-                    self.message = f'Rendering EPM video {source_frames_done}/{frames_to_process}'
+                    self._set_video_progress(
+                        batch_index,
+                        0.82 + 0.16 * source_frames_done / max(frames_to_process, 1),
+                        f'Rendering EPM video {source_frames_done}/{frames_to_process} ({{progress}}%)',
+                    )
         finally:
             cap.release()
             writer.release()

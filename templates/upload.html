@@ -116,7 +116,7 @@
         <div>
             <div class="upload-kicker">
                 <i class="fas fa-clapperboard"></i>
-                <span>MouseScope v3.0.0</span>
+                <span>MouseScope v3.1.0</span>
             </div>
             <h1 class="upload-title" data-page-i18n="hero.title">快速分析</h1>
             <p class="upload-copy" data-page-i18n="hero.copy">
@@ -279,10 +279,43 @@
                 localPathsEl.value = paths;
                 const msgEmpty = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.empty'] : '请输入至少一个路径';
                 if (!paths) { alert(msgEmpty); return; }
-                const lines = paths.split('\n').filter(p => p.trim());
-                const msgSuccess = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.success'].replace('{}', lines.length) : lines.length + ' 个路径已输入';
-                fileList.innerHTML = '<div class="alert alert-success"><strong>' + msgSuccess + '</strong></div>';
-                configSection.style.display = 'block';
+                const originalHtml = validateBtn.innerHTML;
+                validateBtn.disabled = true;
+                validateBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + escapeHtml(trUploadGlobal('upload.status.validating', '正在验证'));
+                fetch('/api/validate_local_paths', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({local_paths: paths})
+                })
+                    .then(r => r.json().then(data => ({ok: r.ok, data})))
+                    .then(({ok, data}) => {
+                        if (data.normalized_paths) localPathsEl.value = data.normalized_paths;
+                        if (!ok || !data.success) {
+                            throw new Error(data.error || trUploadGlobal('upload.validate.novideo', '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv）'));
+                        }
+                        const validCount = Number(data.valid_count || 0);
+                        const invalidEntries = Array.isArray(data.invalid_entries) ? data.invalid_entries : [];
+                        const msgSuccess = (typeof I18N !== 'undefined' && getLang)
+                            ? I18N[getLang()]['upload.validate.success'].replace('{}', validCount)
+                            : validCount + ' 个视频路径已验证';
+                        const warnings = invalidEntries.slice(0, 5).map(item =>
+                            `<li><code>${escapeHtml(item.path)}</code> - ${escapeHtml(item.reason || '')}</li>`
+                        ).join('');
+                        fileList.innerHTML = `
+                            <div class="alert alert-success">
+                                <strong>${escapeHtml(msgSuccess)}</strong>
+                                ${invalidEntries.length ? `<div class="small mt-2 text-warning">${escapeHtml(invalidEntries.length + ' 个路径未通过验证')}</div><ul class="small mt-1 mb-0">${warnings}</ul>` : ''}
+                            </div>`;
+                        configSection.style.display = 'block';
+                    })
+                    .catch(err => {
+                        fileList.innerHTML = '<div class="alert alert-danger"><strong>' + escapeHtml(err.message || '路径验证失败') + '</strong></div>';
+                        configSection.style.display = 'none';
+                    })
+                    .finally(() => {
+                        validateBtn.disabled = false;
+                        validateBtn.innerHTML = originalHtml;
+                    });
             });
         }
 
@@ -292,10 +325,11 @@
         const uploadForm = document.getElementById('uploadForm');
         const submitBtn = document.getElementById('submitBtn');
         let uploadInProgress = false;
+        let selectedVideoFiles = [];
 
         if (localFileInput) {
             localFileInput.addEventListener('change', function (e) {
-                if (e.target.files.length > 0) selectVideoFiles(e.target.files, false);
+                if (e.target.files.length > 0) selectVideoFiles(e.target.files);
             });
         }
 
@@ -308,13 +342,14 @@
                 localDropZone.addEventListener(evt, () => localDropZone.classList.remove('dragover'), false));
             localDropZone.addEventListener('drop', e => {
                 const files = e.dataTransfer.files;
-                if (files.length > 0) selectVideoFiles(files, true);
+                if (files.length > 0) selectVideoFiles(files);
             }, false);
         }
 
         if (uploadForm) {
             uploadForm.addEventListener('submit', function (e) {
-                if (!uploadInProgress && localFileInput && localFileInput.files && localFileInput.files.length > 0) {
+                const hasSelectedFiles = selectedVideoFiles.length > 0 || (localFileInput && localFileInput.files && localFileInput.files.length > 0);
+                if (!uploadInProgress && hasSelectedFiles) {
                     e.preventDefault();
                     uploadFormWithProgress();
                     return;
@@ -341,6 +376,28 @@
                 '"': '&quot;',
                 "'": '&#39;'
             })[ch]);
+        }
+
+        function fileKey(file) {
+            return [
+                file.name,
+                file.size,
+                file.lastModified || 0,
+                file.type || ''
+            ].join('|');
+        }
+
+        function mergeSelectedVideoFiles(files) {
+            const incoming = filterVideoFiles(files);
+            const seen = new Set(selectedVideoFiles.map(fileKey));
+            incoming.forEach(file => {
+                const key = fileKey(file);
+                if (!seen.has(key)) {
+                    selectedVideoFiles.push(file);
+                    seen.add(key);
+                }
+            });
+            return incoming.length;
         }
 
         function setUploadProgress(percent) {
@@ -373,25 +430,25 @@
             }
         }
 
-        function selectVideoFiles(files, assignToInput) {
-            const videoFiles = filterVideoFiles(files);
-            if (videoFiles.length === 0) {
+        function selectVideoFiles(files) {
+            const acceptedCount = mergeSelectedVideoFiles(files);
+            if (acceptedCount === 0 && selectedVideoFiles.length === 0) {
                 alert((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.novideo'] : '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv）');
                 return;
             }
-            if (assignToInput) assignFilesToInput(videoFiles);
+            assignFilesToInput(selectedVideoFiles);
 
-            const totalSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
+            const totalSize = selectedVideoFiles.reduce((sum, file) => sum + file.size, 0);
             const readyText = trUploadGlobal('upload.status.ready', 'Ready to upload');
             const fileWord = trUploadGlobal('upload.status.files', (typeof getLang === 'function' && getLang() === 'en') ? 'files' : '个文件');
-            const names = videoFiles.map(file => file.name).slice(0, 4).map(escapeHtml).join(', ');
-            const more = videoFiles.length > 4 ? '...' : '';
+            const names = selectedVideoFiles.map(file => file.name).slice(0, 4).map(escapeHtml).join(', ');
+            const more = selectedVideoFiles.length > 4 ? '...' : '';
             setUploadProgress(0);
             fileList.innerHTML = `
                 <div class="alert alert-success d-flex align-items-center gap-3 flex-wrap">
                     <i class="fas fa-check-circle fs-5"></i>
                     <div class="flex-grow-1">
-                        <strong>${escapeHtml(readyText)}</strong> - ${videoFiles.length} ${escapeHtml(fileWord)}
+                        <strong>${escapeHtml(readyText)}</strong> - ${selectedVideoFiles.length} ${escapeHtml(fileWord)}
                         <div class="small text-muted mt-1">${names}${more}</div>
                     </div>
                     <span class="badge bg-success">${(totalSize / 1024 / 1024).toFixed(1)} MB</span>
@@ -405,7 +462,9 @@
                 return;
             }
 
-            const videoFiles = filterVideoFiles(localFileInput ? localFileInput.files : []);
+            const videoFiles = selectedVideoFiles.length > 0
+                ? selectedVideoFiles
+                : filterVideoFiles(localFileInput ? localFileInput.files : []);
             if (videoFiles.length === 0) {
                 uploadForm.submit();
                 return;
@@ -419,6 +478,8 @@
             const names = videoFiles.map(file => file.name).slice(0, 4).map(escapeHtml).join(', ');
             const more = videoFiles.length > 4 ? '...' : '';
             const formData = new FormData(uploadForm);
+            formData.delete('videos');
+            videoFiles.forEach(file => formData.append('videos', file, file.name));
 
             uploadInProgress = true;
             setSubmitDisabled(true);
@@ -475,7 +536,7 @@
 
                 const pre = trUploadGlobal('upload.error.upload', '上传失败: ');
                 const fallback = (xhr.status === 413)
-                    ? ((typeof getLang === 'function' && getLang() === 'en') ? 'The selected upload is larger than the 2GB limit.' : '上传文件超过 2GB 限制')
+                    ? ((typeof getLang === 'function' && getLang() === 'en') ? 'The upload is too large for the current runtime. Please split the batch or use local paths.' : '上传请求过大，请拆分批次或改用本地路径方式。')
                     : trUploadGlobal('upload.error.retry', '上传失败，请重试');
                 const errorMessage = result.error || fallback;
                 setUploadStatus('fas fa-exclamation-circle', pre + errorMessage, 'text-danger');

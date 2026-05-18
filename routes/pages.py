@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import os
+import math
 from pathlib import Path
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
@@ -24,6 +25,68 @@ def register_page_routes(app, ctx) -> None:
     _session_video_info = ctx._session_video_info
     _stage_local_video_if_needed = ctx._stage_local_video_if_needed
     _update_video_entry_info = ctx._update_video_entry_info
+
+    def _clean_local_path_line(raw_path: str) -> str:
+        return str(raw_path or '').strip().strip('"').strip("'").strip('“”').strip('‘’').strip()
+
+    def _parse_optional_float(raw_value: str, label: str, *, min_value: float | None = None, max_value: float | None = None) -> float | None:
+        text = str(raw_value or '').strip()
+        if not text:
+            return None
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            raise ValueError(f'{label}必须是数字')
+        if not math.isfinite(value):
+            raise ValueError(f'{label}必须是有效数字')
+        if min_value is not None and value < min_value:
+            raise ValueError(f'{label}不能小于 {min_value:g}')
+        if max_value is not None and value > max_value:
+            raise ValueError(f'{label}不能大于 {max_value:g}')
+        return value
+
+    def _validate_time_window(start_seconds: float | None, end_seconds: float | None) -> None:
+        if end_seconds is not None and end_seconds <= (start_seconds or 0):
+            raise ValueError('结束秒数必须大于开始秒数')
+
+    def _scan_local_video_paths(local_paths_raw: str) -> tuple[list[dict], list[dict], str]:
+        cleaned_paths = []
+        valid_entries = []
+        invalid_entries = []
+
+        for line in str(local_paths_raw or '').splitlines():
+            cleaned = _clean_local_path_line(line)
+            if not cleaned:
+                continue
+            cleaned_paths.append(cleaned)
+            path = Path(cleaned).expanduser()
+            try:
+                if path.is_file():
+                    if path.suffix.lower() in VALID_VIDEO_EXTS:
+                        valid_entries.append({'path': str(path), 'type': 'file', 'count': 1})
+                    else:
+                        invalid_entries.append({'path': cleaned, 'reason': '不支持的文件格式'})
+                elif path.is_dir():
+                    videos = sorted(
+                        vf for vf in path.iterdir()
+                        if vf.is_file() and vf.suffix.lower() in VALID_VIDEO_EXTS
+                    )
+                    if videos:
+                        valid_entries.append({
+                            'path': str(path),
+                            'type': 'directory',
+                            'count': len(videos),
+                            'files': [vf.name for vf in videos[:20]],
+                            'has_more': len(videos) > 20,
+                        })
+                    else:
+                        invalid_entries.append({'path': cleaned, 'reason': '文件夹内没有支持的视频文件'})
+                else:
+                    invalid_entries.append({'path': cleaned, 'reason': '路径不存在'})
+            except OSError as exc:
+                invalid_entries.append({'path': cleaned, 'reason': f'无法访问路径：{exc}'})
+
+        return valid_entries, invalid_entries, '\n'.join(cleaned_paths)
 
     @app.route('/')
     def index():
@@ -121,6 +184,30 @@ def register_page_routes(app, ctx) -> None:
         return jsonify({'success': True, 'paths': saved_paths, 'names': saved_names})
 
 
+    @app.route('/api/validate_local_paths', methods=['POST'])
+    def api_validate_local_paths():
+        """Validate pasted local video paths before starting an analysis."""
+        payload = request.get_json(silent=True) or {}
+        local_paths_raw = payload.get('local_paths') if isinstance(payload, dict) else ''
+        valid_entries, invalid_entries, normalized_paths = _scan_local_video_paths(local_paths_raw)
+        if not normalized_paths:
+            return jsonify({'success': False, 'error': '请输入至少一个路径'}), 400
+
+        valid_count = sum(int(entry.get('count') or 0) for entry in valid_entries)
+        response = {
+            'success': valid_count > 0,
+            'normalized_paths': normalized_paths,
+            'valid_count': valid_count,
+            'invalid_count': len(invalid_entries),
+            'valid_entries': valid_entries,
+            'invalid_entries': invalid_entries,
+        }
+        if valid_count <= 0:
+            response['error'] = '没有检测到支持的视频文件'
+            return jsonify(response), 400
+        return jsonify(response)
+
+
     @app.route('/do_upload', methods=['POST'])
     def do_upload():
         """处理视频上传"""
@@ -136,9 +223,35 @@ def register_page_routes(app, ctx) -> None:
         uploaded_files = request.files.getlist('videos')
         local_paths_raw = request.form.get('local_paths', '').strip()
         experiment_type = normalize_experiment_type(request.form.get('experiment_type', 'tst'))
+        output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
+        fps_override_raw = request.form.get('fps_override', '').strip()
+
+        try:
+            start_seconds = _parse_optional_float(
+                request.form.get('start_seconds', ''),
+                '开始秒数',
+                min_value=0,
+            )
+            end_seconds = _parse_optional_float(
+                request.form.get('end_seconds', ''),
+                '结束秒数',
+                min_value=0,
+            )
+            _validate_time_window(start_seconds, end_seconds)
+            fps_override_value = _parse_optional_float(
+                fps_override_raw,
+                'FPS 覆盖值',
+                min_value=1,
+                max_value=240,
+            )
+        except ValueError as exc:
+            return upload_error(str(exc), 400)
+
+        resolved_output_dir = _resolve_result_dir(output_dir) if output_dir else None
 
         video_paths = []
         video_infos = []
+        invalid_local_paths = []
 
         try:
             # 处理上传的文件
@@ -151,7 +264,7 @@ def register_page_routes(app, ctx) -> None:
             # 处理本地路径
             if local_paths_raw:
                 for line in local_paths_raw.split('\n'):
-                    p = line.strip().strip('"').strip("'").strip('“”').strip('‘’').strip()
+                    p = _clean_local_path_line(line)
                     if not p:
                         continue
                     p = Path(p).expanduser()
@@ -169,21 +282,19 @@ def register_page_routes(app, ctx) -> None:
                                 staged_path, original_name = _stage_local_video_if_needed(vf, session_id, original_name=vf.name)
                                 video_paths.append(staged_path)
                                 video_infos.append({'path': staged_path, 'original_name': original_name, 'source_path': str(vf)})
+                    elif p.exists():
+                        invalid_local_paths.append(f'{p}: 不支持的文件格式或文件夹内没有支持的视频文件')
+                    else:
+                        invalid_local_paths.append(f'{p}: 路径不存在')
         except UploadStorageError as exc:
             _cleanup_session_artifacts(session_id)
             app.logger.warning("Upload failed because storage is full: %s", exc)
             return upload_error(str(exc), 507)
 
         if not video_paths:
+            if invalid_local_paths:
+                return upload_error(invalid_local_paths[0])
             return upload_error('请选择或输入至少一个视频文件')
-
-        # 获取时间配置
-        start_seconds = request.form.get('start_seconds', '').strip()
-        end_seconds = request.form.get('end_seconds', '').strip()
-        output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
-        resolved_output_dir = _resolve_result_dir(output_dir) if output_dir else None
-        fps_override = request.form.get('fps_override', '').strip()
-        fps_override_value = float(fps_override) if fps_override else None
 
         for info in video_infos:
             _update_video_entry_info(info, fps_override=fps_override_value)
@@ -200,8 +311,8 @@ def register_page_routes(app, ctx) -> None:
             'video_paths': video_paths,
             'video_infos': video_infos,
             'video_info': video_info_data,
-            'start_seconds': start_seconds if start_seconds else None,
-            'end_seconds': end_seconds if end_seconds else None,
+            'start_seconds': start_seconds,
+            'end_seconds': end_seconds,
             'output_dir': resolved_output_dir,
             'fps_override': fps_override_value,
             'is_batch': len(video_paths) > 1,

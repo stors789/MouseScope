@@ -91,6 +91,22 @@ def _moving_average(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(padded, kernel, mode="valid")
 
 
+def _time_moving_average(values: np.ndarray, durations_s: np.ndarray, window_s: float) -> np.ndarray:
+    if values.size == 0:
+        return values.astype(np.float32, copy=True)
+    if window_s <= 1e-9 or values.size == 1:
+        return values.astype(np.float32, copy=True)
+    durations = np.maximum(durations_s.astype(np.float64, copy=False), 1e-9)
+    centers = np.cumsum(durations) - durations * 0.5
+    half_window = max(float(window_s), 1e-9) * 0.5
+    starts = np.searchsorted(centers, centers - half_window, side="left")
+    ends = np.searchsorted(centers, centers + half_window, side="right")
+    ends = np.maximum(ends, starts + 1)
+    cumulative = np.concatenate(([0.0], np.cumsum(values.astype(np.float64, copy=False))))
+    smoothed = (cumulative[ends] - cumulative[starts]) / np.maximum(ends - starts, 1)
+    return smoothed.astype(np.float32)
+
+
 class ForcedSwimTracker:
     """Track one mouse in one side-view FST cylinder."""
 
@@ -183,9 +199,18 @@ class ForcedSwimTracker:
         self.online_state = STATE_UNCERTAIN
         self.online_candidate = STATE_UNCERTAIN
         self.online_candidate_frames = 0
+        self.online_candidate_time_s = 0.0
         self.flow_analyzer = OpticalFlowAnalyzer(fps=self.fps, pixel_to_mm=self.pixel_to_mm)
         self.live_total_frames = 0
         self.live_detected_frames = 0
+        self.live_total_time_s = 0.0
+        self.live_detected_time_s = 0.0
+        self.live_state_time_s = {
+            STATE_ACTIVE: 0.0,
+            STATE_IMMOBILE: 0.0,
+            STATE_UNCERTAIN: 0.0,
+            STATE_OUTSIDE: 0.0,
+        }
         self.live_state_frames = {
             STATE_ACTIVE: 0,
             STATE_IMMOBILE: 0,
@@ -197,6 +222,8 @@ class ForcedSwimTracker:
         self.live_immobility_bouts = 0
         self.live_current_immobility_bout = 0
         self.live_longest_immobility_bout = 0
+        self.live_current_immobility_bout_s = 0.0
+        self.live_longest_immobility_bout_s = 0.0
         self.live_prev_immobile = False
         self.live_latency_to_immobility_s: Optional[float] = None
         if clear_threshold:
@@ -246,11 +273,17 @@ class ForcedSwimTracker:
             return None
         return max(detections, key=lambda item: float(item.get("area") or 0.0))
 
-    def _online_update_state(self, score: Optional[float], detected: bool) -> str:
+    def _online_update_state(self, score: Optional[float], detected: bool, dt_s: Optional[float] = None) -> str:
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         if not detected or score is None:
             self.online_state = STATE_UNCERTAIN
             self.online_candidate = STATE_UNCERTAIN
             self.online_candidate_frames = 0
+            self.online_candidate_time_s = 0.0
             return self.online_state
         low = self.low_threshold
         high = self.high_threshold
@@ -264,12 +297,13 @@ class ForcedSwimTracker:
         if candidate != self.online_candidate:
             self.online_candidate = candidate
             self.online_candidate_frames = 1
+            self.online_candidate_time_s = current_dt
         else:
             self.online_candidate_frames += 1
+            self.online_candidate_time_s += current_dt
 
         needed_s = self.min_immobility_duration_s if candidate == STATE_IMMOBILE else self.min_active_duration_s
-        needed_frames = max(1, int(round(needed_s * self.fps)))
-        if self.online_candidate_frames >= needed_frames:
+        if self.online_candidate_time_s >= max(float(needed_s), 0.0):
             self.online_state = candidate
         return self.online_state
 
@@ -295,7 +329,13 @@ class ForcedSwimTracker:
         detector: Any,
         record: bool = True,
         frame_index: Optional[int] = None,
+        dt_s: Optional[float] = None,
     ) -> Dict[str, Any]:
+        try:
+            current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
+        except (TypeError, ValueError):
+            current_dt = 1.0 / max(float(self.fps), 1e-6)
+        current_dt = max(current_dt, 1e-6)
         self._ensure_masks(frame.shape[:2])
         assert self.detection_mask is not None
 
@@ -325,12 +365,12 @@ class ForcedSwimTracker:
                 self.first_detected_time_abs = float(current_time)
 
             if self.prev_centroid is not None and self.prev_time is not None:
-                dt = max(1.0 / self.fps, float(current_time) - float(self.prev_time))
+                dt = max(current_dt, float(current_time) - float(self.prev_time), 1e-6)
                 dist_px = math.hypot(centroid_px[0] - self.prev_centroid[0], centroid_px[1] - self.prev_centroid[1])
                 speed_cm_s = float(dist_px * self.cm_per_px / dt)
 
             if self.prev_area is not None and self.prev_area > 1.0:
-                shape_change_rate = float(abs(area - self.prev_area) / self.prev_area * self.fps)
+                shape_change_rate = float(abs(area - self.prev_area) / self.prev_area / current_dt)
 
             flow = None
             if bbox is not None:
@@ -340,6 +380,7 @@ class ForcedSwimTracker:
                     fg_mask,
                     curr_gray=gray,
                     bbox=(x, y, x + w, y + h),
+                    dt_s=current_dt,
                 )
             if flow:
                 flow_p90_cm_s = float(flow.get("flow_p90_mm_s", 0.0) or 0.0) / 10.0
@@ -360,14 +401,17 @@ class ForcedSwimTracker:
         if in_stats_window and detected and motion_score is not None:
             self.motion_score_samples.append(float(motion_score))
 
-        state = self._online_update_state(motion_score, detected) if in_stats_window else STATE_OUTSIDE
+        state = self._online_update_state(motion_score, detected, current_dt) if in_stats_window else STATE_OUTSIDE
         origin = self._stats_window_origin_abs()
         if record and in_stats_window:
             self.live_total_frames += 1
+            self.live_total_time_s += current_dt
             if detected:
                 self.live_detected_frames += 1
+                self.live_detected_time_s += current_dt
             counted_state = state if state in self.live_state_frames else STATE_UNCERTAIN
             self.live_state_frames[counted_state] += 1
+            self.live_state_time_s[counted_state] = self.live_state_time_s.get(counted_state, 0.0) + current_dt
             if motion_score is not None:
                 self.live_motion_score_sum += float(motion_score)
                 self.live_motion_score_count += 1
@@ -375,6 +419,7 @@ class ForcedSwimTracker:
             is_immobile = counted_state == STATE_IMMOBILE
             if is_immobile:
                 self.live_current_immobility_bout += 1
+                self.live_current_immobility_bout_s += current_dt
                 if not self.live_prev_immobile:
                     self.live_immobility_bouts += 1
                     if self.live_latency_to_immobility_s is None:
@@ -384,7 +429,12 @@ class ForcedSwimTracker:
                     self.live_longest_immobility_bout,
                     self.live_current_immobility_bout,
                 )
+                self.live_longest_immobility_bout_s = max(
+                    self.live_longest_immobility_bout_s,
+                    self.live_current_immobility_bout_s,
+                )
                 self.live_current_immobility_bout = 0
+                self.live_current_immobility_bout_s = 0.0
             self.live_prev_immobile = is_immobile
 
         record_row = {
@@ -392,6 +442,7 @@ class ForcedSwimTracker:
             "roi_name": self.roi_name,
             "frame": int(frame_index) if frame_index is not None else None,
             "time_s": round(float(current_time), 3),
+            "dt_s": round(float(current_dt), 6),
             "window_time_s": round(float(current_time - origin), 3) if in_stats_window else None,
             "in_stats_window": bool(in_stats_window),
             "detected": bool(detected),
@@ -432,12 +483,13 @@ class ForcedSwimTracker:
         active_frames = int(self.live_state_frames.get(STATE_ACTIVE, 0))
         uncertain_frames = max(0, total_frames - immobile_frames - active_frames)
 
-        total_time_s = total_frames / self.fps if self.fps > 0 else 0.0
-        detected_time_s = detected_frames / self.fps if self.fps > 0 else 0.0
-        immobile_time_s = immobile_frames / self.fps if self.fps > 0 else 0.0
-        active_time_s = active_frames / self.fps if self.fps > 0 else 0.0
-        uncertain_time_s = uncertain_frames / self.fps if self.fps > 0 else 0.0
+        total_time_s = self.live_total_time_s or (total_frames / self.fps if self.fps > 0 else 0.0)
+        detected_time_s = self.live_detected_time_s or (detected_frames / self.fps if self.fps > 0 else 0.0)
+        immobile_time_s = self.live_state_time_s.get(STATE_IMMOBILE, 0.0) or (immobile_frames / self.fps if self.fps > 0 else 0.0)
+        active_time_s = self.live_state_time_s.get(STATE_ACTIVE, 0.0) or (active_frames / self.fps if self.fps > 0 else 0.0)
+        uncertain_time_s = self.live_state_time_s.get(STATE_UNCERTAIN, 0.0) or (uncertain_frames / self.fps if self.fps > 0 else 0.0)
         longest_bout_frames = max(self.live_longest_immobility_bout, self.live_current_immobility_bout)
+        longest_bout_s = max(self.live_longest_immobility_bout_s, self.live_current_immobility_bout_s)
         mean_motion_score = (
             self.live_motion_score_sum / self.live_motion_score_count
             if self.live_motion_score_count > 0
@@ -460,7 +512,7 @@ class ForcedSwimTracker:
             "uncertain_percent": round(uncertain_time_s / max(total_time_s, 1e-6) * 100.0, 2),
             "immobility_percent_detected": round(immobile_time_s / max(detected_time_s, 1e-6) * 100.0, 2),
             "immobility_bouts": int(self.live_immobility_bouts),
-            "longest_immobility_bout_s": round(longest_bout_frames / self.fps, 3),
+            "longest_immobility_bout_s": round(longest_bout_s or (longest_bout_frames / self.fps), 3),
             "latency_to_immobility_s": (
                 round(self.live_latency_to_immobility_s, 3)
                 if self.live_latency_to_immobility_s is not None
@@ -510,9 +562,14 @@ class ForcedSwimTracker:
         if not valid_indices:
             return
 
+        fallback_dt = 1.0 / max(float(self.fps), 1e-6)
         scores = np.asarray([float(self.frame_records[idx]["motion_score"]) for idx in valid_indices], dtype=np.float32)
-        smooth_window = max(1, int(round(self.smoothing_window_s * self.fps)))
-        smoothed = _moving_average(scores, smooth_window)
+        durations = np.asarray(
+            [float(self.frame_records[idx].get("dt_s") or fallback_dt) for idx in valid_indices],
+            dtype=np.float32,
+        )
+        durations = np.maximum(durations, 1e-6)
+        smoothed = _time_moving_average(scores, durations, self.smoothing_window_s)
 
         states: List[str] = []
         current = STATE_ACTIVE
@@ -535,27 +592,27 @@ class ForcedSwimTracker:
             out.append((start, len(seq), seq[start]))
             return out
 
-        gap_frames = int(round(self.gap_merge_s * self.fps))
-        if gap_frames > 0:
+        def run_duration_s(start: int, end: int) -> float:
+            return float(np.sum(durations[start:end])) if end > start else 0.0
+
+        if self.gap_merge_s > 0:
             for start, end, state in runs(states):
-                if state == STATE_ACTIVE and (end - start) <= gap_frames:
+                if state == STATE_ACTIVE and run_duration_s(start, end) <= self.gap_merge_s:
                     prev_state = states[start - 1] if start > 0 else None
                     next_state = states[end] if end < len(states) else None
                     if prev_state == STATE_IMMOBILE and next_state == STATE_IMMOBILE:
                         for i in range(start, end):
                             states[i] = STATE_IMMOBILE
 
-        min_immobile_frames = int(round(self.min_immobility_duration_s * self.fps))
-        if min_immobile_frames > 1:
+        if self.min_immobility_duration_s > 0:
             for start, end, state in runs(states):
-                if state == STATE_IMMOBILE and (end - start) < min_immobile_frames:
+                if state == STATE_IMMOBILE and run_duration_s(start, end) < self.min_immobility_duration_s:
                     for i in range(start, end):
                         states[i] = STATE_ACTIVE
 
-        min_active_frames = int(round(self.min_active_duration_s * self.fps))
-        if min_active_frames > 1:
+        if self.min_active_duration_s > 0:
             for start, end, state in runs(states):
-                if state == STATE_ACTIVE and (end - start) < min_active_frames:
+                if state == STATE_ACTIVE and run_duration_s(start, end) < self.min_active_duration_s:
                     prev_state = states[start - 1] if start > 0 else None
                     next_state = states[end] if end < len(states) else None
                     if prev_state == STATE_IMMOBILE and next_state == STATE_IMMOBILE:
@@ -577,31 +634,39 @@ class ForcedSwimTracker:
         active_frames = sum(1 for row in in_window if row.get("state") == STATE_ACTIVE)
         uncertain_frames = max(0, total_frames - immobile_frames - active_frames)
 
-        total_time_s = total_frames / self.fps if self.fps > 0 else 0.0
-        detected_time_s = detected_frames / self.fps if self.fps > 0 else 0.0
-        immobile_time_s = immobile_frames / self.fps if self.fps > 0 else 0.0
-        active_time_s = active_frames / self.fps if self.fps > 0 else 0.0
-        uncertain_time_s = uncertain_frames / self.fps if self.fps > 0 else 0.0
+        fallback_dt = 1.0 / max(float(self.fps), 1e-6)
+        total_time_s = sum(float(row.get("dt_s") or fallback_dt) for row in in_window)
+        detected_time_s = sum(float(row.get("dt_s") or fallback_dt) for row in in_window if row.get("detected"))
+        immobile_time_s = sum(float(row.get("dt_s") or fallback_dt) for row in in_window if row.get("state") == STATE_IMMOBILE)
+        active_time_s = sum(float(row.get("dt_s") or fallback_dt) for row in in_window if row.get("state") == STATE_ACTIVE)
+        uncertain_time_s = max(0.0, total_time_s - immobile_time_s - active_time_s)
 
         bouts = 0
         longest_bout_frames = 0
         latency_s = None
         current_bout = 0
+        current_bout_s = 0.0
+        longest_bout_s = 0.0
         prev_immobile = False
         origin = self._stats_window_origin_abs()
         for row in in_window:
             is_immobile = row.get("state") == STATE_IMMOBILE
+            row_dt = float(row.get("dt_s") or fallback_dt)
             if is_immobile:
                 current_bout += 1
+                current_bout_s += row_dt
                 if not prev_immobile:
                     bouts += 1
                     if latency_s is None:
                         latency_s = max(0.0, float(row.get("time_s") or 0.0) - origin)
             else:
                 longest_bout_frames = max(longest_bout_frames, current_bout)
+                longest_bout_s = max(longest_bout_s, current_bout_s)
                 current_bout = 0
+                current_bout_s = 0.0
             prev_immobile = is_immobile
         longest_bout_frames = max(longest_bout_frames, current_bout)
+        longest_bout_s = max(longest_bout_s, current_bout_s)
 
         scores = [float(row["motion_score"]) for row in in_window if row.get("motion_score") is not None]
         return {
@@ -624,7 +689,7 @@ class ForcedSwimTracker:
             "uncertain_percent": round(uncertain_time_s / max(total_time_s, 1e-6) * 100.0, 2),
             "immobility_percent_detected": round(immobile_time_s / max(detected_time_s, 1e-6) * 100.0, 2),
             "immobility_bouts": int(bouts),
-            "longest_immobility_bout_s": round(longest_bout_frames / self.fps, 3),
+            "longest_immobility_bout_s": round(longest_bout_s or (longest_bout_frames / self.fps), 3),
             "latency_to_immobility_s": round(latency_s, 3) if latency_s is not None else None,
             "mean_motion_score": round(float(np.mean(scores)), 6) if scores else None,
             "max_motion_score": round(float(np.max(scores)), 6) if scores else None,
@@ -656,29 +721,40 @@ class ForcedSwimTracker:
                     "active_frames": 0,
                     "immobile_frames": 0,
                     "uncertain_frames": 0,
+                    "duration_s": 0.0,
+                    "detected_time_s": 0.0,
+                    "active_time_s": 0.0,
+                    "immobile_time_s": 0.0,
+                    "uncertain_time_s": 0.0,
                     "motion_scores": [],
                 },
             )
+            duration = float(row.get("dt_s") or (1.0 / max(self.fps, 1e-6)))
             bucket["frames"] += 1
+            bucket["duration_s"] += duration
             if row.get("detected"):
                 bucket["detected_frames"] += 1
+                bucket["detected_time_s"] += duration
             state = row.get("state")
             if state == STATE_ACTIVE:
                 bucket["active_frames"] += 1
+                bucket["active_time_s"] += duration
             elif state == STATE_IMMOBILE:
                 bucket["immobile_frames"] += 1
+                bucket["immobile_time_s"] += duration
             else:
                 bucket["uncertain_frames"] += 1
+                bucket["uncertain_time_s"] += duration
             if row.get("motion_score") is not None:
                 bucket["motion_scores"].append(float(row["motion_score"]))
 
         out: List[Dict[str, Any]] = []
         for idx in sorted(buckets):
             bucket = buckets[idx]
-            duration_s = bucket["frames"] / self.fps
-            immobile_s = bucket["immobile_frames"] / self.fps
-            active_s = bucket["active_frames"] / self.fps
-            uncertain_s = bucket["uncertain_frames"] / self.fps
+            duration_s = float(bucket.get("duration_s") or (bucket["frames"] / self.fps))
+            immobile_s = float(bucket.get("immobile_time_s") or (bucket["immobile_frames"] / self.fps))
+            active_s = float(bucket.get("active_time_s") or (bucket["active_frames"] / self.fps))
+            uncertain_s = float(bucket.get("uncertain_time_s") or (bucket["uncertain_frames"] / self.fps))
             out.append(
                 {
                     "roi_id": self.roi_id,
@@ -687,7 +763,7 @@ class ForcedSwimTracker:
                     "start_s": round(idx * bin_seconds, 3),
                     "end_s": round((idx + 1) * bin_seconds, 3),
                     "duration_s": round(duration_s, 3),
-                    "detected_rate_percent": round(bucket["detected_frames"] / max(bucket["frames"], 1) * 100.0, 2),
+                    "detected_rate_percent": round(bucket["detected_time_s"] / max(duration_s, 1e-6) * 100.0, 2),
                     "immobility_time_s": round(immobile_s, 3),
                     "active_time_s": round(active_s, 3),
                     "uncertain_time_s": round(uncertain_s, 3),

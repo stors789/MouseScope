@@ -9,7 +9,7 @@
         'nav.tour':           '新手引导',
         'lang.toggle':        'English',
 
-        'footer.rights':      'MouseScope Desktop v3.0.0 © 2026 All Rights Reserved | 版权所有',
+        'footer.rights':      'MouseScope Desktop v3.1.0 © 2026 All Rights Reserved | 版权所有',
         'footer.academic':    '仅限学术研究使用 · 禁止商业用途 · 禁止二次分发',
         'footer.viewlicense': '查看完整许可协议',
 
@@ -96,7 +96,7 @@
         'tour.monitor.download.body':'分析完成后这里会出现下载和打开结果目录按钮。',
 
         'home.subtitle':     '面向小鼠行为学视频分析的桌面软件平台<br>当前支持悬尾实验、强迫游泳、旷场实验、新奇物体识别、高架十字迷宫与 Y 迷宫',
-        'home.version':      'Desktop Edition v3.0.0 · 学术研究专用',
+        'home.version':      'Desktop Edition v3.1.0 · 学术研究专用',
         'home.note':         '正式实验可进入项目工作台管理组别、小鼠、视频和结果；临时或单次任务可使用快速分析入口，仍保留原有配置流程。',
         'home.btn.projects': '项目工作台',
         'home.btn.start':    '快速分析',
@@ -137,7 +137,7 @@
         'projects.empty_archived':'还没有已归档项目。',
         'projects.create_failed':'创建失败',
 
-        'project.kicker':        'MouseScope Project Workspace v3.0.0',
+        'project.kicker':        'MouseScope Project Workspace v3.1.0',
         'project.back':          '项目列表',
         'project.open_folder':   '打开项目文件夹',
         'project.tabs.overview': '概览',
@@ -952,7 +952,7 @@
         'nav.tour':           'Guide',
         'lang.toggle':        '中文',
 
-        'footer.rights':      'MouseScope Desktop v3.0.0 © 2026 All Rights Reserved',
+        'footer.rights':      'MouseScope Desktop v3.1.0 © 2026 All Rights Reserved',
         'footer.academic':    'For Academic Research Only · No Commercial Use · No Redistribution',
         'footer.viewlicense': 'View Full License',
 
@@ -1039,7 +1039,7 @@
         'tour.monitor.download.body':'After completion, download buttons and Open Result Folder appear here.',
 
         'home.subtitle':     'A modular desktop platform for automated mouse behavioral video analysis<br>Now supports TST, FST, OFT, Novel Object Recognition, Elevated Plus Maze, and Y-Maze',
-        'home.version':      'Desktop Edition v3.0.0 · Academic Research Only',
+        'home.version':      'Desktop Edition v3.1.0 · Academic Research Only',
         'home.note':         'Use Project Workspace for formal studies with groups, animals, videos, and results. Use Quick Analysis for temporary or single-run work with the original setup flow.',
         'home.btn.projects': 'Project Workspace',
         'home.btn.start':    'Quick Analysis',
@@ -1080,7 +1080,7 @@
         'projects.empty_archived':'No archived projects yet.',
         'projects.create_failed':'Failed to create project',
 
-        'project.kicker':        'MouseScope Project Workspace v3.0.0',
+        'project.kicker':        'MouseScope Project Workspace v3.1.0',
         'project.back':          'Project List',
         'project.open_folder':   'Open Project Folder',
         'project.tabs.overview': 'Overview',

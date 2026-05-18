@@ -3,6 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import copy
 import json
+import logging
 import os
 import sys
 import threading
@@ -67,8 +68,11 @@ from services.payload_geometry import (
     coerce_zone_polygons_with_schema as _coerce_zone_polygons_with_schema,
 )
 from services.video_export import create_annotated_video_writer
+from services.video_metadata import probe_video_info
+from services.video_timebase import build_video_timebase
 
 
+logger = logging.getLogger(__name__)
 RESULT_DIR: Path | str | None = None
 HAS_PANDAS = False
 
@@ -151,7 +155,7 @@ def _notify_analysis_status(analysis_session: Any) -> None:
     try:
         _analysis_status_observer(analysis_session)
     except Exception:
-        pass
+        logger.exception("Analysis status observer failed for session %s", getattr(analysis_session, "session_id", ""))
 
 
 def _run_with_status_observer(analysis_session: Any) -> None:
@@ -162,8 +166,8 @@ def _run_with_status_observer(analysis_session: Any) -> None:
 
 
 def _analysis_stdout_logs_enabled() -> bool:
-    enabled = str(os.environ.get('MOUSESCOPE_ANALYSIS_STDOUT_LOGS', '')).strip().lower()
-    return enabled in {'1', 'true', 'yes', 'on'}
+    raw = str(os.environ.get('MOUSESCOPE_ANALYSIS_STDOUT_LOGS', '')).strip().lower()
+    return raw not in {'0', 'false', 'no', 'off', 'quiet'}
 
 
 # ==================== 分析引擎 ====================
@@ -233,7 +237,7 @@ def begin_frame_cache(bg_subtractor: Any, token: Any) -> None:
     try:
         bg_subtractor.begin_frame(token)
     except Exception:
-        pass
+        logger.debug("Frame cache begin_frame failed; continuing without cache update.", exc_info=True)
 
 
 def build_standard_processors(
@@ -403,6 +407,25 @@ class AnalysisSessionBase:
             f"(scale {sampling['scale']:.3f}, stride {sampling['frame_stride']})."
         )
 
+    def _ensure_analysis_frames_processed(self, *, video_path, label, frame_idx, source_frames_done):
+        try:
+            sample_count = int(frame_idx or 0)
+        except Exception:
+            sample_count = 0
+        try:
+            source_count = int(source_frames_done or 0)
+        except Exception:
+            source_count = 0
+        if sample_count > 0 and source_count > 0:
+            return
+        message = (
+            f"{label} frame reading failed: OpenCV opened the video but decoded 0 frames. "
+            "Please check the video codec/OpenCV backend, or transcode the video to a standard H.264 MP4 and retry. "
+            f"Video: {video_path}"
+        )
+        self._log(f"Frame decoding guard: {message}", force_console=True)
+        raise RuntimeError(message)
+
     @classmethod
     def _scale_geometry_value(cls, value, scale_x, scale_y):
         if isinstance(value, np.ndarray):
@@ -488,12 +511,97 @@ class AnalysisSessionBase:
         summary['analysis_height_px'] = int(sampling.get('analysis_height', 0))
         return summary
 
+    def _build_timebase_for_video(self, video_path, fps, total_frames, *, label='Video'):
+        timebase = build_video_timebase(video_path, fps=fps, total_frames=total_frames, logger=self._log)
+        if int(total_frames or 0) <= 0 and timebase.frame_count > 0:
+            total_frames = timebase.frame_count
+        summary = timebase.summary()
+        self._log(
+            f"{label} timebase: {summary['source']}, "
+            f"median dt {float(summary['median_dt']):.4f}s, "
+            f"long gaps >50ms {int(summary['long_gap_gt_50ms'])}"
+        )
+        return timebase, summary, int(total_frames or 0)
+
+    @staticmethod
+    def _time_range_to_frames(timebase, total_frames, start_sec=None, end_sec=None):
+        total_frames = int(max(0, total_frames or 0))
+        start_frame = timebase.frame_at_or_after(float(start_sec)) if start_sec is not None else 0
+        end_frame = timebase.frame_at_or_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
+        start_frame = max(0, min(int(start_frame), max(total_frames - 1, 0)))
+        end_frame = max(0, min(int(end_frame), max(total_frames - 1, 0)))
+        if end_frame < start_frame:
+            end_frame = start_frame
+        return start_frame, end_frame
+
+    @staticmethod
+    def _add_timebase_summary_fields(summary, timebase_summary):
+        summary['timebase_source'] = timebase_summary.get('source')
+        summary['timebase_median_dt_s'] = round(float(timebase_summary.get('median_dt') or 0.0), 6)
+        summary['timebase_long_gap_gt_50ms'] = int(timebase_summary.get('long_gap_gt_50ms') or 0)
+        return summary
+
     def _lock(self):
         lock = getattr(self, "_state_lock", None)
         if lock is None:
             lock = threading.RLock()
             self._state_lock = lock
         return lock
+
+    @staticmethod
+    def _clamp_progress_fraction(value):
+        try:
+            fraction = float(value or 0.0)
+        except Exception:
+            fraction = 0.0
+        return max(0.0, min(1.0, fraction))
+
+    @staticmethod
+    def _format_progress_message(message, progress):
+        if message is None:
+            return None
+        try:
+            return str(message).format(progress=progress)
+        except Exception:
+            return str(message)
+
+    def _begin_batch_progress(self, total, *, aggregate=False):
+        total = max(1, int(total or 1))
+        with self._lock():
+            self._batch_progress_aggregate = bool(aggregate)
+            self._batch_progress_total = total
+            self._batch_video_progress = [0.0 for _ in range(total)] if aggregate else None
+            if aggregate:
+                self.progress = 0
+
+    def _set_video_progress(self, batch_index, phase_fraction, message=None):
+        phase_fraction = self._clamp_progress_fraction(phase_fraction)
+        with self._lock():
+            progress_slots = getattr(self, '_batch_video_progress', None)
+            aggregate = bool(getattr(self, '_batch_progress_aggregate', False))
+            if batch_index is not None:
+                try:
+                    index = int(batch_index)
+                except Exception:
+                    index = 0
+                if aggregate and isinstance(progress_slots, list) and 0 <= index < len(progress_slots):
+                    progress_slots[index] = max(float(progress_slots[index]), phase_fraction)
+                    progress = int(sum(progress_slots) / max(len(progress_slots), 1) * 100)
+                else:
+                    total = max(1, len(getattr(self, 'video_paths', []) or []))
+                    progress = int((index + phase_fraction) / total * 100)
+            else:
+                progress = int(phase_fraction * 100)
+
+            progress = max(0, min(100, progress))
+            self.progress = progress
+            formatted = self._format_progress_message(message, progress)
+            if formatted is not None:
+                self.message = formatted
+            return progress
+
+    def _mark_batch_video_completed(self, batch_index, message=None):
+        return self._set_video_progress(batch_index, 1.0, message)
 
     def start(self):
         with self._lock():
@@ -519,7 +627,12 @@ class AnalysisSessionBase:
         with self._lock():
             self.logs.append(log_entry)
         if force_console or _analysis_stdout_logs_enabled():
-            print(log_entry)
+            try:
+                print(log_entry)
+            except UnicodeEncodeError:
+                encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+                safe_entry = log_entry.encode(encoding, errors='replace').decode(encoding, errors='replace')
+                print(safe_entry)
 
     def _append_result_file(self, path, group=None):
         if not path or not os.path.exists(path):
@@ -567,6 +680,8 @@ class AnalysisSessionBase:
                 except Exception:
                     worker_count = 1
                 worker_count = max(1, min(total, worker_count))
+                aggregate_progress = parallel_enabled and worker_count > 1
+                self._begin_batch_progress(total, aggregate=aggregate_progress)
 
                 if parallel_enabled and worker_count > 1:
                     self._log(f"Batch parallel enabled: {worker_count} workers for {total} videos.")
@@ -583,14 +698,16 @@ class AnalysisSessionBase:
 
                     completed = 0
                     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix='MouseScopeBatch') as executor:
-                        futures = [
-                            executor.submit(_worker, i, path, info)
+                        futures = {
+                            executor.submit(_worker, i, path, info): i
                             for i, (path, info) in enumerate(zip(self.video_paths, self.video_infos))
-                        ]
+                        }
                         for future in concurrent.futures.as_completed(futures):
+                            index = futures[future]
                             future.result()
                             completed += 1
-                            self.progress = max(self.progress, int(completed / total * 100))
+                            if self.is_running:
+                                self._mark_batch_video_completed(index)
                             if not self.is_running:
                                 break
                 else:

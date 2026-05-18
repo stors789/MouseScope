@@ -244,7 +244,7 @@ def main() -> int:
         raise FileNotFoundError(f"Missing sample video for smoke test: {SAMPLE_VIDEO}")
 
     experiments = ("tst", "forced_swim", "open_field", "novel_object", "elevated_plus", "y_maze")
-    with tempfile.TemporaryDirectory(prefix="mousescope_v2_smoke_") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="mousescope_smoke_") as temp_dir:
         with app.test_client() as client:
             with client.session_transaction() as sess:
                 sess["license_accepted"] = True

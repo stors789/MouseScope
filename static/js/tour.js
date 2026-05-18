@@ -307,11 +307,11 @@
         if (module === 'tst') {
             if (inDebug) {
                 return [
-                    calibrationNavStep('TST', '当前是第 3 步：参数调试。这里主要确认鼠体分割、行为阈值和导出设置。', 'Step 3 tunes detection, behavior thresholding, and output options.'),
+                    calibrationNavStep('TST', '当前是第 3 步：参数调试。这里主要确认鼠体分割、行为判断逻辑和导出设置。', 'Step 3 checks segmentation, behavior decision logic, and output options.'),
                     calibrationActionStep(),
                     tourStep('[data-tour-id="tst-debug-preview"]', '预览结果', '左侧看原始帧，右侧看检测轮廓。目标是让绿色轮廓尽量紧密包住小鼠除尾巴外的主体躯干。', 'Preview', 'Original frame is on the left and detection result on the right. Aim for a tight green contour around the body trunk, excluding the tail.'),
                     tourStep('[data-tour-id="tst-detection-params"]', '检测参数', '背景类型决定阈值方向；灰度阈值、腐蚀/膨胀和最小面积一起决定轮廓是否紧密包住主体躯干。', 'Detection Parameters', 'Background type sets threshold direction; threshold, erosion/dilation, and minimum area determine how tightly the contour wraps the trunk.'),
-                    tourStep('[data-tour-id="tst-output-params"]', '输出与行为阈值', '生成结果视频用于复核；自动行为阈值会按当前视频估计挣扎/不动边界；灵敏度越高越容易判为挣扎。', 'Output and Behavior Threshold', 'Annotated video helps review results. Automatic threshold estimates the struggle/immobility boundary; higher sensitivity classifies more frames as struggling.'),
+                    tourStep('[data-tour-id="tst-output-params"]', '输出与判断逻辑', '当前版本默认优化微小挣扎识别。如果感觉挣扎误判很多，可以打开“使用原本判断逻辑”切回旧逻辑；自动行为阈值和灵敏度只在原本逻辑下显示并生效。', 'Output and Decision Logic', 'This version is optimized for subtle struggling by default. If struggling looks over-called, turn on “Use original decision logic”; auto-threshold and sensitivity appear only for the original logic.'),
                     tourStep('#primaryActionBtn', '开始分析', '单视频会直接开始；项目/批量单视频编辑模式会先保存当前配置并返回批次页面。', 'Start Analysis', 'Single-video mode starts immediately. Project or batch editing saves this setup and returns to the batch page.')
                 ];
             }
@@ -425,7 +425,7 @@
     function registerAutoTours() {
         if (calibrationShell()) {
             register('calibration', {
-                version: 'v2',
+                version: 'v3',
                 steps: calibrationTourSteps,
             });
             document.body.setAttribute('data-tour-page', 'calibration');
