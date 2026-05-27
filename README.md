@@ -34,34 +34,6 @@ MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把
 
 MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. In v3.2.0, the Light-Dark Box workflow is available as a formal module while the `Project Workspace` and `Quick Analysis` entry points remain available.
 
-## v3.2.0 主要更新 | What Is New
-
-- 新增明暗箱 Light-Dark Box 正式流程，覆盖可见/不可见暗箱两类实验视频。
-  Adds the Light-Dark Box workflow, including visible and non-visible dark chamber modes.
-- 明暗箱暗箱可见模式支持规整轨迹图、独立箱体尺寸与辅助运动学；两种模式均输出明箱/暗箱停留时间、转换、进入次数与首入明箱潜伏期等可信核心指标。
-  In visible-dark mode, LDB supports normalized trackmaps, separate chamber dimensions, and auxiliary locomotion. Both visibility modes export reliable core metrics such as zone occupancy, transitions, entries, and first-light latency.
-- 明暗箱调参与 ROI 绘制已统一到现有模块的交互方式，并补充更完整的新手引导。
-  LDB preview, ROI drawing, and onboarding now follow the same interaction model as the existing modules.
-- 悬尾实验 TST 默认算法切回原本稳定路径，LIS 路径仍保留用于对照测试。
-  TST defaults back to the original stable algorithm path, while the LIS path remains available for comparison.
-
-## v3.1.0 主要更新 | Previous Update
-
-- 新增项目工作台：创建项目，管理组别、小鼠、视频库、实验记录和项目分析结果。
-  Adds Project Workspace for projects, groups, animals, video library, experiment assignments, and project run records.
-- 保留快速分析入口：临时视频或小批量分析不需要先创建项目。
-  Keeps Quick Analysis for temporary videos and small batch work without project setup.
-- 项目分析与现有 6 个实验模块打通：从项目选择同类实验记录后进入原有标定、ROI、参数和监控流程。
-  Connects project analysis to the existing six assay workflows.
-- 项目模式支持 ROI/arena/cylinder/maze unit 与项目小鼠绑定，便于后续结果归档和汇总。
-  Allows each ROI, arena, cylinder, or maze unit to bind to a registered project animal.
-- 任务中心升级：合并项目任务、快速分析任务和历史记录，支持搜索、筛选、聚合、打开结果目录和批量清理记录。
-  Upgrades Task Center with project runs, quick runs, history search, filtering, grouping, result-folder access, and bulk record cleanup.
-- 分析管线新增快速评分采样、批量并行、线程安全状态更新和更稳的结果视频编码。
-  Adds fast scoring, batch parallelism, thread-safe runtime status, and more robust annotated-video encoding.
-- NOR 头向判断增强：增加第二灰度阈值、躯干/尾巴分割、尾尖/尾根辅助判断和可视化调参提示。
-  Improves NOR head-direction scoring with a second threshold, body/tail segmentation, tail-tip/root cues, and richer preview overlays.
-
 ## 两种入口 | Two Entry Points
 
 ### 项目工作台 | Project Workspace
