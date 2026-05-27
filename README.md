@@ -10,31 +10,42 @@
 </p>
 
 <p align="center">
-  支持悬尾实验 TST、强迫游泳 FST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM 与 Y 迷宫<br/>
-  Supports Tail Suspension Test, Forced Swim Test, Open Field Test, Novel Object Recognition, Elevated Plus Maze, and Y-Maze.
+  支持悬尾实验 TST、强迫游泳 FST、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM、Y 迷宫与明暗箱<br/>
+  Supports Tail Suspension Test, Forced Swim Test, Open Field Test, Novel Object Recognition, Elevated Plus Maze, Y-Maze, and Light-Dark Box.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v3.1.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v3.2.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
-  <img src="https://img.shields.io/badge/Modules-6%20Assays-16a34a" alt="Modules"/>
+  <img src="https://img.shields.io/badge/Modules-7%20Assays-16a34a" alt="Modules"/>
   <img src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%20%7C%20English-0f766e" alt="Language"/>
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v3.1.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v3.2.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope Desktop v3.1.0 首页 · Project Workspace and Quick Analysis entry points</sub>
+  <sub>MouseScope Desktop v3.2.0 首页 · Project Workspace and Quick Analysis entry points</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
 
-MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程。v3.1.0 的核心变化是新增 `项目工作台 Project Workspace`，让正式实验可以按项目、组别、小鼠、视频和结果来管理，而临时任务仍然可以通过 `快速分析 Quick Analysis` 保持原有轻量流程。
+MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程。v3.2.0 将明暗箱作为正式模块开放，同时保留 `项目工作台 Project Workspace` 与 `快速分析 Quick Analysis` 两种入口。
 
-MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. In v3.1.0, the major addition is the `Project Workspace`: formal studies can now be organized by project, group, animal, video, and result, while one-off work still uses the lightweight `Quick Analysis` flow.
+MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. In v3.2.0, the Light-Dark Box workflow is available as a formal module while the `Project Workspace` and `Quick Analysis` entry points remain available.
 
-## v3.1.0 主要更新 | What Is New
+## v3.2.0 主要更新 | What Is New
+
+- 新增明暗箱 Light-Dark Box 正式流程，覆盖可见/不可见暗箱两类实验视频。
+  Adds the Light-Dark Box workflow, including visible and non-visible dark chamber modes.
+- 明暗箱暗箱可见模式支持规整轨迹图、独立箱体尺寸与辅助运动学；两种模式均输出明箱/暗箱停留时间、转换、进入次数与首入明箱潜伏期等可信核心指标。
+  In visible-dark mode, LDB supports normalized trackmaps, separate chamber dimensions, and auxiliary locomotion. Both visibility modes export reliable core metrics such as zone occupancy, transitions, entries, and first-light latency.
+- 明暗箱调参与 ROI 绘制已统一到现有模块的交互方式，并补充更完整的新手引导。
+  LDB preview, ROI drawing, and onboarding now follow the same interaction model as the existing modules.
+- 悬尾实验 TST 默认算法切回原本稳定路径，LIS 路径仍保留用于对照测试。
+  TST defaults back to the original stable algorithm path, while the LIS path remains available for comparison.
+
+## v3.1.0 主要更新 | Previous Update
 
 - 新增项目工作台：创建项目，管理组别、小鼠、视频库、实验记录和项目分析结果。
   Adds Project Workspace for projects, groups, animals, video library, experiment assignments, and project run records.
@@ -93,6 +104,7 @@ Use this for temporary runs, parameter trials, single videos, or small batches t
 | `NOR` 新奇物体识别 / Novel Object Recognition | 新奇与熟悉物体探索差异 / novel vs familiar object exploration | 场地 4 角、2 个物体中心、第二灰度阈值、可选检测遮掩框 / arena corners, two objects, body/tail threshold, optional mask | 新奇探索时间、熟悉探索时间、辨别指数、偏好指数、头向质量字段 / exploration time, discrimination, preference, head-direction quality fields |
 | `EPM` 高架十字迷宫 / Elevated Plus Maze | 开放臂与封闭臂探索 / open-arm vs closed-arm exploration | 中心区 + 2 开放臂 + 2 封闭臂手动画区 / center, two open arms, two closed arms | 开放臂时间、开放臂进入次数、开放臂进入占比、首次进入开放臂潜伏期 / open-arm time, open entries, open-entry ratio, first open-entry latency |
 | `Y-Maze` Y 迷宫 / Y-Maze | 入臂序列与自发交替 / arm sequence and spontaneous alternation | 三角形中心区 + 3 条臂手动画区 / triangular center and three arms | 各臂停留、总入臂数、交替次数、交替率 / arm occupancy, total entries, alternation count, alternation rate |
+| `LDB` 明暗箱 / Light-Dark Box | 避亮与探索冲突 / light avoidance and exploration conflict | 暗箱可见：明室 + 暗室 + 可选门区；暗箱不可见：明室 + 可选门区 / visible dark: light + dark + optional doorway; invisible dark: light + optional doorway | 明室/暗室时间、进入次数、转换次数、首次入明室潜伏期；暗箱可见时另有轨迹/热图/QC / zone time, entries, transitions, first-light latency; trackmaps/heatmaps/QC when visible |
 
 ## 工作流 | Workflow
 
@@ -138,8 +150,8 @@ MouseScope exports not only raw tables, but also review-friendly materials.
   Annotated videos, preferably encoded with FFmpeg H.264 and falling back to OpenCV writer when needed.
 - TST/FST ethogram 与活动曲线。
   TST/FST ethograms and activity curves.
-- OFT/NOR/EPM/Y-Maze 轨迹图、热图或区域统计图。
-  Trackmaps, heatmaps, or zone summaries for OFT, NOR, EPM, and Y-Maze.
+- OFT/NOR/EPM/Y-Maze 轨迹图、热图或区域统计图；LDB 仅在暗箱可见模式下导出轨迹图/热图。
+  Trackmaps, heatmaps, or zone summaries for OFT, NOR, EPM, and Y-Maze; LDB exports trackmaps/heatmaps only when the dark chamber is visible.
 - 项目分析结果会进入项目目录下的 `results/`，便于按课题归档。
   Project runs are saved under the project's `results/` directory for study-level organization.
 
@@ -321,6 +333,8 @@ MouseScope/
 |  |- novel_object.py
 |  |- elevated_plus.py
 |  |- y_maze.py
+|  |- light_dark_box.py
+|  |- maze_zone_utils.py
 |  \- spatial_render.py
 |- services/
 |  |- analysis_builders.py
@@ -329,16 +343,22 @@ MouseScope/
 |  |- analysis_sessions.py
 |  |- debug_preview.py
 |  |- experiment_registry.py
+|  |- light_dark_session.py
+|  |- payload_geometry.py
 |  |- project_store.py
 |  |- session_store.py
 |  |- video_export.py
-|  \- video_frame_reader.py
+|  |- video_frame_reader.py
+|  |- video_metadata.py
+|  \- video_timebase.py
 |- templates/
 |  |- projects.html
 |  |- project_home.html
 |  |- upload.html
 |  |- tasks.html
-|  \- calibrate*.html
+|  |- calibrate*.html
+|  |- monitor*.html
+|  \- manual_*_content.html
 |- static/
 |  |- css/
 |  |- js/
@@ -388,13 +408,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {3.1.0}
+  version = {3.2.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.1.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.2.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 

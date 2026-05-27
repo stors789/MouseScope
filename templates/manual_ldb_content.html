@@ -1,0 +1,694 @@
+<div id="ldb-manual-root"></div>
+
+<script>
+(function () {
+    const LDB_MANUAL = {
+        zh: {
+            heroEyebrow: 'Light-Dark Box / LDB',
+            heroTitle: '明暗箱完整操作手册',
+            heroSubtitle: '本手册覆盖明室 / 暗室 / 可选门缝忽略带、暗箱不可见模式、检测遮罩、开门延迟、转换稳定规则、核心结果字段，以及批量模式下每个视频的独立配置方式。',
+            heroChips: ['明室 + 暗室手动画区', '暗箱不可见模式', '首次入明室潜伏期', '转换次数', '辅助运动学可选'],
+            heroCards: [
+                ['fas fa-lightbulb', '模块真正统计什么', 'LDB 用小鼠在明亮区域和暗区之间的探索冲突来量化行为。MouseScope 的核心统计是明室时间、暗室时间、明室进入次数、两室转换和首次进入明室潜伏期。'],
+                ['fas fa-door-open', '门区现在怎么用', '门区不是必须的防抖条件。转换防抖主要由稳定停留时间完成；门区更适合在门口黑线、门缝或硬边缘被误检时，作为窄的忽略带。'],
+                ['fas fa-check-double', '最重要的质控点', '正式统计前要看结果视频里的 zone 标签和 transition_event。明室 / 暗室边界、检测率、开门延迟和门缝误检都会直接影响核心指标。距离和速度只作为辅助 QC。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', '明暗室画区', '调参与预览', '结果字段复核', '批量分析'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['calibration', '画区 / 遮罩 / 时间窗'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: '明暗箱模块适合分析小鼠在明室和暗室之间的空间偏好、探索冲突和转换行为。暗箱可见时，每个 ROI 至少需要画出 light 和 dark 两个区域，doorway 门区为可选；暗箱不透明且暗室内无法追踪时，可以启用“暗箱不可见”模式，画可见明室，并建议把门口通道画成 doorway 排除带。',
+                    points: [
+                        '<code>light_time_s</code> 和 <code>light_time_percent</code> 是核心明室探索指标，应结合检测率、转换次数和结果视频一起解释。',
+                        '<code>first_light_latency_s</code> 从统计窗口起点加 <code>door_open_delay_s</code> 之后开始计算，适合排除开门或放鼠初始操作造成的偏差。',
+                        '<code>total_transitions</code> 只在稳定从一个主室切换到另一个主室时增加；即使不画门区，也会用 <code>transition_min_dwell_s</code> 防抖。',
+                        '明箱/暗箱长宽和两箱公共边重合长度不参与明室时间、暗室时间、进入次数、转换次数或潜伏期计算；它们只影响暗箱可见模式下的距离、速度、移动/低活动时间和规整轨迹图比例。',
+                        '暗箱不可见模式下，明室内检测到小鼠记为 light，看不到小鼠时推断为 dark；此时不会输出轨迹图、热图、距离、速度等不可信运动学结果。'
+                    ],
+                    callouts: [
+                        ['warning', '不要把运动学当成核心结论', 'LDB protocol 的主结论通常来自明暗室时间、进入 / 转换和潜伏期。<code>total_distance_cm</code>、<code>mean_speed_cm_s</code> 等字段可用于活动量或检测质量辅助解释，但不应替代核心行为指标。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: 'LDB 对区域边界、暗室照明和门口通道很敏感。采集时越能保证固定视角、边界清楚、暗室仍可检测，后续结果越稳定。',
+                    blocks: [
+                        {
+                            title: '机位与视野',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '优先使用固定俯视或接近俯视机位，录制过程中不要移动相机或改变焦距。',
+                                '明室、暗室和通道都应完整可见，门口不要被器材边缘、标签或阴影遮挡。',
+                                '如果同一视频里有多个明暗箱，尽量让它们处在同一平面，并保持相似的照明和尺度。'
+                            ]
+                        },
+                        {
+                            title: '照明与对比',
+                            icon: 'fas fa-adjust',
+                            items: [
+                                '明室不要过曝，暗室也不要暗到鼠体轮廓完全丢失。',
+                                '鼠体与箱底需要有稳定亮度差；如果暗室很难分割，优先尝试 <code>static</code> 背景法或调整 <code>bg_type</code>、<code>gray_threshold</code>。',
+                                '减少反光、强阴影和门口边缘高亮，这些干扰最容易造成门口误检和区域跳变。'
+                            ]
+                        },
+                        {
+                            title: '实验操作',
+                            icon: 'fas fa-stopwatch',
+                            items: [
+                                '如果视频包含开门前或放鼠操作过程，建议用全局时间范围或 <code>door_open_delay_s</code> 排除这些帧对潜伏期的影响。',
+                                '门刚打开后的短暂探索可能不稳定，正式比较时应在同一批样本中使用一致的开门延迟和统计窗口。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', '高亮明室不是越亮越好', '过强照明会让明室地面反光、门口边缘发白，反而降低检测质量。更理想的是明暗差明确，同时鼠体轮廓在两室都稳定。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页定义视频、默认统计时间、FPS 覆盖和输出目录。之后每个 ROI 还可以保存自己的时间窗配置。',
+                    points: [
+                        '上传页的全局开始 / 结束时间是默认统计窗口；ROI 若使用 <code>global</code> 模式，会直接沿用这里的时间范围。',
+                        '如果视频 FPS 元数据不可靠，建议手动覆盖 FPS，因为距离、速度、稳定停留时间和潜伏期都依赖时间轴。',
+                        '批量分析时，每个视频可以独立保存 ROI、遮罩、时间窗和调参参数。'
+                    ],
+                    callouts: [
+                        ['success', '输出目录结构', '批量分析会在总输出目录下为每个视频建立子文件夹，并把该视频的 CSV、报告、标注视频和可用的热图/轨迹图放在对应子文件夹中。']
+                    ]
+                },
+                calibration: {
+                    title: '画区、检测遮罩与时间窗',
+                    lead: '暗箱可见时，每个 ROI 至少包含明室 light 和暗室 dark 两个多边形。doorway 门区可选；默认检测使用 light + dark，并会避开已画 doorway，适合排除门缝黑线误检。暗箱不可见时需要画 light 明室，doorway 仍可选，用来把门口探头和门缝像素排除出检测。',
+                    blocks: [
+                        {
+                            title: '明室和暗室',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                '选择 <code>light</code> 后沿明室可活动区域点击至少 3 个点；暗箱可见时再选择 <code>dark</code> 沿暗室可活动区域点击至少 3 个点。',
+                                '明室和暗室边界尽量贴合真实地面可活动区域，避免两个主室之间大面积重叠或留出明显空隙。',
+                                '系统会按多边形判断鼠体质心所在区域，所以边界偏移会直接影响 <code>light_time_s</code>、<code>dark_time_s</code> 和进入次数。'
+                            ]
+                        },
+                        {
+                            title: 'Doorway 门区 / 门缝忽略带',
+                            icon: 'fas fa-door-open',
+                            items: [
+                                '无门区也能防抖：系统会要求小鼠在新主室稳定停留 <code>transition_min_dwell_s</code> 后才算转换。',
+                                '如果门口很黑、灰度阈值会把门缝识别成鼠体，或者暗箱不可见时小鼠探头到门口造成明室进入闪烁，可以把门缝/通道画成窄门区；默认检测会从当前检测范围里扣掉这块区域。',
+                                '<code>doorway_reset_s</code> 只在使用门区时影响候选转换重置；门区画得过大可能让门口真实鼠体被忽略。'
+                            ]
+                        },
+                        {
+                            title: '检测遮罩 detection mask',
+                            icon: 'fas fa-mask',
+                            items: [
+                                '遮罩只规定哪里允许检测鼠体，不改变 light、dark 或 doorway 的统计边界。',
+                                '如果箱体边缘外有标签、手、线缆或其它高对比物体，建议画遮罩把它们排除在检测范围之外。',
+                                '如果不单独画遮罩，暗箱可见模式默认使用 light + dark 作为检测范围，并排除已画 doorway；暗箱不可见模式默认只在 light 明室内检测，也会排除已画 doorway。'
+                            ]
+                        },
+                        {
+                            title: 'ROI 命名与时间窗',
+                            icon: 'fas fa-ruler-combined',
+                            items: [
+                                '每个 ROI 可以命名，名称会写入 CSV、报告和图像文件名。',
+                                'ROI 时间窗用于只统计视频中的某一段；多 ROI 或多视频时尤其建议确认每个 ROI 的时间模式。',
+                                '明箱/暗箱长宽和两箱公共边重合长度是可选辅助运动学设置。默认按每个箱体 40×20 cm、沿 40 cm 边相贴处理，拼起来是 40×40 cm；保留默认值也不会改变核心 LDB 统计。'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['模式', '含义', '推荐场景'],
+                        rows: [
+                            ['<code>global</code>', '跟随上传页全局开始 / 结束时间。', '同一视频内所有箱体使用统一实验时长。'],
+                            ['<code>precise</code>', '按视频绝对时间设置 ROI 自己的开始 / 结束秒数。', '只分析固定片段，或不同 ROI 需要不同统计窗口。'],
+                            ['<code>relative</code>', '按该 ROI 首次检测到鼠体后的相对时间计算。', '配置数据支持该模式；适合以首次出现为对齐点的特殊视频。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', '完整 ROI 才会进入分析', '暗箱可见时，一个 ROI 必须至少有 <code>light</code> 和 <code>dark</code> 两个有效区域；暗箱不可见时，只要求 <code>light</code> 有效，但可以额外画 <code>doorway</code>。doorway 少于 3 个点会被视为无效门区；检测遮罩少于 3 个点也会阻止该 ROI 通过校验。']
+                    ]
+                },
+                params: {
+                    title: '参数字典',
+                    lead: 'LDB 参数可以分为检测参数、核心行为统计参数和辅助运动学参数。先调到检测稳定，再解释区域时间、进入、转换和潜伏期。',
+                    detectTable: {
+                        headers: ['参数', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '检测方式。<code>threshold</code> 使用灰度阈值，<code>static</code> 使用静态背景减除。', '暗室或明室亮度差异大时可尝试 <code>static</code>；背景稳定时两者都可用。'],
+                            ['<code>bg_type</code>', '指定背景偏浅还是偏深，决定阈值分割方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '灰度阈值法下的分割阈值。', '误检噪点多时提高；鼠体断裂、漏检或暗室丢失时降低。'],
+                            ['<code>min_area</code>', '允许通过的最小轮廓面积。', '小亮点或碎片误检多时提高；小鼠轮廓被过滤时降低。']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['参数', '作用', '结果影响'],
+                        rows: [
+                            ['<code>dark_box_visible</code>', '暗箱是否可见。可见时完整追踪明室和暗室；不可见时只在明室内检测。', '不可见模式用“明室内是否检测到小鼠”推断明/暗时间，并关闭轨迹图、热图、距离、速度和移动/低活动时间输出。'],
+                            ['<code>door_open_delay_s</code>', '从统计窗口起点后延迟多少秒再开始计算首次入明室潜伏期和初始进入事件。', '适合排除开门、放鼠或开始录制时的人工操作影响。'],
+                            ['<code>transition_min_dwell_s</code>', '小鼠进入候选主室后需要稳定停留多久才算真正切换。', '值太小会增加门口抖动带来的转换数；值太大可能漏掉快速切换。'],
+                            ['<code>doorway_reset_s</code>', '使用 doorway 时，在该区域连续停留多久后重置候选切换状态。', '可选参数；无门区时主要依靠 <code>transition_min_dwell_s</code> 防抖。'],
+                            ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每一行覆盖的时间范围。'],
+                            ['<code>generate_video</code>', '是否导出带区域、轨迹和状态叠加的标注视频。', '关闭会加快分析，但会失去最直观的人工复核材料。'],
+                            ['<code>light_box_length_cm</code> / <code>light_box_width_cm</code>', '暗箱可见模式下明箱底面的真实长和宽。系统会根据明箱 ROI 与暗箱 ROI 最靠近的边判断哪条物理边靠近暗箱。', '只影响距离、速度、移动/低活动时间和规整轨迹图比例，不影响核心 LDB 指标。'],
+                            ['<code>dark_box_length_cm</code> / <code>dark_box_width_cm</code>', '暗箱可见模式下暗箱底面的真实长和宽，可与明箱不同。', '适合明箱、暗箱尺寸不一致的装置；暗箱不可见模式下这些运动学尺度不会输出。'],
+                            ['<code>shared_edge_length_cm</code>', '明箱和暗箱贴在一起的公共边实际重合长度。默认 40 cm，对应两个 40×20 cm 箱体沿长边贴合成 40×40 cm 正方形；它不是门洞宽度，也不是画面 x/y 尺寸。', '用于规整轨迹图中对齐两块箱体和绘制公共边/门区位置。'],
+                            ['<code>movement_threshold_cm_s</code>', '辅助运动学阈值，速度高于该值记为移动，否则记为低活动。', '只影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', '转换不是简单的逐帧区域变化', 'MouseScope 使用稳定主室、候选主室和最小停留时间来判定转换；门区只是可选的忽略/重置带。因此 <code>total_transitions</code> 比逐帧 light/dark 标签更稳。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: '暗箱可见模式会导出结果视频、逐帧轨迹 CSV、summary CSV、bins CSV、TXT 报告，以及每个 ROI 的规整热图和轨迹图。暗箱不可见模式不会导出热图、轨迹图、速度和距离等不可信运动学结果。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '带 light / dark / doorway 区域、鼠体轮廓、当前区域、转换计数和轨迹叠加的结果视频。'],
+                        ['<code>*_track.csv</code>', '逐帧轨迹表，适合复核 zone、transition_event、entry_chamber 和检测质量；仅在追踪可靠时导出。'],
+                        ['<code>*_summary.csv</code>', '每个 ROI 一行的核心统计结果表。'],
+                            ['<code>*_bins.csv</code>', '按固定时间箱汇总区域时间、转换次数和辅助距离 / 速度字段。'],
+                        ['<code>*_report.txt</code>', '基于 summary 生成的可阅读文本报告。'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', '暗箱可见模式下每个 ROI 的热图和轨迹图；多 ROI 且图像可用时还会有拼图版本。']
+                    ],
+                    trackTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量汇总时用于回溯来源。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI 编号和名称。', '区分同一视频内的不同明暗箱。'],
+                            ['<code>frame</code> / <code>time_s</code> / <code>dt_s</code>', '逐帧编号、视频绝对时间和该步时间间隔。', '用于定位到结果视频和做时序分析。'],
+                            ['<code>window_time_s</code>', '统计窗口内的相对时间，窗口外为空。', 'bins 和窗口内曲线使用这个字段。'],
+                            ['<code>detected</code> / <code>carried_position</code>', '当前帧是否检测到鼠体；短暂漏检时是否沿用上一位置。', '连续 carried 或 detected 很低时要谨慎解释结果。'],
+                            ['<code>in_stats_window</code>', '当前帧是否参与统计。', 'summary 和 bins 只统计为 true 的帧。'],
+                            ['<code>x_px</code> / <code>y_px</code>', '像素坐标。', '适合和原视频画面核对。'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', '按 ROI 外接范围和可选底面尺寸估算的厘米坐标。', '辅助运动学和图像输出使用；不参与明暗室核心统计。'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code> / <code>cumulative_distance_cm</code>', '速度、单步距离和累计距离。', '这些是辅助 QC / 运动学字段，检测或尺度不稳时会最先异常。'],
+                            ['<code>zone_key</code> / <code>zone</code>', '当前区域键和值。', '常见值为 <code>light</code>、<code>dark</code>、<code>doorway</code> 或 <code>Unknown</code>。'],
+                            ['<code>stable_chamber</code>', '当前稳定主室。', '只会是 light / dark 或空，用于转换判定。'],
+                            ['<code>transition_event</code> / <code>entry_chamber</code>', '该帧是否触发一次主室转换，以及进入的主室。', '复核转换次数时优先看这两个字段和结果视频。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'ROI 使用的时间模式与起止时间。', '确认 summary 到底统计了哪一段视频。'],
+                            ['<code>dark_box_visible</code> / <code>tracking_reliable</code>', '暗箱是否可见，以及轨迹/运动学是否可靠。', '暗箱不可见时 <code>tracking_reliable</code> 为 false，距离、速度、热图和轨迹图不应解读。'],
+                            ['<code>analysis_window_start_s</code> / <code>door_open_delay_s</code>', '统计窗口起点和开门延迟。', '共同决定首次入明室潜伏期的计时起点。'],
+                            ['<code>total_time_s</code> / <code>detected_frames</code> / <code>detected_rate_percent</code>', '统计时长、检测帧数和检测率。', '检测率低时，所有空间指标都应人工复核。'],
+                            ['<code>light_time_s</code> / <code>dark_time_s</code> / <code>doorway_time_s</code>', '各区域停留时间。', 'doorway 时间过高时，转换和明暗室时间解释要谨慎。'],
+                            ['<code>light_time_percent</code> / <code>dark_time_percent</code> / <code>doorway_time_percent</code>', '各区域占总统计时长比例。', '报告比例时建议同步报告总时长和检测率。'],
+                            ['<code>light_entries</code> / <code>dark_entries</code> / <code>total_transitions</code>', '进入主室次数和两室转换次数。', '受门区、稳定时间和开门延迟共同影响。'],
+                            ['<code>first_light_latency_s</code>', '首次进入明室潜伏期。', '如果从未进入明室，可能为空。'],
+                            ['<code>started_outside_dark</code> / <code>qc_flags</code>', '是否初始稳定位置不在暗室，以及质量标记。', '常见标记包括 <code>low_detection</code>、<code>started_outside_dark</code>、<code>no_transitions</code>。'],
+                            ['<code>light_box_length_cm</code> / <code>dark_box_length_cm</code> 等', '明箱、暗箱真实尺寸、公共边重合长度、模板横/竖布局和系统判定的相邻边类型。', '用于复核规整轨迹图比例是否符合真实装置。'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', '辅助总距离、平均速度和最大速度。', '用于判断活动量、检测质量和轨迹是否异常；不作为 LDB 核心结论。'],
+                            ['<code>light_distance_cm</code> / <code>dark_distance_cm</code> / <code>doorway_distance_cm</code>', '各区域内辅助累计距离。', '可辅助区分停留偏好和实际运动量，但依赖底面尺度。'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code>', '基于速度阈值的移动和低活动时间。', '用于活动量 / QC 辅助解释。']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>bin_index</code> / <code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', '时间箱编号和时间范围。', '最后一个时间箱可能短于设定分箱长度。'],
+                            ['<code>light_time_s</code> / <code>dark_time_s</code> / <code>doorway_time_s</code>', '该时间箱内各区域时间。', '可绘制明室探索随时间变化曲线。'],
+                            ['<code>transitions</code>', '该时间箱内转换次数。', '用于观察探索是否集中在早期或晚期。'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', '该时间箱内辅助距离和平均速度。', '只用于活动量 / QC 随时间变化，不改变核心 LDB 统计。']
+                        ]
+                    },
+                    callouts: [
+                        ['danger', '正式统计前必须看什么', '至少抽查结果视频中的区域标签、轨迹连续性、门缝是否误检、门区是否过大和 <code>transition_event</code>。如果 summary 与肉眼印象不一致，以人工复核为准，先修正画区或参数再重新分析。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: 'LDB 批量模式是每个视频独立配置，然后统一运行。不要只配置第一个视频就直接整批开始。',
+                    steps: [
+                        '上传多个 LDB 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '逐个打开视频卡片，确认该视频的明室、暗室、可选门区和检测遮罩；如果需要导出距离 / 速度，再确认可选底面尺度。',
+                        '为每个 ROI 命名，并设置需要的时间模式或精确时间窗。',
+                        '在调参与预览中检查两室检测是否稳定，尤其关注暗室和门口。',
+                        '保存当前视频配置并返回批量页面，再继续配置下一个视频。',
+                        '所有视频卡片都完成后再开始批量分析。'
+                    ],
+                    rules: [
+                        '每个视频保存自己的 ROI、检测遮罩、时间窗和调参参数。',
+                        '同一视频中的多个 ROI 共享该视频的检测参数和统计参数。',
+                        '缺少 light / dark 区域、门区或遮罩点数不合法时，批量开始前会被拦截。',
+                        'ZIP 下载会保留每个视频各自的输出子目录。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: 'LDB 排错建议先看结果视频；追踪可靠时再看逐帧 CSV，最后解释 summary。多数问题来自边界、暗室检测、门缝误检和时间窗口。',
+                    items: [
+                        '明室时间异常高：检查明室是否画得过宽、暗室漏检是否严重、或开门前片段是否进入了统计窗口。',
+                        '明室时间异常低：检查明室区域是否过窄、明室反光是否导致鼠体轮廓丢失、或 <code>door_open_delay_s</code> 是否过长。',
+                        '转换次数异常高：优先增加 <code>transition_min_dwell_s</code>；如果门缝被误检，再画一个窄门区忽略带。',
+                        '转换次数为 0：确认 light / dark 区域之间没有空隙，鼠体是否真的跨室，且暗室和门口没有长期漏检。',
+                        '经常出现 <code>Unknown</code>：通常是两个主室之间留了空隙，或者鼠体质心落到了未覆盖区域。',
+                        '检测率低：先调整 <code>bg_type</code>、<code>gray_threshold</code>、<code>min_area</code>，再考虑改用静态背景法或重新画遮罩。'
+                    ],
+                    callouts: [
+                        ['warning', '何时需要重新分析', '只要改动明室 / 暗室 / 门区、统计时间窗、开门延迟、稳定时间或检测参数，都应重新运行分析；这些设置都会改变最终 summary。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Light-Dark Box / LDB',
+            heroTitle: 'Complete Light-Dark Box Manual',
+            heroSubtitle: 'This manual covers light / dark / optional doorway drawing, visible or invisible dark boxes, chamber dimensions, shared-edge length, transition stability, core result fields, and batch setup.',
+            heroChips: ['Manual light + dark zones', 'Optional doorway', 'First-light latency', 'Transition count', 'Optional locomotion QC'],
+            heroCards: [
+                ['fas fa-lightbulb', 'What the module quantifies', 'LDB measures how the mouse distributes time between the bright and dark compartments. The core MouseScope metrics are light time, dark time, light entries, chamber transitions, and first-light latency.'],
+                ['fas fa-door-open', 'How doorway is used now', 'Doorway is an optional ignore band excluded from detection. It helps with dark seams in visible-dark videos and prevents head peeks at the passage from becoming premature light entries in invisible-dark videos.'],
+                ['fas fa-check-double', 'Most important QC check', 'Before using the numbers, inspect zone labels and transition_event in the annotated video. Zone boundaries, detection rate, door delay, and door-seam false positives affect core metrics. Distance and speed are auxiliary QC fields.']
+            ],
+            flow: ['Recording', 'Upload and timing', 'Zone drawing', 'Preview and tuning', 'Review outputs', 'Batch analysis'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Recording requirements'],
+                ['upload', 'Upload and timing'],
+                ['calibration', 'Zones / masks / timing'],
+                ['params', 'Parameters'],
+                ['outputs', 'Outputs'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Troubleshooting']
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The LDB module analyzes chamber preference, exploration conflict, and transitions between the light and dark compartments. In visible-dark mode, each ROI needs light and dark polygons; in invisible-dark mode for opaque dark boxes, the visible light chamber is required and an optional doorway ignore band is recommended around the passage.',
+                    points: [
+                        '<code>light_time_s</code> and <code>light_time_percent</code> are core light-exploration metrics and should be interpreted together with detection rate, transition count, and the annotated video.',
+                        '<code>first_light_latency_s</code> is measured after the analysis-window origin plus <code>door_open_delay_s</code>, which helps exclude door opening or placement artifacts.',
+                        '<code>total_transitions</code> increases only after a stable switch from one main chamber to the other. <code>transition_min_dwell_s</code> debounces transitions even when no doorway is drawn.',
+                        'Light/dark chamber dimensions and shared-edge length do not participate in light time, dark time, entries, transitions, or latency. They only affect visible-dark auxiliary distance, speed, moving / low-motion time, and rectified map scale.',
+                        'In invisible-dark mode, frames where the mouse is detected inside the non-doorway light chamber count as light; frames where it is not visible, including doorway-only head peeks, are inferred as dark. Trajectory maps, heatmaps, distance, and speed are not exported.'
+                    ],
+                    callouts: [
+                        ['warning', 'Do not treat locomotion as the core conclusion', 'Most LDB protocols draw their main conclusion from chamber time, entries / transitions, and latency. <code>total_distance_cm</code> and <code>mean_speed_cm_s</code> can support activity or QC interpretation, but should not replace the core behavioral metrics.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording Requirements',
+                    lead: 'LDB is sensitive to zone boundaries, dark-compartment visibility, and doorway geometry. Stable top-view recording and reliable contrast make the downstream metrics much more trustworthy.',
+                    blocks: [
+                        {
+                            title: 'Camera and field of view',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Use a fixed top view or near-top view. Avoid moving the camera or changing zoom during recording.',
+                                'Keep the light chamber, dark chamber, and passage fully visible. Avoid labels, hardware, or shadows blocking the doorway.',
+                                'When recording multiple boxes in one video, keep them on the same plane with similar lighting and scale.'
+                            ]
+                        },
+                        {
+                            title: 'Lighting and contrast',
+                            icon: 'fas fa-adjust',
+                            items: [
+                                'Avoid overexposure in the light chamber while keeping the dark chamber visible enough for contour detection.',
+                                'Maintain stable contrast between the mouse and floor. If the dark chamber is difficult, try <code>static</code> background subtraction or tune <code>bg_type</code> and <code>gray_threshold</code>.',
+                                'Reduce glare, hard shadows, and bright doorway edges because these often cause boundary jitter.'
+                            ]
+                        },
+                        {
+                            title: 'Experimental timing',
+                            icon: 'fas fa-stopwatch',
+                            items: [
+                                'If the video includes door opening or animal placement, use global timing or <code>door_open_delay_s</code> to exclude those frames from latency logic.',
+                                'Use the same timing and delay rules across comparable samples.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Brighter is not always better', 'Excessive brightness can create floor glare and doorway highlights. The ideal video has clear chamber contrast while keeping the mouse contour stable in both compartments.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and Timing',
+                    lead: 'The upload page defines the video set, default analysis window, FPS override, and output folder. Each ROI can then keep its own time-window configuration.',
+                    points: [
+                        'The global start and end times define the default analysis window. ROIs using <code>global</code> inherit that range.',
+                        'Override FPS when metadata is unreliable, because timing windows, dwell rules, latency, and auxiliary speed all depend on the time base.',
+                        'In batch mode, each video can store its own ROI geometry, masks, time windows, and tuning parameters.'
+                    ],
+                    callouts: [
+                        ['success', 'Output folder structure', 'Batch analysis creates one child folder per video under the selected output directory, with CSV files, report, maps, and annotated video stored inside that child folder.']
+                    ]
+                },
+                calibration: {
+                    title: 'Zones, Detection Mask, and Time Windows',
+                    lead: 'Each visible-dark ROI requires light and dark polygons. Invisible-dark ROI requires the light polygon and may also include doorway. Doorway is excluded from detection, which helps remove dark passage seams and prevents doorway-only head peeks from becoming light entries.',
+                    blocks: [
+                        {
+                            title: 'Light and dark compartments',
+                            icon: 'fas fa-draw-polygon',
+                            items: [
+                                'Select <code>light</code> and click at least 3 points around the bright compartment. Select <code>dark</code> and click at least 3 points around the dark compartment.',
+                                'Keep the main-chamber boundaries close to the real accessible floor area, without large overlaps or gaps.',
+                                'MouseScope uses the centroid position to assign zones, so boundary errors directly affect time and entry metrics.'
+                            ]
+                        },
+                        {
+                            title: 'Doorway / door-seam ignore band',
+                            icon: 'fas fa-door-open',
+                            items: [
+                                'Debouncing works without doorway: MouseScope requires stable dwell in the new main chamber before accepting a transition.',
+                                'If the passage is dark and thresholding detects the door seam instead of the mouse, or if an opaque dark box causes head-peek flicker at the opening, draw a narrow doorway over that seam/opening; default detection subtracts it from the active detection area.',
+                                '<code>doorway_reset_s</code> only matters when doorway is used. A doorway drawn too large may hide real mouse detections near the passage.'
+                            ]
+                        },
+                        {
+                            title: 'Detection mask',
+                            icon: 'fas fa-mask',
+                            items: [
+                                'The mask limits allowed mouse detection locations. It does not change the light, dark, or doorway statistical boundaries.',
+                                'Use it to exclude labels, hands, cables, or high-contrast objects outside the box.',
+                                'If no mask is drawn, visible-dark mode uses light + dark as the detection area and invisible-dark mode uses light only; both modes subtract any drawn doorway.'
+                            ]
+                        },
+                        {
+                            title: 'ROI naming and time windows',
+                            icon: 'fas fa-ruler-combined',
+                            items: [
+                                'ROI names are written into CSV files, reports, and image filenames.',
+                                'ROI time windows are useful when only a specific video segment should be analyzed.',
+                                'Light/dark chamber dimensions and shared-edge length are optional auxiliary locomotion settings. By default, each chamber is treated as 40 x 20 cm with the 40 cm sides touching, forming a 40 x 40 cm square. Keeping the defaults does not change core LDB statistics.'
+                            ]
+                        }
+                    ],
+                    timeTable: {
+                        headers: ['Mode', 'Meaning', 'Recommended use'],
+                        rows: [
+                            ['<code>global</code>', 'Follow the global upload-page start and end times.', 'Most standard LDB videos with a shared experiment duration.'],
+                            ['<code>precise</code>', 'Use absolute video-time start and end seconds for that ROI.', 'When only a fixed segment should be summarized.'],
+                            ['<code>relative</code>', 'Use time relative to the first detected mouse position in that ROI.', 'Supported by config for special videos aligned by first appearance.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'Only complete ROIs are analyzed', 'Visible-dark ROIs need valid <code>light</code> and <code>dark</code> polygons. Invisible-dark ROIs only require a valid <code>light</code> polygon. Doorway and detection-mask polygons must have at least 3 points when provided.']
+                    ]
+                },
+                params: {
+                    title: 'Parameters',
+                    lead: 'LDB parameters fall into detection parameters, core behavioral-statistics parameters, and auxiliary locomotion parameters. Tune detection first, then interpret chamber time, entries, transitions, and latency.',
+                    detectTable: {
+                        headers: ['Parameter', 'Role', 'Typical adjustment'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Detection method. <code>threshold</code> uses gray-level thresholding; <code>static</code> uses static background subtraction.', 'Try <code>static</code> when light and dark compartments differ strongly or the background is stable.'],
+                            ['<code>bg_type</code>', 'Defines whether the background is light or dark.', 'Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.'],
+                            ['<code>gray_threshold</code>', 'Foreground split threshold for threshold mode.', 'Increase for noise; decrease when the contour breaks or disappears.'],
+                            ['<code>min_area</code>', 'Minimum contour area allowed through detection.', 'Increase for small false positives; decrease if the mouse is filtered out.']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['Parameter', 'Role', 'Effect'],
+                        rows: [
+                            ['<code>door_open_delay_s</code>', 'Delay after the analysis-window origin before first-light latency and initial entries are counted.', 'Helps remove door-opening or placement artifacts.'],
+                            ['<code>transition_min_dwell_s</code>', 'Minimum dwell time required before a chamber switch is accepted.', 'Main anti-jitter setting; works even without doorway. Too small may overcount boundary jitter; too large may miss fast transitions.'],
+                            ['<code>doorway_reset_s</code>', 'When doorway is used, continuous doorway time required to reset transition candidates.', 'Optional parameter; without doorway, debounce mainly depends on <code>transition_min_dwell_s</code>.'],
+                            ['<code>bin_seconds</code>', 'Duration of each time bin.', 'Controls the row width in <code>*_bins.csv</code>.'],
+                            ['<code>generate_video</code>', 'Whether to export the annotated video.', 'Disabling it is faster but removes the easiest QC artifact.'],
+                            ['<code>light_box_length_cm</code> / <code>light_box_width_cm</code>', 'Real floor length and width of the light chamber in visible-dark mode. MouseScope uses the closest light/dark ROI edges to infer which physical side touches the dark chamber.', 'Only affects distance, speed, moving / low-motion time, and the rectified map scale; it does not affect core LDB metrics.'],
+                            ['<code>dark_box_length_cm</code> / <code>dark_box_width_cm</code>', 'Real floor length and width of the dark chamber, which may differ from the light chamber.', 'Use this when the two boxes have different sizes. These motion-scale fields are not exported in invisible-dark mode.'],
+                            ['<code>shared_edge_length_cm</code>', 'Real overlap length of the side where the light and dark boxes touch. The default is 40 cm: two 40 x 20 cm chambers touch along their long sides to form a 40 x 40 cm square. It is not doorway width or image x/y size.', 'Used to align the two chambers and draw the shared boundary/doorway in rectified maps.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Auxiliary speed threshold for moving versus low-motion frames.', 'Only affects <code>moving_time_s</code> and <code>immobility_time_s</code>.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'Transitions are not raw frame-to-frame zone changes', 'MouseScope uses stable chamber state, candidate chamber state, and minimum dwell time; doorway is only an optional ignore/reset band. This makes <code>total_transitions</code> more stable than raw light/dark frame labels.']
+                    ]
+                },
+                outputs: {
+                    title: 'Outputs',
+                    lead: 'Visible-dark LDB exports an annotated video, frame-level track CSV, summary CSV, binned CSV, TXT report, and per-ROI heatmaps / trackmaps. Invisible-dark LDB omits unreliable trajectory, heatmap, speed, and distance outputs.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated video with light / dark / doorway zones, mouse contour, current zone, transition count, and trajectory.'],
+                        ['<code>*_track.csv</code>', 'Frame-level table for reviewing zone, transition_event, entry_chamber, and detection quality. Exported only when tracking is reliable.'],
+                        ['<code>*_summary.csv</code>', 'One row per ROI with core LDB metrics.'],
+                        ['<code>*_bins.csv</code>', 'Fixed-width time bins for zone time, transitions, and auxiliary distance / speed fields.'],
+                        ['<code>*_report.txt</code>', 'Readable text report generated from summary rows.'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', 'Per-ROI heatmap and trajectory map for visible-dark mode; multi-ROI videos also get grid images when maps are available.']
+                    ],
+                    trackTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Used for batch provenance.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI identifier and name.', 'Separates boxes inside one video.'],
+                            ['<code>frame</code> / <code>time_s</code> / <code>dt_s</code>', 'Frame index, absolute video time, and step duration.', 'Useful for locating frames and plotting time courses.'],
+                            ['<code>window_time_s</code>', 'Time relative to the statistics window; empty outside the window.', 'Used by bins and within-window analyses.'],
+                            ['<code>detected</code> / <code>carried_position</code>', 'Whether the mouse was detected and whether a short gap used the previous position.', 'Frequent carried positions require manual review.'],
+                            ['<code>in_stats_window</code>', 'Whether the frame contributes to statistics.', 'Only true frames feed summary and bins.'],
+                            ['<code>x_px</code> / <code>y_px</code>', 'Pixel coordinates.', 'Useful for checking against the raw video.'],
+                            ['<code>x_cm</code> / <code>y_cm</code>', 'Centimeter coordinates after mapping the light/dark ROI to the rectified chamber template.', 'Used for auxiliary locomotion and map outputs; not for core chamber statistics.'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code> / <code>cumulative_distance_cm</code>', 'Speed, step distance, and cumulative distance.', 'These are auxiliary QC / locomotion fields and are sensitive to tracking or scale instability.'],
+                            ['<code>zone_key</code> / <code>zone</code>', 'Current zone key and display label.', 'Common values are <code>light</code>, <code>dark</code>, <code>doorway</code>, or <code>Unknown</code>.'],
+                            ['<code>stable_chamber</code>', 'Current stable main chamber.', 'Only light / dark or empty, used for transition scoring.'],
+                            ['<code>transition_event</code> / <code>entry_chamber</code>', 'Whether this frame triggered a chamber transition and which chamber was entered.', 'Use these columns to audit transition counts.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>time_mode</code> / <code>time_start_s</code> / <code>time_end_s</code>', 'ROI time mode and bounds.', 'Confirms exactly what was summarized.'],
+                            ['<code>dark_box_visible</code> / <code>tracking_reliable</code>', 'Whether the dark chamber was visible and whether trajectory/locomotion outputs are reliable.', 'When <code>tracking_reliable</code> is false, distance, speed, heatmap, and trajectory map should not be interpreted.'],
+                            ['<code>analysis_window_start_s</code> / <code>door_open_delay_s</code>', 'Statistics-window origin and door delay.', 'Together define the first-light latency origin.'],
+                            ['<code>total_time_s</code> / <code>detected_frames</code> / <code>detected_rate_percent</code>', 'Analyzed duration, detected frames, and detection rate.', 'Low detection rate requires manual review.'],
+                            ['<code>light_time_s</code> / <code>dark_time_s</code> / <code>doorway_time_s</code>', 'Occupancy time in each zone.', 'High doorway time can complicate interpretation.'],
+                            ['<code>light_time_percent</code> / <code>dark_time_percent</code> / <code>doorway_time_percent</code>', 'Zone occupancy percentages.', 'Report together with total time and detection rate.'],
+                            ['<code>light_entries</code> / <code>dark_entries</code> / <code>total_transitions</code>', 'Main-chamber entries and transitions.', 'Affected by dwell time, door delay, and optional doorway reset.'],
+                            ['<code>first_light_latency_s</code>', 'Latency to first light-chamber entry.', 'May be empty if the mouse never enters the light chamber.'],
+                            ['<code>started_outside_dark</code> / <code>qc_flags</code>', 'Initial stable chamber issue and QC flags.', 'Common flags include <code>low_detection</code>, <code>started_outside_dark</code>, and <code>no_transitions</code>.'],
+                            ['<code>light_box_length_cm</code> / <code>dark_box_length_cm</code> etc.', 'Light/dark chamber dimensions, shared-edge length, template layout, and inferred adjacent physical side.', 'Use these fields to verify that the rectified trajectory map matches the real apparatus.'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', 'Auxiliary total distance, average speed, and max speed.', 'Useful for activity and QC review; not a core LDB conclusion.'],
+                            ['<code>light_distance_cm</code> / <code>dark_distance_cm</code> / <code>doorway_distance_cm</code>', 'Auxiliary distance accumulated inside each zone.', 'Can help separate occupancy preference from movement volume, but depends on floor scale.'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code>', 'Movement and low-motion time based on speed threshold.', 'Supports activity / QC interpretation.']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>bin_index</code> / <code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', 'Time-bin metadata.', 'The final bin may be shorter than the requested bin size.'],
+                            ['<code>light_time_s</code> / <code>dark_time_s</code> / <code>doorway_time_s</code>', 'Zone occupancy inside the bin.', 'Useful for plotting light exploration over time.'],
+                            ['<code>transitions</code>', 'Transition count inside the bin.', 'Shows whether exploration is early or late.'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', 'Auxiliary distance and speed inside the bin.', 'Use only for activity / QC dynamics; it does not change core LDB statistics.']
+                        ]
+                    },
+                    callouts: [
+                        ['danger', 'What to review before formal statistics', 'Review zone labels, trajectory continuity, door-seam false positives, oversized doorway exclusion, and <code>transition_event</code> in annotated videos. If summary and visual impression conflict, correct zones or parameters and rerun.']
+                    ]
+                },
+                batch: {
+                    title: 'Batch Workflow',
+                    lead: 'Batch LDB analysis uses per-video setup followed by one combined run. Configure every video before starting the batch.',
+                    steps: [
+                        'Upload multiple LDB videos and set global timing, FPS override, and output folder.',
+                        'Open each video card and confirm the light zone, dark zone, optional doorway, and detection mask. If distance / speed exports are needed, also confirm the optional floor scale.',
+                        'Name each ROI and set any precise time window needed.',
+                        'Tune detection and preview both compartments, especially the dark chamber and dark passage seams.',
+                        'Save the current video setup and return to the batch page before moving to the next video.',
+                        'Start batch analysis only after all video cards are complete.'
+                    ],
+                    rules: [
+                        'Each video stores its own ROIs, masks, time windows, and tuning parameters.',
+                        'Multiple ROIs inside one video share the detection and statistics parameters for that video.',
+                        'Missing light / dark zones or invalid doorway / mask polygons block batch start.',
+                        'ZIP downloads preserve the per-video output folder structure.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common Issues and Troubleshooting',
+                    lead: 'Start with the annotated video and, when tracking is reliable, the track CSV; then interpret the summary. Most issues come from boundaries, dark-compartment detection, door-seam false positives, or timing.',
+                    items: [
+                        'Light time too high: check whether the light zone is too wide, dark detection is failing, or pre-door-opening frames were included.',
+                        'Light time too low: check whether the light zone is too narrow, glare breaks the mouse contour, or <code>door_open_delay_s</code> is too long.',
+                        'Transitions too high: increase <code>transition_min_dwell_s</code>; if door seams are falsely detected, draw a narrow doorway ignore band.',
+                        'No transitions: confirm there is no gap between zones, the mouse really crosses chambers, and dark-chamber detection is not lost.',
+                        'Frequent <code>Unknown</code>: usually indicates a gap between zones or uncovered centroid locations.',
+                        'Low detection rate: tune <code>bg_type</code>, <code>gray_threshold</code>, <code>min_area</code>, try static background subtraction, or redraw the mask.'
+                    ],
+                    callouts: [
+                        ['warning', 'When rerun is required', 'Rerun analysis after changing zones, time windows, door delay, transition stability, doorway reset, or detection parameters because all of them can change the final summary.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function render(lang) {
+        const copy = LDB_MANUAL[lang] || LDB_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('ldb-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow(copy.flow)}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        ${renderBlocks(s.calibration.blocks)}
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI time-window modes' : 'ROI 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                        ${renderCallouts(s.calibration.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-search" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-chart-line" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Core and auxiliary parameters' : '核心与辅助参数'}</span></div>
+                        ${window.manualRenderTable(s.params.statsTable.headers, s.params.statsTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.trackTable.headers, s.outputs.trackTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_bins.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.binsTable.headers, s.outputs.binsTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -122,6 +123,94 @@ def _ymaze_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str
     )
 
 
+def _polygon_complete(zone_points, min_points: int = 3) -> bool:
+    return isinstance(zone_points, list) and len(zone_points) >= int(min_points)
+
+
+def _truthy(value, default: bool = True) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"0", "false", "no", "off", "disabled", "hidden", "invisible"}:
+            return False
+        if normalized in {"1", "true", "yes", "on", "enabled", "visible"}:
+            return True
+    return bool(value)
+
+
+def _light_dark_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    rois = (config or {}).get("rois") or []
+    dark_box_visible = _truthy((config or {}).get("dark_box_visible"), True)
+    if not rois:
+        return False, ["缺少明暗箱 ROI 配置"]
+    for idx, roi in enumerate(rois, start=1):
+        zones = (roi or {}).get("zones") or {}
+        if not _polygon_complete(zones.get("light")):
+            return False, [f"ROI {idx} 缺少明室区域 light（至少 3 个点）"]
+        if dark_box_visible and not _polygon_complete(zones.get("dark")):
+            return False, [f"ROI {idx} 缺少暗室区域 dark（至少 3 个点）"]
+        if zones.get("doorway") and not _polygon_complete(zones.get("doorway")):
+            return False, [f"ROI {idx} 的门区 doorway 少于 3 个点"]
+        if not _mask_valid(roi):
+            return False, [f"ROI {idx} 的明暗箱检测遮罩少于 3 个点"]
+    return True, []
+
+
+def _segment_times_valid(segments) -> bool:
+    if not isinstance(segments, list):
+        return False
+    previous_end = None
+    for segment in sorted((item for item in segments if isinstance(item, dict)), key=lambda item: float(item.get("start_s") or 0.0)):
+        try:
+            start = float(segment.get("start_s"))
+            end = float(segment.get("end_s"))
+        except Exception:
+            return False
+        if end <= start:
+            return False
+        if previous_end is not None and start < previous_end:
+            return False
+        previous_end = end
+    return True
+
+
+def _three_chamber_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    config = config or {}
+    analysis_mode = str(config.get("analysis_mode") or "single_phase").strip().lower()
+    rois = config.get("rois") or []
+    if not rois:
+        return False, ["缺少三箱 ROI 配置"]
+    if analysis_mode == "full_protocol":
+        segments = config.get("protocol_segments") or []
+        if not _segment_times_valid(segments):
+            return False, ["完整流程时间轴缺失、重叠或起止时间无效"]
+        if not any((item or {}).get("analyze", (item or {}).get("phase") != "ignore") and (item or {}).get("phase") != "ignore" for item in segments if isinstance(item, dict)):
+            return False, ["完整流程至少需要一个待分析阶段"]
+    else:
+        phase = str(config.get("selected_phase") or config.get("phase") or "").strip().lower()
+        if phase not in {"habituation_center", "habituation_all", "sociability", "social_novelty"}:
+            return False, ["单阶段模式需要选择有效阶段"]
+    for idx, roi in enumerate(rois, start=1):
+        zones = (roi or {}).get("zones") or {}
+        for key in ("left", "center", "right"):
+            if not _polygon_complete(zones.get(key)):
+                return False, [f"ROI {idx} 缺少区域 {key}（至少 3 个点）"]
+        objects = (roi or {}).get("objects") or []
+        sides = {
+            str((obj or {}).get("side") or "").strip().lower()
+            for obj in objects
+            if isinstance(obj, dict) and ((obj.get("point") is not None) or (obj.get("x") is not None and obj.get("y") is not None))
+        }
+        if not {"left", "right"}.issubset(sides):
+            return False, [f"ROI {idx} 缺少左/右 cup 点"]
+        if not _mask_valid(roi):
+            return False, [f"ROI {idx} 的三箱检测遮罩少于 3 个点"]
+        if analysis_mode == "full_protocol" and roi.get("protocol_segments") and not _segment_times_valid(roi.get("protocol_segments")):
+            return False, [f"ROI {idx} 的单独时间轴重叠或起止时间无效"]
+    return True, []
+
+
 @dataclass(frozen=True)
 class ExperimentSpec:
     key: str
@@ -132,6 +221,16 @@ class ExperimentSpec:
     monitor_template: str
     validator: Callable[[dict[str, Any] | None], tuple[bool, list[str]]]
     maze_module: str | None = None
+
+
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "y", "on", "enabled"}
+_EXPERIMENT_FEATURE_FLAGS = {
+    "three_chamber": ("MOUSESCOPE_ENABLE_3CST", "MOUSESCOPE_ENABLE_THREE_CHAMBER"),
+}
+
+
+def _env_flag_enabled(names: tuple[str, ...]) -> bool:
+    return any(str(os.environ.get(name, "")).strip().lower() in _TRUTHY_ENV_VALUES for name in names)
 
 
 EXPERIMENT_SPECS: dict[str, ExperimentSpec] = {
@@ -191,24 +290,66 @@ EXPERIMENT_SPECS: dict[str, ExperimentSpec] = {
         maze_module="ymaze",
         validator=_ymaze_video_complete,
     ),
+    "light_dark_box": ExperimentSpec(
+        key="light_dark_box",
+        label="明暗箱 Light-Dark Box",
+        short_label="LDB",
+        manual_module="ldb",
+        calibrate_template="calibrate_light_dark.html",
+        monitor_template="monitor_light_dark.html",
+        validator=_light_dark_video_complete,
+    ),
+    "three_chamber": ExperimentSpec(
+        key="three_chamber",
+        label="三箱社交 Three-Chamber Social Test",
+        short_label="3CST",
+        manual_module="three_chamber",
+        calibrate_template="calibrate_three_chamber.html",
+        monitor_template="monitor_three_chamber.html",
+        validator=_three_chamber_video_complete,
+    ),
 }
 
 
-def normalize_experiment_type(raw_value: str | None) -> str:
+def is_experiment_enabled(experiment_type: str | None) -> bool:
+    value = str(experiment_type or "").strip().lower()
+    if value not in EXPERIMENT_SPECS:
+        return False
+    flags = _EXPERIMENT_FEATURE_FLAGS.get(value)
+    return not flags or _env_flag_enabled(flags)
+
+
+def is_experiment_release_hidden(experiment_type: str | None) -> bool:
+    value = str(experiment_type or "").strip().lower()
+    return value in EXPERIMENT_SPECS and not is_experiment_enabled(value)
+
+
+def is_three_chamber_enabled() -> bool:
+    return is_experiment_enabled("three_chamber")
+
+
+def normalize_experiment_type(raw_value: str | None, include_unreleased: bool = False) -> str:
     value = str(raw_value or "").strip().lower()
-    return value if value in EXPERIMENT_SPECS else "tst"
+    if value not in EXPERIMENT_SPECS:
+        return "tst"
+    if include_unreleased or is_experiment_enabled(value):
+        return value
+    return "tst"
 
 
-def get_experiment_spec(experiment_type: str | None) -> ExperimentSpec:
-    return EXPERIMENT_SPECS[normalize_experiment_type(experiment_type)]
+def get_experiment_spec(experiment_type: str | None, include_unreleased: bool = True) -> ExperimentSpec:
+    return EXPERIMENT_SPECS[normalize_experiment_type(experiment_type, include_unreleased=include_unreleased)]
 
 
 def get_manual_module(experiment_type: str | None) -> str:
     return get_experiment_spec(experiment_type).manual_module
 
 
-def list_experiments() -> list[ExperimentSpec]:
-    return list(EXPERIMENT_SPECS.values())
+def list_experiments(include_unreleased: bool = False) -> list[ExperimentSpec]:
+    specs = list(EXPERIMENT_SPECS.values())
+    if include_unreleased:
+        return specs
+    return [spec for spec in specs if is_experiment_enabled(spec.key)]
 
 
 def extract_per_video_configs(draft_payload: dict[str, Any] | None, total_videos: int) -> list[dict[str, Any]]:

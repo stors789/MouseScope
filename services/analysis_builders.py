@@ -22,6 +22,18 @@ def _iter_video_configs(sess: dict[str, Any], data: dict[str, Any], builder) -> 
     return per_video_configs
 
 
+def _coerce_bool(value: Any, default: bool = True) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"0", "false", "no", "off", "disabled", "hidden", "invisible"}:
+            return False
+        if normalized in {"1", "true", "yes", "on", "enabled", "visible"}:
+            return True
+    return bool(value)
+
+
 def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
@@ -291,6 +303,280 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
     }
 
 
+def build_light_dark_box_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    default_bg_method = data.get("bg_method", "threshold")
+    default_bg_type = data.get("bg_type", "light")
+    default_gray_threshold = int(data.get("gray_threshold", 127))
+    default_erosion_kernel = int(data.get("erosion_kernel", 3))
+    default_erosion_iter = int(data.get("erosion_iter", 1))
+    default_dilation_kernel = int(data.get("dilation_kernel", 5))
+    default_dilation_iter = int(data.get("dilation_iter", 2))
+    default_min_area = int(data.get("min_area", 120))
+    default_arena_width_cm = float(data.get("arena_width_cm", 40.0))
+    default_arena_height_cm = float(data.get("arena_height_cm", 40.0))
+    def _default_ldb_dims(arena_width_cm: float, arena_height_cm: float) -> tuple[float, float, float]:
+        if abs(float(arena_width_cm) - float(arena_height_cm)) <= 1e-6:
+            side = max(float(arena_width_cm), float(arena_height_cm))
+            return side, side / 2.0, side
+        return float(arena_width_cm) / 2.0, float(arena_height_cm), float(arena_height_cm)
+
+    def _normalize_ldb_dims(length_cm: float, width_cm: float, shared_edge_cm: float) -> tuple[float, float]:
+        length = float(length_cm)
+        width = float(width_cm)
+        shared = float(shared_edge_cm)
+        if length + 1e-6 < width and shared + 1e-6 >= width:
+            return width, length
+        return length, width
+
+    default_length_cm, default_width_cm, default_shared_cm = _default_ldb_dims(default_arena_width_cm, default_arena_height_cm)
+    default_light_box_length_cm = float(data.get("light_box_length_cm", default_length_cm))
+    default_light_box_width_cm = float(data.get("light_box_width_cm", default_width_cm))
+    default_dark_box_length_cm = float(data.get("dark_box_length_cm", default_length_cm))
+    default_dark_box_width_cm = float(data.get("dark_box_width_cm", default_width_cm))
+    default_shared_edge_length_cm = float(data.get(
+        "shared_edge_length_cm",
+        min(
+            max(default_light_box_length_cm, default_light_box_width_cm),
+            max(default_dark_box_length_cm, default_dark_box_width_cm),
+            default_shared_cm,
+        ),
+    ))
+    default_light_box_length_cm, default_light_box_width_cm = _normalize_ldb_dims(
+        default_light_box_length_cm,
+        default_light_box_width_cm,
+        default_shared_edge_length_cm,
+    )
+    default_dark_box_length_cm, default_dark_box_width_cm = _normalize_ldb_dims(
+        default_dark_box_length_cm,
+        default_dark_box_width_cm,
+        default_shared_edge_length_cm,
+    )
+    default_door_open_delay_s = float(data.get("door_open_delay_s", 3.0))
+    default_transition_min_dwell_s = float(data.get("transition_min_dwell_s", 0.12))
+    default_doorway_reset_s = float(data.get("doorway_reset_s", 0.2))
+    default_movement_threshold_cm_s = float(data.get("movement_threshold_cm_s", 2.0))
+    default_bin_seconds = float(data.get("bin_seconds", 60.0))
+    default_dark_box_visible = _coerce_bool(data.get("dark_box_visible"), True)
+
+    def _float_cfg(raw_cfg: dict[str, Any], key: str, fallback: float) -> float:
+        try:
+            return float(raw_cfg.get(key, fallback))
+        except Exception:
+            return float(fallback)
+
+    def _per_video_light_dark_config(raw_cfg: dict[str, Any]) -> dict[str, Any]:
+        arena_width_cm = _float_cfg(raw_cfg, "arena_width_cm", default_arena_width_cm)
+        arena_height_cm = _float_cfg(raw_cfg, "arena_height_cm", default_arena_height_cm)
+        fallback_length_cm, fallback_width_cm, fallback_shared_cm = _default_ldb_dims(arena_width_cm, arena_height_cm)
+        light_box_length_cm = _float_cfg(
+            raw_cfg,
+            "light_box_length_cm",
+            default_light_box_length_cm if "light_box_length_cm" in data else fallback_length_cm,
+        )
+        light_box_width_cm = _float_cfg(
+            raw_cfg,
+            "light_box_width_cm",
+            default_light_box_width_cm if "light_box_width_cm" in data else fallback_width_cm,
+        )
+        dark_box_length_cm = _float_cfg(
+            raw_cfg,
+            "dark_box_length_cm",
+            default_dark_box_length_cm if "dark_box_length_cm" in data else fallback_length_cm,
+        )
+        dark_box_width_cm = _float_cfg(
+            raw_cfg,
+            "dark_box_width_cm",
+            default_dark_box_width_cm if "dark_box_width_cm" in data else fallback_width_cm,
+        )
+        shared_edge_length_cm = _float_cfg(
+            raw_cfg,
+            "shared_edge_length_cm",
+            default_shared_edge_length_cm if "shared_edge_length_cm" in data else min(
+                max(light_box_length_cm, light_box_width_cm),
+                max(dark_box_length_cm, dark_box_width_cm),
+                fallback_shared_cm,
+            ),
+        )
+        light_box_length_cm, light_box_width_cm = _normalize_ldb_dims(
+            light_box_length_cm,
+            light_box_width_cm,
+            shared_edge_length_cm,
+        )
+        dark_box_length_cm, dark_box_width_cm = _normalize_ldb_dims(
+            dark_box_length_cm,
+            dark_box_width_cm,
+            shared_edge_length_cm,
+        )
+        return {
+            "dark_box_visible": _coerce_bool(raw_cfg.get("dark_box_visible"), default_dark_box_visible),
+            "bg_method": raw_cfg.get("bg_method", default_bg_method),
+            "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
+            "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
+            "erosion_kernel": int(raw_cfg.get("erosion_kernel", default_erosion_kernel)),
+            "erosion_iter": int(raw_cfg.get("erosion_iter", default_erosion_iter)),
+            "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
+            "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
+            "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "arena_width_cm": arena_width_cm,
+            "arena_height_cm": arena_height_cm,
+            "light_box_length_cm": light_box_length_cm,
+            "light_box_width_cm": light_box_width_cm,
+            "dark_box_length_cm": dark_box_length_cm,
+            "dark_box_width_cm": dark_box_width_cm,
+            "shared_edge_length_cm": shared_edge_length_cm,
+            "door_open_delay_s": float(raw_cfg.get("door_open_delay_s", default_door_open_delay_s)),
+            "transition_min_dwell_s": float(raw_cfg.get("transition_min_dwell_s", default_transition_min_dwell_s)),
+            "doorway_reset_s": float(raw_cfg.get("doorway_reset_s", default_doorway_reset_s)),
+            "movement_threshold_cm_s": float(raw_cfg.get("movement_threshold_cm_s", default_movement_threshold_cm_s)),
+            "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
+            "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
+        }
+
+    per_video_configs = _iter_video_configs(
+        sess,
+        data,
+        _per_video_light_dark_config,
+    )
+    return {
+        "bg_method": default_bg_method,
+        "gray_threshold": default_gray_threshold,
+        "invert": str(default_bg_type).lower() == "dark",
+        "erosion_kernel": default_erosion_kernel,
+        "erosion_iter": default_erosion_iter,
+        "dilation_kernel": default_dilation_kernel,
+        "dilation_iter": default_dilation_iter,
+        "min_area": default_min_area,
+        "max_area": int(data.get("max_area", 50000)),
+        "arena_width_cm": default_arena_width_cm,
+        "arena_height_cm": default_arena_height_cm,
+        "light_box_length_cm": default_light_box_length_cm,
+        "light_box_width_cm": default_light_box_width_cm,
+        "dark_box_length_cm": default_dark_box_length_cm,
+        "dark_box_width_cm": default_dark_box_width_cm,
+        "shared_edge_length_cm": default_shared_edge_length_cm,
+        "door_open_delay_s": default_door_open_delay_s,
+        "transition_min_dwell_s": default_transition_min_dwell_s,
+        "doorway_reset_s": default_doorway_reset_s,
+        "movement_threshold_cm_s": default_movement_threshold_cm_s,
+        "bin_seconds": default_bin_seconds,
+        "dark_box_visible": default_dark_box_visible,
+        "rois": data.get("rois", []),
+        "per_video_configs": per_video_configs,
+        "generate_video": data.get("generate_video", True),
+        **_base_session_fields(sess),
+    }
+
+
+def _default_three_chamber_segments() -> list[dict[str, Any]]:
+    return [
+        {"id": "habituation_center", "phase": "habituation_center", "start_s": 0.0, "end_s": 300.0, "analyze": True},
+        {"id": "gap_1", "phase": "ignore", "start_s": 300.0, "end_s": 420.0, "analyze": False},
+        {"id": "habituation_all", "phase": "habituation_all", "start_s": 420.0, "end_s": 1020.0, "analyze": True},
+        {"id": "gap_2", "phase": "ignore", "start_s": 1020.0, "end_s": 1140.0, "analyze": False},
+        {"id": "sociability", "phase": "sociability", "start_s": 1140.0, "end_s": 1740.0, "analyze": True},
+        {"id": "gap_3", "phase": "ignore", "start_s": 1740.0, "end_s": 1860.0, "analyze": False},
+        {"id": "social_novelty", "phase": "social_novelty", "start_s": 1860.0, "end_s": 2460.0, "analyze": True},
+    ]
+
+
+def _default_three_chamber_roles() -> dict[str, dict[str, str]]:
+    return {
+        "habituation_center": {"left": "", "right": ""},
+        "habituation_all": {"left": "empty_object", "right": "empty_object"},
+        "sociability": {"left": "social_stranger_1", "right": "empty_object"},
+        "social_novelty": {"left": "familiar_stranger_1", "right": "novel_stranger_2"},
+    }
+
+
+def build_three_chamber_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    default_analysis_mode = data.get("analysis_mode", "single_phase")
+    default_selected_phase = data.get("selected_phase", data.get("phase", "sociability"))
+    default_protocol_segments = copy.deepcopy(data.get("protocol_segments") or ([] if default_analysis_mode != "full_protocol" else _default_three_chamber_segments()))
+    default_role_schedule = copy.deepcopy(data.get("role_schedule") or _default_three_chamber_roles())
+    default_bg_method = data.get("bg_method", "threshold")
+    default_bg_type = data.get("bg_type", "light")
+    default_gray_threshold = int(data.get("gray_threshold", 127))
+    default_erosion_kernel = int(data.get("erosion_kernel", 3))
+    default_erosion_iter = int(data.get("erosion_iter", 1))
+    default_dilation_kernel = int(data.get("dilation_kernel", 5))
+    default_dilation_iter = int(data.get("dilation_iter", 2))
+    default_min_area = int(data.get("min_area", 120))
+    default_arena_width_cm = float(data.get("arena_width_cm", 60.0))
+    default_arena_height_cm = float(data.get("arena_height_cm", 40.0))
+    default_interaction_radius_cm = float(data.get("interaction_radius_cm", 2.0))
+    default_cup_exclusion_radius_cm = float(data.get("cup_exclusion_radius_cm", 1.5))
+    default_use_head_direction = bool(data.get("use_head_direction", False))
+    default_head_angle_threshold_deg = float(data.get("head_angle_threshold_deg", 60.0))
+    default_head_confidence_threshold = float(data.get("head_confidence_threshold", 0.35))
+    default_transition_min_dwell_s = float(data.get("transition_min_dwell_s", 0.12))
+    default_center_reset_s = float(data.get("center_reset_s", 0.2))
+    default_movement_threshold_cm_s = float(data.get("movement_threshold_cm_s", 2.0))
+    default_bin_seconds = float(data.get("bin_seconds", 60.0))
+
+    per_video_configs = _iter_video_configs(
+        sess,
+        data,
+        lambda raw_cfg: {
+            "analysis_mode": raw_cfg.get("analysis_mode", default_analysis_mode),
+            "selected_phase": raw_cfg.get("selected_phase", raw_cfg.get("phase", default_selected_phase)),
+            "phase": raw_cfg.get("phase", raw_cfg.get("selected_phase", default_selected_phase)),
+            "protocol_segments": copy.deepcopy(raw_cfg.get("protocol_segments", default_protocol_segments)),
+            "role_schedule": copy.deepcopy(raw_cfg.get("role_schedule", default_role_schedule)),
+            "bg_method": raw_cfg.get("bg_method", default_bg_method),
+            "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
+            "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
+            "erosion_kernel": int(raw_cfg.get("erosion_kernel", default_erosion_kernel)),
+            "erosion_iter": int(raw_cfg.get("erosion_iter", default_erosion_iter)),
+            "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
+            "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
+            "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "arena_width_cm": float(raw_cfg.get("arena_width_cm", default_arena_width_cm)),
+            "arena_height_cm": float(raw_cfg.get("arena_height_cm", default_arena_height_cm)),
+            "interaction_radius_cm": float(raw_cfg.get("interaction_radius_cm", default_interaction_radius_cm)),
+            "cup_exclusion_radius_cm": float(raw_cfg.get("cup_exclusion_radius_cm", default_cup_exclusion_radius_cm)),
+            "use_head_direction": bool(raw_cfg.get("use_head_direction", default_use_head_direction)),
+            "head_angle_threshold_deg": float(raw_cfg.get("head_angle_threshold_deg", default_head_angle_threshold_deg)),
+            "head_confidence_threshold": float(raw_cfg.get("head_confidence_threshold", default_head_confidence_threshold)),
+            "transition_min_dwell_s": float(raw_cfg.get("transition_min_dwell_s", default_transition_min_dwell_s)),
+            "center_reset_s": float(raw_cfg.get("center_reset_s", default_center_reset_s)),
+            "movement_threshold_cm_s": float(raw_cfg.get("movement_threshold_cm_s", default_movement_threshold_cm_s)),
+            "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
+            "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
+        },
+    )
+    return {
+        "analysis_mode": default_analysis_mode,
+        "selected_phase": default_selected_phase,
+        "phase": default_selected_phase,
+        "protocol_segments": default_protocol_segments,
+        "role_schedule": default_role_schedule,
+        "bg_method": default_bg_method,
+        "gray_threshold": default_gray_threshold,
+        "invert": str(default_bg_type).lower() == "dark",
+        "erosion_kernel": default_erosion_kernel,
+        "erosion_iter": default_erosion_iter,
+        "dilation_kernel": default_dilation_kernel,
+        "dilation_iter": default_dilation_iter,
+        "min_area": default_min_area,
+        "max_area": int(data.get("max_area", 50000)),
+        "arena_width_cm": default_arena_width_cm,
+        "arena_height_cm": default_arena_height_cm,
+        "interaction_radius_cm": default_interaction_radius_cm,
+        "cup_exclusion_radius_cm": default_cup_exclusion_radius_cm,
+        "use_head_direction": default_use_head_direction,
+        "head_angle_threshold_deg": default_head_angle_threshold_deg,
+        "head_confidence_threshold": default_head_confidence_threshold,
+        "transition_min_dwell_s": default_transition_min_dwell_s,
+        "center_reset_s": default_center_reset_s,
+        "movement_threshold_cm_s": default_movement_threshold_cm_s,
+        "bin_seconds": default_bin_seconds,
+        "rois": data.get("rois", []),
+        "per_video_configs": per_video_configs,
+        "generate_video": data.get("generate_video", True),
+        **_base_session_fields(sess),
+    }
+
+
 def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     def _resolve_lis_primary(raw_cfg: dict[str, Any], default: bool = True) -> bool:
         if "use_tst_legacy_primary" in raw_cfg:
@@ -306,7 +592,7 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
     default_dilation_iter = int(data.get("dilation_iter", 3))
     default_min_area = int(data.get("min_area", 100))
     default_behavior_threshold_sensitivity = float(data.get("behavior_threshold_sensitivity", 0.0))
-    default_use_tst_lis_primary = _resolve_lis_primary(data, True)
+    default_use_tst_lis_primary = _resolve_lis_primary(data, False)
     default_use_tst_legacy_primary = not default_use_tst_lis_primary
     default_auto_behavior_threshold = (
         False if default_use_tst_lis_primary else bool(data.get("auto_behavior_threshold", False))
@@ -459,6 +745,10 @@ def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], dat
         return build_elevated_plus_config(sess, data)
     if exp == "y_maze":
         return build_y_maze_config(sess, data)
+    if exp == "light_dark_box":
+        return build_light_dark_box_config(sess, data)
+    if exp == "three_chamber":
+        return build_three_chamber_config(sess, data)
     if exp == "forced_swim":
         return build_forced_swim_config(sess, data)
     return build_tst_config(sess, data)

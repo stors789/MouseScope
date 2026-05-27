@@ -56,6 +56,22 @@ from y_maze import (
     render_y_maze_image_grid,
     sanitize_name as sanitize_y_maze_name,
 )
+from light_dark_box import (
+    LightDarkBoxTracker,
+    draw_light_dark_box_results,
+    render_light_dark_box_heatmap,
+    render_light_dark_box_trackmap,
+    render_light_dark_box_image_grid,
+    sanitize_name as sanitize_light_dark_name,
+)
+from three_chamber import (
+    ThreeChamberTracker,
+    draw_three_chamber_results,
+    render_three_chamber_heatmap,
+    render_three_chamber_trackmap,
+    render_three_chamber_image_grid,
+    sanitize_name as sanitize_three_chamber_name,
+)
 from forced_swim import (
     ForcedSwimTracker,
     draw_forced_swim_results,
@@ -101,6 +117,8 @@ _SESSION_MODULE_NAMES = (
     'services.novel_object_session',
     'services.elevated_plus_session',
     'services.y_maze_session',
+    'services.light_dark_session',
+    'services.three_chamber_session',
 )
 
 _RUNTIME_BINDING_NAMES = (

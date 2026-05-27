@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% block title %}LDB Calibration - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.ldb-shell { max-width: 1480px; margin: 0 auto; }
+.ldb-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+.steps { display:inline-flex; gap:.5rem; padding:.4rem; border:1px solid var(--border-card); background:var(--bg-card); border-radius:999px; }
+.step-btn { border:0; background:transparent; color:var(--text-muted); padding:.55rem 1rem; border-radius:999px; font-weight:600; }
+.step-btn.active { background:rgba(37,99,235,.12); color:var(--primary-color); }
+.panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.2rem; margin-bottom:1rem; }
+.grid-main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(330px,.9fr); gap:1rem; align-items:start; }
+.grid-2,.param-grid,.preview-grid { display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.canvas-wrap { background:#09101d; border:1px solid rgba(148,163,184,.18); border-radius:18px; padding:.75rem; }
+.canvas-wrap canvas { display:block; width:100%; height:auto; max-width:100%; background:#000; border-radius:14px; cursor:crosshair; }
+.toolbar,.inline,.status-strip { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+.hint,.mini-note { color:var(--text-muted); font-size:.9rem; }
+.step-pane { display:none; }
+.step-pane.active { display:block; }
+.pill { display:inline-flex; align-items:center; gap:.35rem; padding:.4rem .75rem; border-radius:999px; background:var(--bg-page); border:1px solid var(--border-card); }
+.roi-list { display:grid; gap:.85rem; }
+.roi-card { border:1px solid var(--border-card); border-radius:16px; padding:.9rem; background:var(--bg-page); }
+.roi-card.active { border-color:rgba(37,99,235,.45); box-shadow:0 0 0 1px rgba(37,99,235,.14); }
+.roi-card-head { display:flex; justify-content:space-between; align-items:center; gap:.75rem; margin-bottom:.75rem; }
+.roi-card-title { font-weight:700; color:var(--text-primary); }
+.zone-row { display:grid; grid-template-columns:1fr auto; gap:.45rem; margin-bottom:.45rem; }
+.zone-grid { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.45rem; margin-bottom:.45rem; }
+.range-line { display:flex; justify-content:space-between; font-size:.82rem; color:var(--text-muted); }
+.loading-overlay { position:fixed; inset:0; background:rgba(241,245,249,.78); display:flex; justify-content:center; align-items:center; z-index:9999; }
+.spinner { width:48px; height:48px; border:3px solid var(--border-card); border-top-color:var(--primary-color); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (max-width:1100px) { .grid-main,.grid-2,.param-grid,.preview-grid { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
+<div class="ldb-shell" data-calibration-module="light_dark_box">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div><strong data-page-i18n="workspace.title">批量单视频编辑模式</strong><div class="small mt-1" data-page-i18n="workspace.note">保存当前设置后返回批次页面，再统一启动整批分析。</div></div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}"><i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回批次页面</span></a>
+    </div>
+    {% endif %}
+    <div class="ldb-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">明暗箱配置</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">手动画出明室、可选门区；暗箱可见时再画暗室。门区会从检测范围中排除，用于减少门口探头和门缝误检。</div>
+        </div>
+        <div class="inline">
+            {% if is_batch and launch_mode != 'workspace' %}
+            <div>
+                <label class="form-label mb-1" data-page-i18n="common.preview_video">预览视频</label>
+                <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                    {% for video in video_list %}<option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>{% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='ldb') }}" target="_blank"><i class="fas fa-book-open me-2"></i><span data-page-i18n="header.manual">LDB 使用手册</span></a>
+            <div class="steps" data-tour-id="ldb-steps">
+                <button class="step-btn active" id="stepNav1" onclick="goToStep(1)" data-page-i18n="common.step1">1. 标定与 ROI</button>
+                <button class="step-btn" id="stepNav2" onclick="goToStep(2)" data-page-i18n="common.step2">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="grid-main">
+            <div class="panel">
+                <div class="alert alert-info py-2 mb-3" data-tour-id="ldb-core-note">
+                    <i class="fas fa-circle-info me-2"></i>
+                    <span data-page-i18n="geom.core_note">LDB 核心指标只依赖明室、暗室、门区和时间窗；底面尺寸仅用于距离/速度等辅助运动学字段。</span>
+                </div>
+                <div class="grid-2 mb-3" data-tour-id="ldb-dark-visibility">
+                    <div>
+                        <label class="form-label" for="darkBoxVisible" data-page-i18n="visibility.label">暗箱是否可见</label>
+                        <select class="form-select" id="darkBoxVisible" onchange="onDarkBoxVisibilityChange()">
+                            <option value="true" data-page-i18n="visibility.visible">暗箱可见：画明室和暗室，输出轨迹/热图/运动学</option>
+                            <option value="false" data-page-i18n="visibility.hidden">暗箱不可见：画明室和可选门区，只输出明/暗时间等可信指标</option>
+                        </select>
+                    </div>
+                    <div class="hint d-flex align-items-end" id="visibilityHint">暗箱可见时，系统按明室/暗室/门区定位；暗箱不可见时，小鼠在明室内被检测到记为明室，看不到则记为暗室。</div>
+                </div>
+                <div class="inline mb-3">
+                    <div class="pill"><strong data-page-i18n="status.active_roi">当前 ROI</strong> <span id="activeRoiText">-</span></div>
+                    <div class="pill"><strong data-page-i18n="status.mode">当前区域</strong> <span id="drawModeText">-</span></div>
+                </div>
+                <div class="hint mb-3"><ol class="mb-0 ps-3" id="instructionList"></ol></div>
+                <div class="mb-3" data-tour-id="ldb-draw-frame">
+                    <div class="d-flex justify-content-between align-items-center mb-2"><label class="form-label mb-0" data-page-i18n="common.select_frame">选择帧</label><span id="frameLabelDraw" class="mini-note">Frame 0 / 0</span></div>
+                    <input type="range" class="form-range" id="frameSliderDraw" min="0" max="0" value="0" oninput="onFrameChange(this.value)">
+                </div>
+                <div class="canvas-wrap" data-tour-id="ldb-draw-canvas"><canvas id="drawCanvas"></canvas></div>
+                <div class="toolbar mt-3" data-tour-id="ldb-draw-toolbar">
+                    <button class="btn btn-primary" type="button" onclick="newROI()"><i class="fas fa-plus me-2"></i><span data-page-i18n="btn.new_roi">新建 ROI</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoPoint()"><i class="fas fa-undo me-2"></i><span data-page-i18n="btn.undo">撤销一点</span></button>
+                    <button class="btn btn-outline-warning" type="button" id="maskFinishBtn" onclick="finishMaskEditing()" disabled><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.finish_mask">完成检测遮罩</span></button>
+                    <button class="btn btn-outline-secondary" type="button" id="maskCancelBtn" onclick="cancelMaskEditing()" disabled><i class="fas fa-times me-2"></i><span data-page-i18n="btn.cancel_mask">取消遮罩编辑</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearZone()"><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.clear_zone">清空当前区域</span></button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAll()"><i class="fas fa-trash me-2"></i><span data-page-i18n="btn.clear_all">清空全部</span></button>
+                    <button class="btn btn-success ms-auto" type="button" id="toTuningBtn" onclick="goToStep(2)" disabled><i class="fas fa-arrow-right me-2"></i><span data-page-i18n="btn.to_tuning">进入调参</span></button>
+                </div>
+                <div class="status-strip mt-3" data-tour-id="ldb-roi-status">
+                    <div class="pill"><strong data-page-i18n="status.roi_count">ROI</strong> <span id="roiCountText">0</span></div>
+                    <div class="pill"><strong data-page-i18n="status.complete">完整</strong> <span id="completeCountText">0</span></div>
+                    <div class="pill"><strong data-page-i18n="status.points">当前点数</strong> <span id="pointCountText">0</span></div>
+                    <div class="pill"><strong data-page-i18n="status.mask_points">遮罩点数</strong> <span id="maskPointText">0</span></div>
+                    <div class="pill"><strong data-page-i18n="status.hint">当前提示</strong> <span id="pointHintText">-</span></div>
+                </div>
+            </div>
+            <div class="panel" data-tour-id="ldb-roi-list">
+                <h5 data-page-i18n="roi.title">ROI 列表</h5>
+                <div class="hint" id="roiModeHint" data-page-i18n="roi.hint">每个 ROI 至少需要明室和暗室；门区可不画，门口黑线/门缝容易误检时再画成窄排除带。</div>
+                {% if project_context and project_context.project_id %}
+                <div class="alert alert-warning py-2 my-3" data-tour-id="project-subject-required"><i class="fas fa-circle-info me-2"></i><span data-page-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。</span></div>
+                {% endif %}
+                <div id="roiList" class="roi-list mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div><h5 class="mb-1" data-page-i18n="preview.title">调参与预览</h5><div class="mini-note" data-page-i18n="preview.subtitle">左侧原始帧，右侧叠加检测结果、明暗室和门区。</div></div>
+                <div class="toolbar" data-tour-id="ldb-action-bar">
+                    <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)"><i class="fas fa-arrow-left me-2"></i><span data-page-i18n="btn.back">返回标定</span></button>
+                    <button class="btn btn-outline-primary" type="button" onclick="updatePreview()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新预览</span></button>
+                    <button class="btn btn-success" type="button" id="primaryActionBtn" data-tour-id="ldb-primary-action" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span data-page-i18n="btn.start">开始 LDB 分析</span></button>
+                </div>
+            </div>
+            <div class="mb-3" data-tour-id="ldb-preview-frame">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0" data-page-i18n="preview.frame">预览帧</label>
+                    <span id="frameLabelPreview" class="mini-note">Frame 0 / 0</span>
+                </div>
+                <input type="range" class="form-range" id="frameSliderPreview" min="0" max="0" value="0" oninput="onPreviewFrameChange(this.value)">
+            </div>
+            <div class="preview-grid mb-4" data-tour-id="ldb-preview-grid"><div class="canvas-wrap"><canvas id="previewOriginal"></canvas></div><div class="canvas-wrap"><canvas id="previewResult"></canvas></div></div>
+            <div class="param-grid">
+                <div class="panel mb-0" data-tour-id="ldb-detection-params">
+                    <h6 data-page-i18n="detect.title">检测参数</h6>
+                    <div class="grid-2">
+                        <div><label class="form-label" data-page-i18n="detect.method">检测方法</label><select class="form-select" id="bgMethod" onchange="updatePreview()"><option value="threshold">Threshold</option><option value="static">Static BG</option></select></div>
+                        <div><label class="form-label" data-page-i18n="detect.bg_type">背景类型</label><select class="form-select" id="bgType" onchange="updatePreview()"><option value="light" data-page-i18n="detect.light">浅色背景/深色鼠</option><option value="dark" data-page-i18n="detect.dark">深色背景/浅色鼠</option></select></div>
+                        <div><label class="form-label" data-page-i18n="detect.gray">灰度阈值</label><input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncLabel('grayThreshold'); updatePreview();"><div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div></div>
+                        <div><label class="form-label" data-page-i18n="detect.min_area">最小面积</label><input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncLabel('minArea'); updatePreview();"><div class="range-line"><span>20</span><span id="minAreaLabel">120</span><span>5000</span></div></div>
+                    </div>
+                </div>
+                <div class="panel mb-0" data-tour-id="ldb-core-stats">
+                    <h6 data-page-i18n="stats.title">核心统计参数</h6>
+                    <div class="grid-2">
+                        <div data-tour-id="ldb-door-delay"><label class="form-label" data-page-i18n="stats.door_delay">开门延迟 (s)</label><input class="form-control" type="number" id="doorOpenDelay" min="0" step="0.1" value="3"></div>
+                        <div data-tour-id="ldb-transition-dwell"><label class="form-label" data-page-i18n="stats.dwell">转换稳定时间 (s)</label><input class="form-control" type="number" id="transitionDwell" min="0" step="0.01" value="0.12"></div>
+                        <div data-tour-id="ldb-doorway-reset" id="doorwayResetWrap"><label class="form-label" data-page-i18n="stats.reset">门区重置 (s)</label><input class="form-control" type="number" id="doorwayReset" min="0" step="0.01" value="0.2"></div>
+                        <div data-tour-id="ldb-bin-seconds"><label class="form-label" data-page-i18n="stats.bin">分箱时长 (s)</label><input class="form-control" type="number" id="binSeconds" min="1" step="1" value="60"></div>
+                        <div class="d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="generateVideo" checked><label class="form-check-label" for="generateVideo" data-page-i18n="stats.video">生成标注视频</label></div></div>
+                    </div>
+                    <div class="status-strip mt-3"><div class="pill" id="previewStatus" data-page-i18n="preview.waiting">等待预览</div></div>
+                </div>
+                <div class="panel mb-0" data-tour-id="ldb-aux-motion" id="auxMotionPanel">
+                    <h6 data-page-i18n="aux.title">辅助运动学 / QC（可选）</h6>
+                    <div class="mini-note mb-3" data-page-i18n="aux.note">这些参数只影响距离、速度、移动/静止时间和轨迹图比例；不影响明暗室时间、进入次数、转换次数或首次入明室潜伏期。分别填写明箱和暗箱的真实长、宽；系统会根据两块 ROI 最靠近的公共边自动判断横放还是竖放。</div>
+                    <div class="grid-2">
+                        <div data-tour-id="ldb-aux-scale"><label class="form-label" data-page-i18n="geom.light_length">明箱长 (cm)</label><input class="form-control" type="number" id="lightBoxLengthCm" min="1" step="0.1" value="40" onchange="updatePreview()"></div>
+                        <div><label class="form-label" data-page-i18n="geom.light_width">明箱宽 (cm)</label><input class="form-control" type="number" id="lightBoxWidthCm" min="1" step="0.1" value="20" onchange="updatePreview()"></div>
+                        <div><label class="form-label" data-page-i18n="geom.dark_length">暗箱长 (cm)</label><input class="form-control" type="number" id="darkBoxLengthCm" min="1" step="0.1" value="40" onchange="updatePreview()"></div>
+                        <div><label class="form-label" data-page-i18n="geom.dark_width">暗箱宽 (cm)</label><input class="form-control" type="number" id="darkBoxWidthCm" min="1" step="0.1" value="20" onchange="updatePreview()"></div>
+                        <div data-tour-id="ldb-shared-edge"><label class="form-label" data-page-i18n="geom.shared_edge">两箱重合边长度 (cm)</label><input class="form-control" type="number" id="sharedEdgeLengthCm" min="0.1" step="0.1" value="40" onchange="updatePreview()"><div class="mini-note mt-1" data-page-i18n="geom.shared_edge_hint">填写明箱和暗箱贴在一起的那条公共边实际重合长度；它不是门洞宽度，也不按 x/y 方向填写。</div></div>
+                        <div data-tour-id="ldb-movement-threshold"><label class="form-label" data-page-i18n="stats.move">运动阈值 (cm/s)</label><input class="form-control" type="number" id="movementThreshold" min="0" step="0.1" value="2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
+const isBatch = {{ is_batch | tojson }};
+const launchMode = {{ launch_mode | tojson }};
+const currentVideoIndexFromServer = {{ current_video_index | tojson }};
+const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
+const initialDraftPayload = {{ draft_payload | tojson }};
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
+const PAGE_I18N = {
+    zh: {
+        'workspace.title':'批量单视频编辑模式',
+        'workspace.note':'保存当前设置后返回批次页面，再统一启动整批分析。',
+        'workspace.back':'返回批次页面',
+        'header.title':'明暗箱配置',
+        'header.subtitle':'手动画出明室、可选门区；暗箱可见时再画暗室。门区会从检测范围中排除，用于减少门口探头和门缝误检。',
+        'header.manual':'LDB 使用手册',
+        'common.preview_video':'预览视频',
+        'common.step1':'1. 标定与 ROI',
+        'common.step2':'2. 调参与启动',
+        'common.select_frame':'选择帧',
+        'geom.core_note':'LDB 核心指标只依赖明室、暗室、门区和时间窗；底面尺寸仅用于距离/速度等辅助运动学字段。',
+        'geom.light_length':'明箱长 (cm)',
+        'geom.light_width':'明箱宽 (cm)',
+        'geom.dark_length':'暗箱长 (cm)',
+        'geom.dark_width':'暗箱宽 (cm)',
+        'geom.shared_edge':'两箱重合边长度 (cm)',
+        'geom.shared_edge_hint':'填写明箱和暗箱贴在一起的那条公共边实际重合长度；默认两箱各 40×20 cm，40 cm 边相贴，拼起来是 40×40 cm。',
+        'visibility.label':'暗箱是否可见',
+        'visibility.visible':'暗箱可见：画明室和暗室，输出轨迹/热图/运动学',
+        'visibility.hidden':'暗箱不可见：画明室和可选门区，只输出明/暗时间等可信指标',
+        'status.active_roi':'当前 ROI',
+        'status.mode':'当前区域',
+        'status.roi_count':'ROI',
+        'status.complete':'完整',
+        'status.points':'当前点数',
+        'status.mask_points':'遮罩点数',
+        'status.hint':'当前提示',
+        'btn.new_roi':'新建 ROI',
+        'btn.undo':'撤销一点',
+        'btn.finish_mask':'完成检测遮罩',
+        'btn.cancel_mask':'取消遮罩编辑',
+        'btn.clear_zone':'清空当前区域',
+        'btn.clear_all':'清空全部',
+        'btn.to_tuning':'进入调参',
+        'btn.back':'返回标定',
+        'btn.refresh':'刷新预览',
+        'btn.start':'开始 LDB 分析',
+        'btn.save_return':'保存设置并返回批次页面',
+        'roi.title':'ROI 列表',
+        'roi.hint':'每个 ROI 至少需要明室；暗箱可见时还需要暗室。门区可选，会从检测范围中排除。',
+        'project.subject_required':'项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。',
+        'preview.title':'调参与预览',
+        'preview.subtitle':'左侧原始帧，右侧叠加检测结果、明暗室和门区。',
+        'preview.frame':'预览帧',
+        'preview.waiting':'等待预览',
+        'detect.title':'检测参数',
+        'detect.method':'检测方法',
+        'detect.bg_type':'背景类型',
+        'detect.light':'浅色背景/深色鼠',
+        'detect.dark':'深色背景/浅色鼠',
+        'detect.gray':'灰度阈值',
+        'detect.min_area':'最小面积',
+        'stats.title':'核心统计参数',
+        'stats.door_delay':'开门延迟 (s)',
+        'stats.dwell':'转换稳定时间 (s)',
+        'stats.reset':'门区重置 (s)',
+        'stats.bin':'分箱时长 (s)',
+        'stats.video':'生成标注视频',
+        'stats.move':'运动阈值 (cm/s)',
+        'aux.title':'辅助运动学 / QC（可选）',
+        'aux.note':'这些参数只影响距离、速度、移动/静止时间和轨迹图比例；不影响明暗室时间、进入次数、转换次数或首次入明室潜伏期。默认明箱和暗箱都是长 40 cm、宽 20 cm，并沿 40 cm 边相贴成 40×40 cm 正方形；如果你的装置不同，再分别修改长、宽和公共边。',
+    },
+    en: {
+        'workspace.title':'Batch single-video edit mode',
+        'workspace.note':'Save this setup, return to the batch page, then start the whole batch together.',
+        'workspace.back':'Back to Batch Page',
+        'header.title':'Light-Dark Box Setup',
+        'header.subtitle':'Draw the light zone and optional doorway; add the dark zone when the dark chamber is visible. Doorway is excluded from detection to reduce head-peek and door-seam false positives.',
+        'header.manual':'LDB Manual',
+        'common.preview_video':'Preview Video',
+        'common.step1':'1. Calibration & ROI',
+        'common.step2':'2. Tuning & Start',
+        'common.select_frame':'Frame',
+        'geom.core_note':'Core LDB metrics rely on light/dark zones and time windows. Floor dimensions only affect auxiliary distance, speed, and QC outputs.',
+        'geom.light_length':'Light chamber length (cm)',
+        'geom.light_width':'Light chamber width (cm)',
+        'geom.dark_length':'Dark chamber length (cm)',
+        'geom.dark_width':'Dark chamber width (cm)',
+        'geom.shared_edge':'Shared edge overlap (cm)',
+        'geom.shared_edge_hint':'Enter the real overlap length of the side where the light and dark chambers touch. By default each chamber is 40 x 20 cm and the 40 cm sides touch, forming a 40 x 40 cm square.',
+        'visibility.label':'Dark chamber visibility',
+        'visibility.visible':'Dark visible: draw light and dark zones; export tracks, heatmaps, and kinematics',
+        'visibility.hidden':'Dark invisible: draw light zone plus optional doorway; export only reliable light/dark timing metrics',
+        'status.active_roi':'Active ROI',
+        'status.mode':'Active Zone',
+        'status.roi_count':'ROI',
+        'status.complete':'Complete',
+        'status.points':'Current Points',
+        'status.mask_points':'Mask Points',
+        'status.hint':'Hint',
+        'btn.new_roi':'New ROI',
+        'btn.undo':'Undo Point',
+        'btn.finish_mask':'Finish Detection Mask',
+        'btn.cancel_mask':'Cancel Mask Editing',
+        'btn.clear_zone':'Clear Current Zone',
+        'btn.clear_all':'Clear All',
+        'btn.to_tuning':'Go to Tuning',
+        'btn.back':'Back to Calibration',
+        'btn.refresh':'Refresh Preview',
+        'btn.start':'Start LDB Analysis',
+        'btn.save_return':'Save Setup and Return to Batch Page',
+        'roi.title':'ROI List',
+        'roi.hint':'Each ROI needs a light zone; visible-dark mode also needs a dark zone. Optional doorway is excluded from detection.',
+        'project.subject_required':'In project mode, every complete ROI must be linked to a registered animal.',
+        'preview.title':'Tuning & Preview',
+        'preview.subtitle':'Original frame on the left; detection overlay, chambers, and optional doorway on the right.',
+        'preview.frame':'Preview Frame',
+        'preview.waiting':'Waiting for preview',
+        'detect.title':'Detection Parameters',
+        'detect.method':'Detection Method',
+        'detect.bg_type':'Background Type',
+        'detect.light':'Light background / dark mouse',
+        'detect.dark':'Dark background / light mouse',
+        'detect.gray':'Gray Threshold',
+        'detect.min_area':'Minimum Area',
+        'stats.title':'Core Statistics',
+        'stats.door_delay':'Door-open delay (s)',
+        'stats.dwell':'Transition stable dwell (s)',
+        'stats.reset':'Doorway reset (s)',
+        'stats.bin':'Bin size (s)',
+        'stats.video':'Generate annotated video',
+        'stats.move':'Movement threshold (cm/s)',
+        'aux.title':'Auxiliary Kinematics / QC (optional)',
+        'aux.note':'These parameters affect only distance, speed, movement/rest time, and trackmap scaling. They do not affect light/dark time, entries, transitions, or latency. By default each chamber is length 40 cm and width 20 cm, with the 40 cm sides touching to form a 40 x 40 cm square; edit the dimensions and shared edge only if your apparatus differs.',
+    }
+};
+let currentVideoIdx = Number(currentVideoIndexFromServer || 0);
+let currentFrameIdx = 0;
+let frameImage = new Image();
+let rois = [];
+let activeRoi = -1;
+let drawMode = 'light';
+let videoConfigs = [];
+let isDrawingMask = false;
+let maskEditRoiIndex = null;
+let currentMaskPoints = [];
+const ZONE_DEFS = [
+    {key:'light', zh:'明室 Light', en:'Light', color:'#f59e0b'},
+    {key:'dark', zh:'暗室 Dark', en:'Dark', color:'#3b82f6'},
+    {key:'doorway', zh:'门区 Doorway', en:'Doorway', color:'#22c55e', optional:true},
+];
+const MIN_ZONE_POINTS = 3;
+const MIN_MASK_POINTS = 3;
+
+function lang(){ return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh'); }
+function tr(key, fallback){ return ((PAGE_I18N[lang()] || {})[key]) || fallback || key; }
+function applyLdbI18n(){
+    if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N);
+    const startText = document.querySelector('[data-page-i18n="btn.start"]');
+    if (launchMode === 'workspace' && startText) startText.textContent = tr('btn.save_return', '保存设置并返回批次页面');
+    updateVisibilityUI();
+    if (Array.isArray(rois)) renderAll();
+}
+function escapeHtml(value){ return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function escAttr(value){ return escapeHtml(value).replace(/`/g, '&#96;'); }
+function clone(value){ return JSON.parse(JSON.stringify(value)); }
+function getTotalFrames(){ const info = videoInfoList[currentVideoIdx] || videoInfo || {}; return Number(info.total_frames || 0); }
+function defaultConfig(){ return {bg_method:'threshold', bg_type:'light', gray_threshold:127, erosion_kernel:3, erosion_iter:1, dilation_kernel:5, dilation_iter:2, min_area:120, arena_width_cm:40, arena_height_cm:40, light_box_length_cm:40, light_box_width_cm:20, dark_box_length_cm:40, dark_box_width_cm:20, shared_edge_length_cm:40, dark_box_visible:true, door_open_delay_s:3, transition_min_dwell_s:0.12, doorway_reset_s:0.2, movement_threshold_cm_s:2, bin_seconds:60, rois:[]}; }
+function defaultLdbDimensions(arenaWidth=40, arenaHeight=40){ const w = Number(arenaWidth || 40); const h = Number(arenaHeight || 40); const square = Math.abs(w - h) < 1e-6; return square ? {length:Math.max(w,h), width:Math.max(w,h)/2, shared:Math.max(w,h)} : {length:w/2, width:h, shared:h}; }
+function normalizeLengthWidth(lengthCm, widthCm, sharedCm){ const length = Number(lengthCm); const width = Number(widthCm); const shared = Number(sharedCm); return (length < width && shared >= width) ? {length:width, width:length} : {length, width}; }
+function normalizeLdbConfig(rawCfg){ const raw = clone(rawCfg || {}); const cfg = Object.assign(defaultConfig(), raw); const dims = defaultLdbDimensions(cfg.arena_width_cm, cfg.arena_height_cm); if (!Object.prototype.hasOwnProperty.call(raw, 'light_box_length_cm')) cfg.light_box_length_cm = dims.length; if (!Object.prototype.hasOwnProperty.call(raw, 'dark_box_length_cm')) cfg.dark_box_length_cm = dims.length; if (!Object.prototype.hasOwnProperty.call(raw, 'light_box_width_cm')) cfg.light_box_width_cm = dims.width; if (!Object.prototype.hasOwnProperty.call(raw, 'dark_box_width_cm')) cfg.dark_box_width_cm = dims.width; if (!Object.prototype.hasOwnProperty.call(raw, 'shared_edge_length_cm')) cfg.shared_edge_length_cm = Math.min(Math.max(cfg.light_box_length_cm, cfg.light_box_width_cm), Math.max(cfg.dark_box_length_cm, cfg.dark_box_width_cm), dims.shared); const lightDims = normalizeLengthWidth(cfg.light_box_length_cm, cfg.light_box_width_cm, cfg.shared_edge_length_cm); const darkDims = normalizeLengthWidth(cfg.dark_box_length_cm, cfg.dark_box_width_cm, cfg.shared_edge_length_cm); cfg.light_box_length_cm = lightDims.length; cfg.light_box_width_cm = lightDims.width; cfg.dark_box_length_cm = darkDims.length; cfg.dark_box_width_cm = darkDims.width; return cfg; }
+function normalizeConfigs(){ const count = Math.max(1, (videoInfoList || []).length); const raw = (initialDraftPayload && Array.isArray(initialDraftPayload.per_video_configs)) ? initialDraftPayload.per_video_configs : []; videoConfigs = Array.from({length:count}, (_, i) => normalizeLdbConfig(raw[i] || {})); }
+function currentConfig(){ return videoConfigs[currentVideoIdx] || defaultConfig(); }
+function persistCurrent(){ const cfg = currentConfig(); cfg.rois = getCompletePayloadRois(false); collectParams(cfg); videoConfigs[currentVideoIdx] = cfg; }
+function loadCurrent(){ const cfg = currentConfig(); rois = clone(cfg.rois || []).map(ensureROIShape); activeRoi = rois.length ? 0 : -1; drawMode = 'light'; isDrawingMask = false; maskEditRoiIndex = null; currentMaskPoints = []; setParams(cfg); renderAll(); }
+function isDarkVisible(){ const node = document.getElementById('darkBoxVisible'); return !node || node.value !== 'false'; }
+function activeZoneDefs(darkVisible=isDarkVisible()){ return darkVisible ? ZONE_DEFS : ZONE_DEFS.filter(zone => zone.key === 'light' || zone.key === 'doorway'); }
+function numInput(id, fallback){ const node = document.getElementById(id); const value = Number(node ? node.value : fallback); return Number.isFinite(value) && value > 0 ? value : fallback; }
+function collectParams(target){ target.bg_method = document.getElementById('bgMethod').value; target.bg_type = document.getElementById('bgType').value; target.gray_threshold = Number(document.getElementById('grayThreshold').value); target.min_area = Number(document.getElementById('minArea').value); target.light_box_length_cm = numInput('lightBoxLengthCm', 40); target.light_box_width_cm = numInput('lightBoxWidthCm', 20); target.dark_box_length_cm = numInput('darkBoxLengthCm', 40); target.dark_box_width_cm = numInput('darkBoxWidthCm', 20); target.shared_edge_length_cm = numInput('sharedEdgeLengthCm', Math.min(Math.max(target.light_box_length_cm, target.light_box_width_cm), Math.max(target.dark_box_length_cm, target.dark_box_width_cm))); const lightDims = normalizeLengthWidth(target.light_box_length_cm, target.light_box_width_cm, target.shared_edge_length_cm); const darkDims = normalizeLengthWidth(target.dark_box_length_cm, target.dark_box_width_cm, target.shared_edge_length_cm); target.light_box_length_cm = lightDims.length; target.light_box_width_cm = lightDims.width; target.dark_box_length_cm = darkDims.length; target.dark_box_width_cm = darkDims.width; target.arena_width_cm = Math.max(target.shared_edge_length_cm, target.light_box_length_cm, target.dark_box_length_cm); target.arena_height_cm = target.light_box_width_cm + target.dark_box_width_cm; target.dark_box_visible = isDarkVisible(); target.door_open_delay_s = Number(document.getElementById('doorOpenDelay').value || 0); target.transition_min_dwell_s = Number(document.getElementById('transitionDwell').value || 0.12); target.doorway_reset_s = Number(document.getElementById('doorwayReset').value || 0.2); target.movement_threshold_cm_s = Number(document.getElementById('movementThreshold').value || 2); target.bin_seconds = Number(document.getElementById('binSeconds').value || 60); }
+function setParams(cfg){ document.getElementById('darkBoxVisible').value = cfg.dark_box_visible === false ? 'false' : 'true'; const normalized = normalizeLdbConfig(cfg); document.getElementById('lightBoxLengthCm').value = normalized.light_box_length_cm; document.getElementById('lightBoxWidthCm').value = normalized.light_box_width_cm; document.getElementById('darkBoxLengthCm').value = normalized.dark_box_length_cm; document.getElementById('darkBoxWidthCm').value = normalized.dark_box_width_cm; document.getElementById('sharedEdgeLengthCm').value = normalized.shared_edge_length_cm; document.getElementById('bgMethod').value = cfg.bg_method || 'threshold'; document.getElementById('bgType').value = cfg.bg_type || 'light'; document.getElementById('grayThreshold').value = cfg.gray_threshold || 127; document.getElementById('minArea').value = cfg.min_area || 120; document.getElementById('doorOpenDelay').value = cfg.door_open_delay_s ?? 3; document.getElementById('transitionDwell').value = cfg.transition_min_dwell_s ?? 0.12; document.getElementById('doorwayReset').value = cfg.doorway_reset_s ?? 0.2; document.getElementById('movementThreshold').value = cfg.movement_threshold_cm_s ?? 2; document.getElementById('binSeconds').value = cfg.bin_seconds || 60; syncLabel('grayThreshold'); syncLabel('minArea'); updateVisibilityUI(); }
+function syncLabel(id){ const node = document.getElementById(id + 'Label'); if (node) node.textContent = document.getElementById(id).value; }
+function projectSubjectById(id){ return (projectSubjects || []).find(s => s.subject_id === id) || null; }
+function zoneDef(key){ return ZONE_DEFS.find(zone => zone.key === key) || ZONE_DEFS[0]; }
+function zoneLabel(key){ const def = zoneDef(key); return lang() === 'en' ? def.en : def.zh; }
+function modeLabel(){ if (isDrawingMask) return lang() === 'en' ? 'Detection Mask' : '检测遮罩'; return zoneLabel(drawMode); }
+function frameLabelText(frame, total){ return `Frame ${Number(frame || 0)} / ${Math.max(0, Number(total || 0) - 1)}`; }
+function updateVisibilityUI(){ const visible = isDarkVisible(); if (!visible && drawMode === 'dark') drawMode = 'light'; const hint = document.getElementById('visibilityHint'); if (hint) hint.textContent = visible ? (lang()==='en'?'Draw light and dark zones. Doorway is optional; by default it is excluded from detection to avoid door-seam false positives.':'暗箱可见时，系统按明室和暗室定位；门区可选，默认会从检测范围中排除，适合圈住容易误检的黑门缝。') : (lang()==='en'?'Draw the visible light chamber and an optional doorway ignore band. Doorway pixels are excluded from detection, so head peeks at the passage stay counted as dark until the mouse is clearly visible in light.':'暗箱不可见时，画可见明室，并建议把门口画成可选门区排除带；门区像素不参与检测，小鼠只探头到门口时仍按暗室处理，直到稳定出现在明室。'); const roiHint = document.getElementById('roiModeHint'); if (roiHint) roiHint.textContent = visible ? (lang()==='en'?'Each ROI needs light and dark zones. Draw doorway only when the passage edge or dark door seam causes false detections.':'每个 ROI 至少需要明室和暗室；门区可不画，门口黑线/门缝容易误检时再画成窄排除带。') : (lang()==='en'?'Each ROI needs the visible light chamber; doorway is optional but recommended around the passage to debounce head peeks.':'每个 ROI 需要画可见明室；门区可选，但建议圈住门口通道，避免探头就计入明室进入。'); const doorway = document.getElementById('doorwayResetWrap'); if (doorway) doorway.style.display = visible ? '' : 'none'; const aux = document.getElementById('auxMotionPanel'); if (aux) aux.style.display = visible ? '' : 'none'; }
+function onDarkBoxVisibilityChange(){ updateVisibilityUI(); renderAll(); if (document.getElementById('step2').classList.contains('active')) updatePreview(); }
+function instructions(){ return lang()==='en'
+    ? (isDarkVisible() ? ['Create an ROI first, then choose Light, Dark, optional Doorway, or Mask from the ROI card.', 'Transition debounce is handled by stable dwell time even without doorway. Draw doorway only as a narrow ignore band when the door seam is detected as the mouse.', 'In tuning, enter each chamber length/width plus the real overlap length of the side where the two boxes touch; MouseScope infers horizontal/vertical placement from the adjacent ROI edges.'] : ['Choose Dark chamber invisible if the dark box cannot be tracked.', 'Draw the visible light chamber first, then optionally draw Doorway around the passage/opening.', 'Doorway pixels are excluded from detection. A head peek in the doorway stays Dark; Light is counted only after the mouse is detected inside the light chamber for the stable dwell time.'])
+    : (isDarkVisible() ? ['先新建 ROI，再在右侧 ROI 卡片里选择要编辑的明室、暗室、可选门区或检测遮罩。', '转换防抖主要靠“转换稳定时间”，不画门区也能防抖；只有门口黑线/门缝被误检成鼠体时，才把门区画成窄排除带。', '调参时分别填写明箱长宽、暗箱长宽，以及两箱贴在一起那条公共边的真实重合长度；系统会根据相邻 ROI 边自动判断横放或竖放。'] : ['如果暗箱不透明、暗室内无法追踪，请选择“暗箱不可见”。', '先画可见明室，再把门口/通道画成可选门区。', '门区像素不参与检测；小鼠只探头到门区时仍记为暗室，只有在明室内稳定检测到才计入明室进入。']);
+}
+function applySubject(index, id){ const roi = rois[index]; if (!roi) return; const subject = projectSubjectById(id); ['subject_id','animal_code','group_id','group_name','project_unit_id'].forEach(k => delete roi[k]); if (subject){ roi.subject_id = subject.subject_id; roi.animal_code = subject.animal_code; roi.group_id = subject.group_id || ''; roi.group_name = subject.group_name || ''; roi.name = subject.animal_code || roi.name; } renderAll(); }
+function createROI(index){ return {name:`LDB ${index + 1}`, zones:{light:[], dark:[], doorway:[]}, detection_points:[], time_config:{mode:'global', start:null, end:null}}; }
+function ensureROIShape(roi, index){ const out = Object.assign(createROI(index), roi || {}); out.zones = Object.assign({light:[], dark:[], doorway:[]}, out.zones || {}); out.detection_points = Array.isArray(out.detection_points) ? out.detection_points : []; out.time_config = out.time_config || {mode:'global', start:null, end:null}; return out; }
+function newROI(){ isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; rois.push(createROI(rois.length)); activeRoi = rois.length - 1; drawMode = 'light'; renderAll(); }
+function active(){ if (activeRoi < 0) newROI(); rois[activeRoi] = ensureROIShape(rois[activeRoi], activeRoi); return rois[activeRoi]; }
+function setDrawMode(mode){ selectZoneForEdit(activeRoi >= 0 ? activeRoi : 0, mode); }
+function selectZoneForEdit(index, zoneKey){ if (!(index >= 0 && index < rois.length)) return; isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; activeRoi=index; drawMode=zoneKey; rois[index]=ensureROIShape(rois[index], index); renderAll(); }
+function pointsFor(roi){ roi.zones = roi.zones || {}; return roi.zones[drawMode] || (roi.zones[drawMode] = []); }
+function canvasPoint(evt){ const canvas = document.getElementById('drawCanvas'); const rect = canvas.getBoundingClientRect(); return {x:(evt.clientX - rect.left) * canvas.width / rect.width, y:(evt.clientY - rect.top) * canvas.height / rect.height}; }
+function onCanvasClick(evt){ const p = canvasPoint(evt); if (isDrawingMask && maskEditRoiIndex != null){ currentMaskPoints.push(p); renderAll(); return; } const roi = active(); pointsFor(roi).push(p); renderAll(); }
+function undoPoint(){ if (isDrawingMask){ currentMaskPoints.pop(); renderAll(); return; } const roi = active(); pointsFor(roi).pop(); renderAll(); }
+function clearZone(){ if (isDrawingMask){ currentMaskPoints = []; renderAll(); return; } const roi = active(); roi.zones[drawMode] = []; renderAll(); }
+function clearZoneFromCard(index, zoneKey){ if (!(index >= 0 && index < rois.length)) return; rois[index]=ensureROIShape(rois[index], index); rois[index].zones[zoneKey]=[]; if(activeRoi===index && drawMode===zoneKey && !isDrawingMask){} renderAll(); }
+function clearAll(){ if (confirm(lang()==='en'?'Clear all ROIs?':'清空全部 ROI？')){ rois = []; activeRoi = -1; isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; renderAll(); } }
+function startMaskEditing(index){ if (!(index >= 0 && index < rois.length)) return; activeRoi=index; isDrawingMask=true; maskEditRoiIndex=index; currentMaskPoints=clone(rois[index].detection_points || []); renderAll(); }
+function finishMaskEditing(){ if (!isDrawingMask || maskEditRoiIndex == null) return; if (currentMaskPoints.length < MIN_MASK_POINTS){ alert(lang()==='en'?'Detection mask needs at least 3 points.':'检测遮罩至少需要 3 个点。'); return; } rois[maskEditRoiIndex].detection_points = clone(currentMaskPoints); isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; renderAll(); }
+function cancelMaskEditing(){ isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; renderAll(); }
+function resetMask(index){ if (!(index >= 0 && index < rois.length)) return; rois[index].detection_points=[]; if (maskEditRoiIndex===index){ isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; } renderAll(); }
+function removeROI(index){ rois.splice(index,1); rois=rois.map(ensureROIShape); if(activeRoi===index) activeRoi=rois.length?Math.min(index,rois.length-1):-1; else if(activeRoi>index) activeRoi-=1; if(maskEditRoiIndex===index){ isDrawingMask=false; maskEditRoiIndex=null; currentMaskPoints=[]; } else if(maskEditRoiIndex!=null && maskEditRoiIndex>index){ maskEditRoiIndex-=1; } renderAll(); }
+function updateTimeMode(index, mode){ if(!rois[index]) return; rois[index].time_config = rois[index].time_config || {mode:'global', start:null, end:null}; rois[index].time_config.mode = mode; if(mode === 'global'){ rois[index].time_config.start = null; rois[index].time_config.end = null; } renderRoiList(); }
+function updateTimeValue(index, key, value){ if(!rois[index]) return; rois[index].time_config = rois[index].time_config || {mode:'precise', start:null, end:null}; rois[index].time_config[key] = value === '' ? null : Number(value); }
+function isComplete(roi, darkVisible=isDarkVisible()){ return roi && roi.zones && (roi.zones.light || []).length >= MIN_ZONE_POINTS && (!darkVisible || (roi.zones.dark || []).length >= MIN_ZONE_POINTS); }
+function payloadZones(roi, keepPartial=false, darkVisible=isDarkVisible()){ const src = roi.zones || {}; const zones = {}; activeZoneDefs(darkVisible).forEach(zone => { const pts = src[zone.key] || []; if (keepPartial || pts.length >= MIN_ZONE_POINTS) zones[zone.key] = clone(pts); }); return zones; }
+function payloadRoi(roi, i, keepPartial=false, darkVisible=isDarkVisible()){ const out = {name:roi.name || `LDB ${i+1}`, zones:payloadZones(roi, keepPartial, darkVisible), time_config:roi.time_config || {mode:'global', start:null, end:null}}; if ((roi.detection_points || []).length >= MIN_MASK_POINTS) out.detection_points = clone(roi.detection_points); ['subject_id','animal_code','group_id','group_name','project_unit_id'].forEach(k => { if (roi[k]) out[k] = roi[k]; }); return out; }
+function sanitizeRoisForRun(sourceRois, darkVisible=isDarkVisible()){ return (sourceRois || []).filter(roi => isComplete(roi, darkVisible)).map((roi, i) => payloadRoi(ensureROIShape(roi, i), i, false, darkVisible)); }
+function getCompletePayloadRois(completeOnly=true){ const darkVisible = isDarkVisible(); return completeOnly ? sanitizeRoisForRun(rois, darkVisible) : rois.map((roi, i) => payloadRoi(ensureROIShape(roi, i), i, true, darkVisible)); }
+function configDarkVisible(cfg){ const value = (cfg || {}).dark_box_visible; return !(value === false || String(value).toLowerCase() === 'false' || String(value) === '0'); }
+function sanitizedPerVideoConfigs(){ return videoConfigs.map((cfg, index) => { const merged = normalizeLdbConfig(cfg || {}); const darkVisible = index === currentVideoIdx ? isDarkVisible() : configDarkVisible(merged); return Object.assign({}, merged, {dark_box_visible:darkVisible, rois:sanitizeRoisForRun(index === currentVideoIdx ? rois : (merged.rois || []), darkVisible)}); }); }
+function validateProjectSubjects(){ if (!isProjectMode) return true; const missing = rois.find(r => isComplete(r) && !projectSubjectById(r.subject_id)); if (missing){ alert(lang()==='en'?'Please bind every complete ROI to a project animal.':'请为每个完整 ROI 绑定项目小鼠。'); return false; } return true; }
+function validateProjectSubjectsSilent(){ if (!isProjectMode) return true; return rois.every(r => !isComplete(r) || !!projectSubjectById(r.subject_id)); }
+function currentPointCount(){ if (isDrawingMask) return currentMaskPoints.length; if (activeRoi < 0 || !rois[activeRoi]) return 0; return pointsFor(rois[activeRoi]).length; }
+function activeMaskCount(){ if (isDrawingMask) return currentMaskPoints.length; if (activeRoi < 0 || !rois[activeRoi]) return 0; return (rois[activeRoi].detection_points || []).length; }
+function currentHintText(){ if (isDrawingMask && maskEditRoiIndex != null) return lang()==='en'?'Editing detection mask':'正在编辑检测遮罩'; if (activeRoi < 0) return lang()==='en'?'Create an ROI first':'请先新建 ROI'; const pts = currentPointCount(); return `${zoneLabel(drawMode)} ${pts}/${MIN_ZONE_POINTS}+`; }
+function renderAll(){ renderCanvas(); renderRoiList(); const darkVisible = isDarkVisible(); const complete = rois.filter(roi => isComplete(roi, darkVisible)).length; document.getElementById('instructionList').innerHTML = instructions().map(item => `<li>${escapeHtml(item)}</li>`).join(''); document.getElementById('roiCountText').textContent = rois.length; document.getElementById('completeCountText').textContent = complete; document.getElementById('activeRoiText').textContent = activeRoi >= 0 ? (rois[activeRoi].name || `ROI ${activeRoi+1}`) : '-'; document.getElementById('drawModeText').textContent = modeLabel(); document.getElementById('pointCountText').textContent = currentPointCount(); document.getElementById('maskPointText').textContent = activeMaskCount(); document.getElementById('pointHintText').textContent = currentHintText(); document.getElementById('maskFinishBtn').disabled = !(isDrawingMask && currentMaskPoints.length >= MIN_MASK_POINTS); document.getElementById('maskCancelBtn').disabled = !isDrawingMask; document.getElementById('toTuningBtn').disabled = complete === 0 || isDrawingMask || !validateProjectSubjectsSilent(); }
+function renderRoiList(){ const list = document.getElementById('roiList'); const darkVisible = isDarkVisible(); if (!rois.length){ list.innerHTML = `<div class="mini-note">${lang()==='en'?'No ROI yet.':'还没有 ROI'}</div>`; return; } list.innerHTML = rois.map((raw, i) => { const roi = ensureROIShape(raw, i); rois[i] = roi; const subj = isProjectMode ? subjectSelect(i, roi) : `<label class="form-label">${lang()==='en'?'Name':'名称'}</label><input class="form-control" value="${escAttr(roi.name || '')}" oninput="rois[${i}].name=this.value">`; const timeConfig = roi.time_config || {mode:'global', start:null, end:null}; const timeFields = timeConfig.mode === 'precise' ? `<div><label class="form-label">${lang()==='en'?'Start (s)':'开始 (s)'}</label><input type="number" class="form-control" step="0.1" value="${timeConfig.start ?? ''}" oninput="updateTimeValue(${i}, 'start', this.value)"></div><div><label class="form-label">${lang()==='en'?'End (s)':'结束 (s)'}</label><input type="number" class="form-control" step="0.1" value="${timeConfig.end ?? ''}" oninput="updateTimeValue(${i}, 'end', this.value)"></div>` : ''; const zoneButtons = activeZoneDefs(darkVisible).map(zone => { const count = (roi.zones[zone.key] || []).length; const done = count >= MIN_ZONE_POINTS; const active = !isDrawingMask && activeRoi === i && drawMode === zone.key; return `<div class="zone-grid"><button class="btn btn-sm ${active?'btn-primary':done?'btn-outline-success':'btn-outline-secondary'}" onclick="selectZoneForEdit(${i}, '${zone.key}')">${escapeHtml(zoneLabel(zone.key))} (${count})</button><button class="btn btn-sm btn-outline-danger" onclick="clearZoneFromCard(${i}, '${zone.key}')">${lang()==='en'?'Clear':'清空'}</button></div>`; }).join(''); const maskCount = (roi.detection_points || []).length; const editingMask = isDrawingMask && maskEditRoiIndex === i; const maskText = maskCount >= MIN_MASK_POINTS ? (lang()==='en'?`Custom detection mask (${maskCount} points)`:`已自定义检测遮罩（${maskCount} 点）`) : (lang()==='en'?'Default detection uses light + dark and excludes doorway if drawn':'默认检测使用明室+暗室；如果画了门区，会从默认检测范围中排除'); const metricNote = darkVisible ? (lang()==='en'?'Transition debounce mainly uses stable dwell time; doorway is optional and useful for excluding dark door seams.':'转换防抖主要靠稳定停留时间；门区可选，适合排除黑门缝等固定误检。') : (lang()==='en'?'Invisible-dark mode uses this light zone for detection; no trajectory, speed, distance, heatmap, or trackmap is exported.':'暗箱不可见模式用明室区域做检测；不导出轨迹、速度、距离、热图或轨迹图。'); return `<div class="roi-card ${activeRoi===i || editingMask?'active':''}"><div class="roi-card-head"><div><div class="roi-card-title">${escapeHtml(roi.name || 'ROI '+(i+1))}</div><small>${lang()==='en'?'Complete':'完成'}: ${isComplete(roi, darkVisible)?(lang()==='en'?'Yes':'是'):(lang()==='en'?'No':'否')}</small></div><button class="btn btn-sm btn-outline-danger" onclick="removeROI(${i})"><i class="fas fa-trash"></i></button></div>${subj}<div class="grid-2 mt-3"><div><label class="form-label">${lang()==='en'?'Window Mode':'时间窗模式'}</label><select class="form-select" onchange="updateTimeMode(${i}, this.value)"><option value="global" ${timeConfig.mode==='global'?'selected':''}>${lang()==='en'?'Follow Global Window':'跟随全局时间窗'}</option><option value="precise" ${timeConfig.mode==='precise'?'selected':''}>${lang()==='en'?'Precise Time Range':'精确时间范围'}</option></select></div>${timeFields}</div><div class="mt-3">${zoneButtons}</div><div class="mt-3"><div class="d-flex flex-wrap gap-2"><button class="btn btn-sm ${editingMask?'btn-warning':'btn-outline-warning'}" onclick="startMaskEditing(${i})"><i class="fas fa-draw-polygon me-1"></i>${editingMask?(lang()==='en'?'Continue Mask':'继续编辑遮罩'):(lang()==='en'?'Edit Mask':'编辑检测遮罩')}</button><button class="btn btn-sm btn-outline-secondary" onclick="resetMask(${i})"><i class="fas fa-rotate-left me-1"></i>${lang()==='en'?'Reset Mask':'恢复默认遮罩'}</button></div><div class="mini-note mt-2">${escapeHtml(maskText)}</div><div class="mini-note">${escapeHtml(metricNote)}</div></div></div>`; }).join(''); }
+function subjectSelect(i, roi){ const pickText = lang()==='en'?'Select a registered animal':'请选择已有小鼠'; const noteText = lang()==='en'?'Project mode requires a registered animal.':'项目模式下必须选择已登记小鼠'; const options = [`<option value="">${pickText}</option>`].concat((projectSubjects || []).map(s => `<option value="${escAttr(s.subject_id)}" ${s.subject_id === roi.subject_id ? 'selected':''}>${escapeHtml((s.animal_code || '') + (s.group_name ? ' · ' + s.group_name : ''))}</option>`)).join(''); return `<label class="form-label">${lang()==='en'?'Animal / Experimental Unit':'小鼠 / 实验单元'}</label><select class="form-select" onchange="applySubject(${i}, this.value);">${options}</select><div class="mini-note mt-1">${escapeHtml(roi.group_name || noteText)}</div>`; }
+function renderCanvas(){ const canvas = document.getElementById('drawCanvas'); const ctx = canvas.getContext('2d'); if (!frameImage.complete || !frameImage.naturalWidth){ return; } canvas.width = frameImage.naturalWidth; canvas.height = frameImage.naturalHeight; ctx.drawImage(frameImage,0,0); drawOverlays(ctx); }
+function drawOverlays(ctx){ const zones = activeZoneDefs(); rois.forEach((roi, i) => { zones.forEach(zone => drawPoly(ctx, (roi.zones || {})[zone.key] || [], zone.color, !isDrawingMask && i===activeRoi && drawMode===zone.key)); const maskPts = (isDrawingMask && maskEditRoiIndex===i) ? currentMaskPoints : (roi.detection_points || []); drawPoly(ctx, maskPts, '#facc15', isDrawingMask && maskEditRoiIndex===i, true); }); }
+function drawPoly(ctx, pts, color, active, dashed=false){ if (!pts.length) return; ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color + '22'; ctx.lineWidth = active ? 4 : 2; if (dashed) ctx.setLineDash([8,5]); ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); pts.slice(1).forEach(p => ctx.lineTo(p.x,p.y)); if (pts.length >= 3){ ctx.closePath(); ctx.fill(); } ctx.stroke(); ctx.setLineDash([]); pts.forEach((p, idx) => { ctx.beginPath(); ctx.arc(p.x,p.y,idx===0?5:4,0,Math.PI*2); ctx.fillStyle=idx===0&&active?'#22c55e':color; ctx.fill(); }); ctx.restore(); }
+function drawImageToCanvas(canvasId, b64){ const img = new Image(); img.onload = () => { const canvas = document.getElementById(canvasId); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; canvas.getContext('2d').drawImage(img,0,0); }; img.src = 'data:image/jpeg;base64,' + b64; }
+function syncFrameControls(){ const total = getTotalFrames(); const maxFrame = Math.max(0,total-1); ['Draw','Preview'].forEach(kind => { const slider = document.getElementById(`frameSlider${kind}`); const label = document.getElementById(`frameLabel${kind}`); if (slider){ slider.max = maxFrame; slider.value = Math.min(Number(slider.value || 0), maxFrame); } if (label) label.textContent = frameLabelText(slider ? slider.value : 0, total); }); }
+function loadFrame(frameIdx){ const total = getTotalFrames(); const maxFrame = Math.max(0,total-1); const rawFrame = frameIdx === undefined ? (document.getElementById('frameSliderDraw').value || 0) : frameIdx; currentFrameIdx = Math.min(Math.max(0, Number(rawFrame || 0)), maxFrame); document.getElementById('frameSliderDraw').value = currentFrameIdx; syncFrameControls(); fetch(`/api/get_first_frame/${sessionId}?video=${currentVideoIdx}&frame=${currentFrameIdx}`).then(r=>r.json()).then(data => { frameImage.onload=renderCanvas; frameImage.src='data:image/jpeg;base64,' + data.image; }); }
+function onFrameChange(value){ loadFrame(Number(value || 0)); }
+function onPreviewFrameChange(value){ syncFrameControls(); updatePreview(Number(value || 0)); }
+function onVideoChange(value){ persistCurrent(); currentVideoIdx = Number(value || 0); document.getElementById('frameSliderDraw').value = 0; document.getElementById('frameSliderPreview').value = 0; loadCurrent(); syncFrameControls(); loadFrame(0); if (document.getElementById('step2').classList.contains('active')) updatePreview(0); }
+function buildPayload(frameIdx){ persistCurrent(); const cfg = normalizeLdbConfig(currentConfig()); cfg.rois = getCompletePayloadRois(true); collectParams(cfg); videoConfigs[currentVideoIdx] = clone(cfg); const previewSlider = document.getElementById('frameSliderPreview'); const frame = frameIdx === undefined ? Number(previewSlider ? previewSlider.value || 0 : currentFrameIdx || 0) : Number(frameIdx || 0); return Object.assign({}, cfg, {frame, generate_video:document.getElementById('generateVideo').checked, per_video_configs:sanitizedPerVideoConfigs(), video:currentVideoIdx}); }
+async function saveDraft(redirect=false){ const body = buildPayload(); body._selected_video_idx = currentVideoIdx; const response = await fetch(`/api/draft/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'save failed'); if (redirect && batchWorkspaceUrl) window.location.href = batchWorkspaceUrl; return data; }
+async function updatePreview(frameIdx){ if (!validateProjectSubjects()) return; if (isDrawingMask){ document.getElementById('previewStatus').textContent = lang()==='en'?'Finish or cancel mask editing first.':'请先完成或取消检测遮罩编辑。'; return; } const status = document.getElementById('previewStatus'); const previewSlider = document.getElementById('frameSliderPreview'); const frame = frameIdx === undefined ? Number(previewSlider.value || 0) : Number(frameIdx || 0); previewSlider.value = frame; syncFrameControls(); status.textContent = lang()==='en'?'Previewing...':'正在预览...'; try { const response = await fetch(`/api/debug_preview/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(buildPayload(frame))}); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'preview failed'); drawImageToCanvas('previewOriginal', data.original); drawImageToCanvas('previewResult', data.result); status.textContent = `${lang()==='en'?'Detections':'检测数'}: ${data.detections || 0}`; } catch (err) { status.textContent = err.message; } }
+async function startAnalysis(){ if (isDrawingMask){ alert(lang()==='en'?'Finish or cancel the current detection mask first.':'请先完成或取消当前检测遮罩。'); return; } if (!rois.some(roi => isComplete(roi))){ alert(lang()==='en'?'Please complete at least one ROI.':'请至少完成一个 ROI。'); return; } if (!validateProjectSubjects()) return; document.getElementById('loading').style.display='flex'; try { if (launchMode === 'workspace'){ await saveDraft(true); return; } await saveDraft(false); const response = await fetch(`/api/start_analysis/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(buildPayload())}); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'start failed'); window.location.href = `/monitor/${sessionId}`; } catch (err) { document.getElementById('loading').style.display='none'; alert(err.message); } }
+function goToStep(step){ if (step === 2 && (isDrawingMask || !rois.some(roi => isComplete(roi)) || !validateProjectSubjects())) return; document.querySelectorAll('.step-pane').forEach(p => p.classList.remove('active')); document.getElementById('step'+step).classList.add('active'); document.querySelectorAll('.step-btn').forEach(b => b.classList.remove('active')); document.getElementById('stepNav'+step).classList.add('active'); syncFrameControls(); if (step === 2) updatePreview(); }
+document.getElementById('drawCanvas').addEventListener('click', onCanvasClick);
+document.addEventListener('mousescope:langchange', applyLdbI18n);
+normalizeConfigs(); loadCurrent(); syncFrameControls(); loadFrame();
+applyLdbI18n();
+</script>
+{% endblock %}

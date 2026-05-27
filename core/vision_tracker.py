@@ -1895,16 +1895,17 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
         is_struggling = result['is_struggling']
         
         # 颜色：挣扎=红色，不动=绿色
-        if result.get('is_swinging', False) and not is_struggling:
+        primary_algorithm = result.get('primary_behavior_algorithm')
+        visual_swinging = bool(result.get('is_swinging', False))
+        if primary_algorithm == 'tst_lis' and result.get('lis_passive_swing') and not is_struggling:
+            visual_swinging = True
+
+        if visual_swinging and not is_struggling:
             color = (0, 255, 0) # 绿色
             status_text = 'Swing'
         else:
             color = (0, 0, 255) if is_struggling else (0, 255, 0)
-            primary_algorithm = result.get('primary_behavior_algorithm')
-            if primary_algorithm == 'tst_lis':
-                status_text = 'LIS Struggle' if is_struggling else 'LIS Immobile'
-            else:
-                status_text = 'Struggle' if is_struggling else 'Immobile'
+            status_text = 'Struggle' if is_struggling else 'Immobile'
             
         # 绘制轮廓
         if contour is not None and isinstance(contour, np.ndarray) and contour.size > 0:
@@ -1935,12 +1936,6 @@ def draw_results(frame, tracker_results, show_trajectory=True, show_flow_vectors
             flow_val = result.get('flow_p90', 0.0)
             ar = result.get('aspect_ratio', 0.0)
             info_lines.append(f"F:{flow_val:.1f} AR:{ar:.2f}")
-        if result.get('primary_behavior_algorithm') == 'tst_lis':
-            lis_reason = str(result.get('lis_reason') or '')
-            if result.get('lis_passive_swing'):
-                info_lines.append("LIS passive")
-            elif lis_reason:
-                info_lines.append(lis_reason[:24])
         
         # 绘制简化的信息（不使用半透明叠加，直接绘制）
         # 用轮廓顶端作为信息框锚点；若无轮廓则用 bbox 顶端

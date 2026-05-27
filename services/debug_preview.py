@@ -14,6 +14,8 @@ from open_field import OpenFieldTracker, draw_open_field_results
 from novel_object import NovelObjectTracker, draw_novel_object_results
 from elevated_plus import ElevatedPlusTracker, draw_elevated_plus_results
 from y_maze import YMazeTracker, draw_y_maze_results
+from light_dark_box import LightDarkBoxTracker, draw_light_dark_box_results
+from three_chamber import ThreeChamberTracker, draw_three_chamber_results
 from forced_swim import ForcedSwimTracker, draw_forced_swim_results
 from services.payload_geometry import (
     coerce_point_list as _coerce_point_list,
@@ -408,6 +410,151 @@ def _y_maze_debug_preview(frame, data, video_path):
         'roi_count': len(tracker_results),
     })
 
+
+def _light_dark_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    invert = data.get('bg_type', 'light') == 'dark'
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 120))
+    rois = data.get('rois') or []
+    dark_box_visible = str(data.get('dark_box_visible', True)).strip().lower() not in {'0', 'false', 'no', 'off', 'hidden', 'invisible'}
+    if not rois:
+        return jsonify({'error': 'Light-dark box preview requires at least one ROI.'}), 400
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+    morph = MorphologyProcessor(erosion_kernel=erosion_kernel, erosion_iterations=erosion_iter, dilation_kernel=dilation_kernel, dilation_iterations=dilation_iter)
+    det = MouseDetector(min_area=min_area, max_area=int(data.get('max_area', 50000)))
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tracker_results = []
+    detected_count = 0
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'LDB ROI {idx + 1} must be an object.'}), 400
+        zones = roi.get('zones') or {}
+        if not zones.get('light') or (dark_box_visible and not zones.get('dark')):
+            required = 'light and dark zones' if dark_box_visible else 'a light zone'
+            return jsonify({'error': f'LDB ROI {idx + 1} needs {required}.'}), 400
+        detection_points = None
+        if roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'LDB ROI {idx + 1}: detection mask {exc}'}), 400
+        tracker = LightDarkBoxTracker(
+            zone_polygons=zones,
+            detection_polygon=detection_points,
+            arena_width_cm=float(data.get('arena_width_cm', 40.0)),
+            arena_height_cm=float(data.get('arena_height_cm', 40.0)),
+            light_box_length_cm=float(data.get('light_box_length_cm', 40.0)),
+            light_box_width_cm=float(data.get('light_box_width_cm', 20.0)),
+            dark_box_length_cm=float(data.get('dark_box_length_cm', 40.0)),
+            dark_box_width_cm=float(data.get('dark_box_width_cm', 20.0)),
+            shared_edge_length_cm=float(data.get('shared_edge_length_cm', 40.0)),
+            fps=30.0,
+            door_open_delay_s=float(data.get('door_open_delay_s', 3.0)),
+            transition_min_dwell_s=float(data.get('transition_min_dwell_s', 0.12)),
+            doorway_reset_s=float(data.get('doorway_reset_s', 0.2)),
+            movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+            dark_box_visible=dark_box_visible,
+            roi_id=idx + 1,
+            roi_name=roi.get('name') or f'LDB {idx + 1}',
+            time_config=roi.get('time_config'),
+        )
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+    result_frame = draw_light_dark_box_results(frame, tracker_results)
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
+
+def _three_chamber_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    invert = data.get('bg_type', 'light') == 'dark'
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 120))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'Three-chamber preview requires at least one ROI.'}), 400
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'无法创建背景模型: {e}'}), 400
+    morph = MorphologyProcessor(erosion_kernel=erosion_kernel, erosion_iterations=erosion_iter, dilation_kernel=dilation_kernel, dilation_iterations=dilation_iter)
+    det = MouseDetector(min_area=min_area, max_area=int(data.get('max_area', 50000)))
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tracker_results = []
+    detected_count = 0
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'3CST ROI {idx + 1} must be an object.'}), 400
+        zones = roi.get('zones') or {}
+        if not zones.get('left') or not zones.get('center') or not zones.get('right'):
+            return jsonify({'error': f'3CST ROI {idx + 1} needs left, center, and right chambers.'}), 400
+        objects = roi.get('objects') or []
+        if len(objects) < 2:
+            return jsonify({'error': f'3CST ROI {idx + 1} needs left and right cup points.'}), 400
+        detection_points = None
+        if roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'3CST ROI {idx + 1}: detection mask {exc}'}), 400
+        tracker = ThreeChamberTracker(
+            zone_polygons=zones,
+            objects=objects,
+            detection_polygon=detection_points,
+            stimulus_exclusion_polygons=[],
+            role_schedule=roi.get('role_schedule') or data.get('role_schedule') or {},
+            protocol_segments=roi.get('protocol_segments') or data.get('protocol_segments') or [],
+            analysis_mode=data.get('analysis_mode', 'single_phase'),
+            selected_phase=data.get('selected_phase') or data.get('phase') or 'sociability',
+            arena_width_cm=float(data.get('arena_width_cm', 60.0)),
+            arena_height_cm=float(data.get('arena_height_cm', 40.0)),
+            fps=30.0,
+            interaction_radius_cm=float(data.get('interaction_radius_cm', 2.0)),
+            cup_exclusion_radius_cm=float(data.get('cup_exclusion_radius_cm', 1.5)),
+            use_head_direction=bool(data.get('use_head_direction', False)),
+            head_angle_threshold_deg=float(data.get('head_angle_threshold_deg', 60.0)),
+            head_confidence_threshold=float(data.get('head_confidence_threshold', 0.35)),
+            transition_min_dwell_s=float(data.get('transition_min_dwell_s', 0.12)),
+            center_reset_s=float(data.get('center_reset_s', 0.2)),
+            movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+            roi_id=idx + 1,
+            roi_name=roi.get('name') or f'3CST {idx + 1}',
+            time_config=roi.get('time_config'),
+        )
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+    result_frame = draw_three_chamber_results(frame, tracker_results)
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
 def _forced_swim_debug_preview(frame, data, video_path):
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))
@@ -525,6 +672,10 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         return _elevated_plus_debug_preview(frame, data, video_path)
     if experiment_type == 'y_maze':
         return _y_maze_debug_preview(frame, data, video_path)
+    if experiment_type == 'light_dark_box':
+        return _light_dark_debug_preview(frame, data, video_path)
+    if experiment_type == 'three_chamber':
+        return _three_chamber_debug_preview(frame, data, video_path)
     if experiment_type == 'forced_swim':
         return _forced_swim_debug_preview(frame, data, video_path)
 

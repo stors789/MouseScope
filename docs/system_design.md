@@ -83,7 +83,7 @@ Browser UI
 - `services/analysis_builders.py`：把前端草稿、批量配置和项目上下文归一化为 session 可执行配置，核心结构是 `per_video_configs`。
 - `services/analysis_runtime.py`：分析运行时基类和通用处理器。负责批量循环、进度更新、采样/降采样、时间基准辅助、结果登记和“0 帧完成”防护。
 - `services/analysis_sessions.py`：实验 session 的兼容导出层，保留旧引用入口。
-- `services/*_session.py`：各实验的实际分析 session，包括 `tst_session.py`、`forced_swim_session.py`、`open_field_session.py`、`novel_object_session.py`、`elevated_plus_session.py`、`y_maze_session.py`。
+- `services/*_session.py`：各实验的实际分析 session，包括 `tst_session.py`、`forced_swim_session.py`、`open_field_session.py`、`novel_object_session.py`、`elevated_plus_session.py`、`y_maze_session.py`、`light_dark_session.py`、`three_chamber_session.py`。
 - `services/debug_preview.py`：各实验调试预览入口。
 - `services/payload_geometry.py`：ROI、zone、mask 等几何 payload 归一化工具。
 - `services/session_store.py`：运行中任务存储。内存保存 session，同时把关键状态快照写入 `data/results/_work/<session_id>/session_state.json`，便于页面和 API 恢复。
@@ -94,12 +94,14 @@ Browser UI
 - `services/video_frame_reader.py`：预览帧读取。按可用性使用 PyAV、FFmpeg、OpenCV 等 fallback。
 - `services/video_export.py`：结果视频导出。优先使用 FFmpeg H.264，必要时回退 OpenCV writer。
 
+v3.2.0 的公开实验列表默认包含 TST、FST、OFT、NOR、EPM、Y-Maze 和 LDB。`three_chamber` 代码仍保留在注册表和内部实现中，但默认通过 release-hidden feature flag 隐藏；只有设置 `MOUSESCOPE_ENABLE_3CST=1` 或 `MOUSESCOPE_ENABLE_THREE_CHAMBER=1` 后才会出现在上传页、手册入口和验收 smoke 中。
+
 ### 4.4 算法层
 
-- `core/tst_lis.py`：当前 TST 主算法。基于轮廓残差、形状、外周、高频变化、周期性等特征计算不动状态。
-- `core/tst_legacy.py`：TST 旧算法兼容实现。当前默认不作为主路径，仅在配置开关启用时使用。
+- `core/tst_lis.py`：TST 可选新算法。基于轮廓残差、形状、外周、高频变化、周期性等特征计算不动状态。
+- `core/tst_legacy.py`：TST 原本算法兼容实现。当前作为默认主路径，用于稳定输出和回归对照。
 - `core/vision_tracker.py`：TST 共享视觉组件、绘制辅助和部分旧算法兼容逻辑。
-- `core/forced_swim.py`、`core/open_field.py`、`core/novel_object.py`、`core/elevated_plus.py`、`core/y_maze.py`：对应实验的区域判定、运动指标和绘制逻辑。
+- `core/forced_swim.py`、`core/open_field.py`、`core/novel_object.py`、`core/elevated_plus.py`、`core/y_maze.py`、`core/light_dark_box.py`、`core/three_chamber.py`：对应实验的区域判定、运动指标和绘制逻辑。
 - `core/maze_zone_utils.py`、`core/spatial_render.py`：迷宫/空间类实验的几何和可视化辅助。
 - `core/file_utils.py`、`core/performance_utils.py`：文件路径和性能优化辅助。
 
@@ -110,9 +112,9 @@ Browser UI
 - `templates/base.html`：全局布局、导航和公共资源入口。
 - `templates/home.html`：入口页，承载快速分析和项目工作区入口。
 - `templates/upload.html`：上传和本地路径选择。
-- `templates/calibrate.html`、`templates/calibrate_forced_swim.html`、`templates/calibrate_openfield.html`、`templates/calibrate_nor.html`、`templates/calibrate_maze.html`：单视频校准、ROI/区域设置、调试预览和启动分析。
+- `templates/calibrate.html`、`templates/calibrate_forced_swim.html`、`templates/calibrate_openfield.html`、`templates/calibrate_nor.html`、`templates/calibrate_maze.html`、`templates/calibrate_light_dark.html`、`templates/calibrate_three_chamber.html`：单视频校准、ROI/区域设置、调试预览和启动分析。
 - `templates/batch_workspace.html`：批量配置工作台。
-- `templates/monitor.html`、`templates/monitor_forced_swim.html`、`templates/monitor_openfield.html`、`templates/monitor_nor.html`、`templates/monitor_maze.html`：分析进度和结果入口。
+- `templates/monitor.html`、`templates/monitor_forced_swim.html`、`templates/monitor_openfield.html`、`templates/monitor_nor.html`、`templates/monitor_maze.html`、`templates/monitor_light_dark.html`、`templates/monitor_three_chamber.html`：分析进度和结果入口。
 - `templates/tasks.html`：任务和历史记录。
 - `templates/projects.html`、`templates/project_home.html`：项目工作区页面。
 - `static/js/`：页面交互、国际化、项目工作区、批量配置和引导逻辑。
@@ -171,6 +173,8 @@ Browser UI
 - OFT 需要场地区域和中心区参数。
 - NOR 需要场地 ROI、两个物体 ROI 和对象尺寸。
 - EPM/Y-Maze 需要对应臂区/区域配置。
+- LDB 暗箱可见时需要明室、暗室和可选门洞区；暗箱不可见时只要求明室，门洞区仍可选，用于排除门口探头和门缝误检。
+- 3CST 需要左/中/右三室、两侧杯点、phase/role 配置；完整 protocol 模式还需要时间轴片段。v3.2.0 默认不公开该模块，内部测试需开启 `MOUSESCOPE_ENABLE_3CST=1` 或 `MOUSESCOPE_ENABLE_THREE_CHAMBER=1`。
 
 ## 7. 项目工作区流程
 
@@ -219,11 +223,11 @@ session 是快速分析和项目分析之间的核心桥梁。常见字段包括
 
 TST 是当前变化最多的模块，真实实现状态如下：
 
-- 默认主算法是 LIS 路径：`use_tst_lis_primary=True`。
-- 旧算法默认不作为主路径：`use_tst_legacy_primary=False`。
+- 默认主算法是原本路径：`use_tst_lis_primary=False`，`use_tst_legacy_primary=True`。
+- LIS / 微小挣扎优化路径只在调参页打开“使用新算法”后作为主路径。
 - `services/tst_session.py` 负责 TST 视频循环、特征计算、状态平滑、CSV/JSON 写出和结果视频生成。
-- `core/tst_lis.py` 是当前主要识别逻辑，使用多类特征综合判定不动状态。
-- `core/tst_legacy.py` 保留旧版背景差分/阈值逻辑，用于兼容和回归对照。
+- `core/tst_legacy.py` 是当前默认识别逻辑，保留旧版背景差分/阈值逻辑，用于稳定输出和回归对照。
+- `core/tst_lis.py` 是可选新算法，使用多类特征综合判定不动状态。
 - 自动行为阈值相关逻辑仅适用于 legacy 路径，LIS 主路径不依赖该阈值作为核心判定。
 - 结果视频采用最终标签回填绘制，避免在线状态抖动导致导出视频和最终 CSV 不一致。
 

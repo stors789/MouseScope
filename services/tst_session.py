@@ -306,6 +306,55 @@ class VisionAnalysisSession(AnalysisSessionBase):
         log_entry['lis_available'] = bool(tst_lis.get('tst_lis_available', False))
         return log_entry
 
+    @staticmethod
+    def _tst_lis_realtime_row_from_result(result, *, pending=False):
+        flow = result.get('flow') or {}
+        row = {
+            'roi_id': result.get('roi_id'),
+            'roi_name': result.get('roi_name', ''),
+            'behavior_algorithm': 'tst_lis',
+            'flow_value': flow.get('flow_p90_mm_s', result.get('flow_p90', 0)) if isinstance(flow, dict) else result.get('flow_p90', 0),
+            'state_pending': bool(pending),
+        }
+        if pending:
+            row['is_struggling'] = None
+            row['state_phase'] = 'feature_extraction'
+        else:
+            row['is_struggling'] = bool(result.get('is_struggling', False))
+            row['state_phase'] = 'final_label'
+        if result.get('lis_reason') is not None:
+            row['lis_reason'] = result.get('lis_reason')
+        if result.get('lis_confidence') is not None:
+            row['lis_confidence'] = result.get('lis_confidence')
+        return row
+
+    @staticmethod
+    def _tst_lis_realtime_row_from_log(row):
+        return {
+            'roi_id': row.get('roi_id'),
+            'roi_name': row.get('roi_name', ''),
+            'is_struggling': bool(row.get('is_struggling', False)),
+            'behavior_algorithm': 'tst_lis',
+            'flow_value': row.get('flow_p90_mm_s', row.get('decision_flow_p90_mm_s', 0)),
+            'state_pending': False,
+            'state_phase': 'final_label',
+            'lis_reason': row.get('lis_reason'),
+            'lis_confidence': row.get('lis_confidence'),
+        }
+
+    def _set_tst_lis_realtime_from_logs(self, logs):
+        latest_by_roi = {}
+        for row in logs or []:
+            try:
+                roi_id = int(row.get('roi_id'))
+            except Exception:
+                continue
+            latest_by_roi[roi_id] = row
+        self.realtime_data = [
+            self._tst_lis_realtime_row_from_log(row)
+            for _, row in sorted(latest_by_roi.items(), key=lambda item: item[0])
+        ]
+
     def _render_tst_lis_final_video(
         self,
         *,
@@ -386,6 +435,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
                 gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
                 begin_frame_cache(processors[0], current_frame_no)
                 results = []
+                realtime_rows = []
                 for tracker in trackers:
                     result = tracker.update(analysis_frame, current_time=current_time, gray=gray, dt_s=current_dt)
                     row = row_by_key.get((current_frame_no, int(result.get('roi_id', 0))))
@@ -398,6 +448,8 @@ class VisionAnalysisSession(AnalysisSessionBase):
                         result['lis_reason'] = row.get('lis_reason')
                         result['lis_confidence'] = row.get('lis_confidence')
                         result['lis_passive_swing'] = self._bool_log_value(row.get('lis_passive_swing'), False)
+                        if result.get('detected'):
+                            realtime_rows.append(self._tst_lis_realtime_row_from_result(result, pending=False))
                     results.append(result)
                 previous_analyzed_frame = current_frame_no
 
@@ -414,6 +466,8 @@ class VisionAnalysisSession(AnalysisSessionBase):
                         0.65 + 0.25 * fraction,
                         f'微小挣扎优化逻辑渲染最终视频 {source_frames_done}/{frames_to_process} ({{progress}}%)',
                     )
+                if frame_idx % 50 == 0 and realtime_rows:
+                    self.realtime_data = realtime_rows
                 if frame_idx % 10 == 0:
                     self.current_frame = analysis_frame
         finally:
@@ -510,7 +564,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
             raise ValueError("No valid ROI configuration.")
 
         if bool(vision_config.get('auto_behavior_threshold', False)):
-            self._log("当前默认逻辑使用按 ROI 自适应阈值；原本逻辑的自动阈值扫描已跳过。")
+            self._log("新算法使用按 ROI 自适应阈值；原本逻辑的自动阈值扫描已跳过。")
         processors = self._build_processors(video_path, vision_config, sampling)
         trackers = self._build_tst_lis_trackers(
             roi_configs,
@@ -590,13 +644,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
                 self.realtime_data = []
                 for result in results:
                     if result.get('detected'):
-                        self.realtime_data.append({
-                            'roi_id': result['roi_id'],
-                            'roi_name': result.get('roi_name', ''),
-                            'is_struggling': bool(result.get('is_struggling', False)),
-                            'behavior_algorithm': 'tst_lis',
-                            'flow_value': result.get('flow', {}).get('flow_p90_mm_s', 0) if result.get('flow') else 0,
-                        })
+                        self.realtime_data.append(self._tst_lis_realtime_row_from_result(result, pending=True))
 
             frame_idx += 1
             skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
@@ -634,9 +682,10 @@ class VisionAnalysisSession(AnalysisSessionBase):
 
         lis_cfg = self._build_tst_lis_config(vision_config)
         thresholds_by_roi = apply_tst_lis_labels(logs, fps=analysis_fps, config=lis_cfg)
+        self._set_tst_lis_realtime_from_logs(logs)
         for roi_id, thresholds in thresholds_by_roi.items():
             self._log(
-                f"ROI {roi_id} 默认逻辑阈值: "
+                f"ROI {roi_id} 新算法阈值: "
                 f"residual {thresholds.get('residual_low', 0):.4f}/{thresholds.get('residual_high', 0):.4f}, "
                 f"peripheral high {thresholds.get('peripheral_high', 0):.4f}, "
                 f"shape high {thresholds.get('shape_high', 0):.4f}"
@@ -763,7 +812,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         vision_config = self._config_for_video(video_index)
         use_tst_lis_primary = (
             not bool(vision_config.get('use_tst_legacy_primary', False))
-            and bool(vision_config.get('use_tst_lis_primary', True))
+            and bool(vision_config.get('use_tst_lis_primary', False))
         )
         if use_tst_lis_primary:
             return self._analyze_single_video_lis(video_path, video_info, batch_index=batch_index, video_start_time=video_start_time)

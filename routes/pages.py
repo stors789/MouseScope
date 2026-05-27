@@ -7,7 +7,13 @@ from pathlib import Path
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
-from services.experiment_registry import get_experiment_spec, normalize_experiment_type, summarize_batch_state
+from services.experiment_registry import (
+    get_experiment_spec,
+    is_experiment_release_hidden,
+    is_three_chamber_enabled,
+    normalize_experiment_type,
+    summarize_batch_state,
+)
 
 
 def register_page_routes(app, ctx) -> None:
@@ -97,22 +103,25 @@ def register_page_routes(app, ctx) -> None:
     @app.route('/upload')
     def upload_page():
         """上传视频页面"""
-        return render_template('upload.html')
+        return render_template('upload.html', enable_three_chamber=is_three_chamber_enabled())
 
 
     @app.route('/tasks')
     def tasks_page():
         """Task center."""
-        return render_template('tasks.html')
+        return render_template('tasks.html', enable_three_chamber=is_three_chamber_enabled())
 
 
     @app.route('/manual')
     def manual():
         """使用手册"""
         manual_type = request.args.get('module', 'tst').strip().lower()
-        if manual_type not in {'tst', 'fst', 'oft', 'nor', 'epm', 'ymaze'}:
+        manual_modules = {'tst', 'fst', 'oft', 'nor', 'epm', 'ymaze', 'ldb'}
+        if is_three_chamber_enabled():
+            manual_modules.add('three_chamber')
+        if manual_type not in manual_modules:
             manual_type = 'tst'
-        return render_template('manual.html', manual_type=manual_type)
+        return render_template('manual.html', manual_type=manual_type, enable_three_chamber=is_three_chamber_enabled())
 
 
     @app.route('/manual/open_field')
@@ -222,7 +231,10 @@ def register_page_routes(app, ctx) -> None:
         session_id = secrets.token_hex(16)
         uploaded_files = request.files.getlist('videos')
         local_paths_raw = request.form.get('local_paths', '').strip()
-        experiment_type = normalize_experiment_type(request.form.get('experiment_type', 'tst'))
+        requested_experiment_type = request.form.get('experiment_type', 'tst')
+        if is_experiment_release_hidden(requested_experiment_type):
+            return upload_error('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 403)
+        experiment_type = normalize_experiment_type(requested_experiment_type)
         output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
         fps_override_raw = request.form.get('fps_override', '').strip()
 
@@ -337,6 +349,9 @@ def register_page_routes(app, ctx) -> None:
         if not sess:
             flash('会话不存在或已过期，请重新上传', 'error')
             return redirect(url_for('index'))
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            return redirect(url_for('upload_page'))
 
         total_videos = len(sess.get('video_infos') or [])
         if total_videos <= 0:
@@ -386,6 +401,9 @@ def register_page_routes(app, ctx) -> None:
             return redirect(url_for('index'))
         if not sess.get('is_batch'):
             return redirect(url_for('calibrate', session_id=session_id))
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            return redirect(url_for('upload_page'))
         spec = get_experiment_spec(sess.get('experiment_type'))
         cards = summarize_batch_state(
             sess.get('experiment_type'),
@@ -443,6 +461,9 @@ def register_page_routes(app, ctx) -> None:
         if not sess:
             flash('Session expired. Please start again.', 'error')
             return redirect(url_for('index'))
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            return redirect(url_for('upload_page'))
         spec = get_experiment_spec(sess.get('experiment_type'))
         return render_template(
             spec.monitor_template,

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}3CST Monitor - MouseScope{% endblock %}
+{% block extra_css %}
+<style>
+.monitor { max-width:1480px; margin:0 auto; }
+.head { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+.grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(320px,.85fr); gap:1rem; align-items:start; }
+.cardx { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.2rem; }
+.metric-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.9rem; }
+.metric-box { background:var(--bg-page); border:1px solid var(--border-card); border-radius:16px; padding:1rem; }
+.metric-label { color:var(--text-muted); font-size:.85rem; }
+.metric-value { color:var(--text-primary); font-size:1.35rem; font-weight:700; margin-top:.2rem; }
+.roi-table-wrap { overflow-x:auto; }
+.roi-table { width:100%; border-collapse:collapse; }
+.roi-table th,.roi-table td { padding:.82rem .72rem; border-bottom:1px solid var(--border-card); white-space:nowrap; }
+.roi-table th { color:var(--text-muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; }
+.zone-pill { display:inline-flex; align-items:center; justify-content:center; min-width:82px; padding:.28rem .7rem; border-radius:999px; font-size:.82rem; font-weight:700; background:rgba(148,163,184,.15); color:#475569; }
+.zone-pill.left { background:rgba(59,130,246,.13); color:#1d4ed8; }
+.zone-pill.center { background:rgba(34,197,94,.13); color:#15803d; }
+.zone-pill.right { background:rgba(249,115,22,.14); color:#c2410c; }
+.log-box { background:#0f172a; color:#e2e8f0; border-radius:16px; padding:1rem; font-family:Consolas,Monaco,monospace; font-size:.85rem; min-height:220px; max-height:420px; overflow-y:auto; }
+.download-grid { display:flex; gap:.7rem; flex-wrap:wrap; }
+@media(max-width:1180px){.grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="monitor">
+    <div class="head">
+        <div><h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">三箱社交实时监控</h1><div class="text-secondary" data-page-i18n="header.subtitle">实时显示当前阶段、chamber、社交性指数和社交新奇指数。</div></div>
+        <div class="d-flex gap-2 flex-wrap"><button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i class="fas fa-stop me-2"></i><span data-page-i18n="btn.stop">停止分析</span></button><button class="btn btn-outline-primary" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新</span></button></div>
+    </div>
+    <div class="grid">
+        <div class="d-grid gap-3">
+            <div class="cardx"><div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3"><div><h5 class="mb-1" data-page-i18n="status.title">处理状态</h5><div class="text-secondary" id="messageText" data-page-i18n="status.wait_engine">等待引擎响应...</div></div><div class="text-end"><div class="metric-label" data-page-i18n="status.label">状态</div><div class="metric-value" id="statusText" data-page-i18n="status.waiting">等待中</div></div></div><div class="progress mb-2" style="height:14px;"><div class="progress-bar" id="progressBar" style="width:0%">0%</div></div><div class="text-secondary small"><span data-page-i18n="status.progress">完成进度</span> <span id="progressText">0%</span></div></div>
+            <div class="cardx"><h5 class="mb-3" data-page-i18n="overview.title">会话概览</h5><div class="metric-grid"><div class="metric-box"><div class="metric-label" data-page-i18n="metric.frames">已处理帧</div><div class="metric-value" id="processedFrames">0</div></div><div class="metric-box"><div class="metric-label" data-page-i18n="metric.elapsed">运行时间</div><div class="metric-value" id="elapsedTime">0s</div></div><div class="metric-box"><div class="metric-label" data-page-i18n="metric.speed">处理速度</div><div class="metric-value" id="processingSpeed">0</div></div><div class="metric-box"><div class="metric-label">Sociability</div><div class="metric-value" id="socMetric">-</div></div><div class="metric-box"><div class="metric-label">Novelty</div><div class="metric-value" id="novMetric">-</div></div></div></div>
+            <div class="cardx"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><h5 class="mb-0" data-page-i18n="table.title">ROI 实时结果</h5><span class="text-secondary small" data-page-i18n="table.note">显示当前阶段、区域、速度、距离和偏好指数。</span></div><div class="roi-table-wrap"><table class="roi-table"><thead><tr><th>ROI</th><th data-page-i18n="table.phase">阶段</th><th data-page-i18n="table.zone">区域</th><th data-page-i18n="table.speed">速度</th><th data-page-i18n="table.distance">距离</th><th data-page-i18n="table.transitions">转换</th><th>Sociability</th><th>Novelty</th><th data-page-i18n="table.stats_status">统计状态</th></tr></thead><tbody id="roiTableBody"><tr><td colspan="9" class="text-secondary" data-page-i18n="table.waiting">等待结果...</td></tr></tbody></table></div></div>
+            <div class="cardx" id="downloadSection" style="display:none;"><h5 class="mb-3" data-page-i18n="download.title">结果下载</h5><div class="download-grid"><button type="button" class="btn btn-success" onclick="openResultFolder()"><i class="fas fa-folder-open me-2"></i><span data-page-i18n="download.open_folder">打开结果目录</span></button><a href="#" id="downloadAllBtn" class="btn btn-outline-primary"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a><a href="#" id="dlVideo" class="btn btn-outline-primary" data-page-i18n="download.video">标注视频</a><a href="#" id="dlTrack" class="btn btn-outline-primary" data-page-i18n="download.track">轨迹 CSV</a><a href="#" id="dlSummary" class="btn btn-outline-primary" data-page-i18n="download.protocol_summary">Protocol 汇总</a><a href="#" id="dlPhaseSummary" class="btn btn-outline-primary" data-page-i18n="download.phase_summary">阶段汇总</a><a href="#" id="dlBins" class="btn btn-outline-primary" data-page-i18n="download.bins">分箱 CSV</a><a href="#" id="dlReport" class="btn btn-outline-primary" data-page-i18n="download.report">TXT 报告</a><a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-page-i18n="download.heatmap">热图</a><a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-page-i18n="download.trackmap">轨迹图</a></div><div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;"><span data-page-i18n="download.saved_at">保存位置:</span> <code id="resultPathText"></code></div></div>
+        </div>
+        <div class="d-grid gap-3"><div class="cardx"><h5 class="mb-3" data-page-i18n="log.title">日志</h5><div id="logBox" class="log-box">$ 等待日志输出...</div></div></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const sessionId='{{ session_id }}'; let updateInterval=null; let lastRows=[]; let lastLogs=[]; let lastStatus='waiting';
+const PAGE_I18N = {
+    zh: {
+        'header.title':'三箱社交实时监控',
+        'header.subtitle':'实时显示当前阶段、chamber、社交性指数和社交新奇指数。',
+        'btn.stop':'停止分析',
+        'btn.refresh':'刷新',
+        'status.title':'处理状态',
+        'status.wait_engine':'等待引擎响应...',
+        'status.label':'状态',
+        'status.progress':'完成进度',
+        'status.waiting':'等待中',
+        'overview.title':'会话概览',
+        'metric.frames':'已处理帧',
+        'metric.elapsed':'运行时间',
+        'metric.speed':'处理速度',
+        'table.title':'ROI 实时结果',
+        'table.note':'显示当前阶段、区域、速度、距离和偏好指数。',
+        'table.phase':'阶段',
+        'table.zone':'区域',
+        'table.speed':'速度',
+        'table.distance':'距离',
+        'table.transitions':'转换',
+        'table.stats_status':'统计状态',
+        'table.waiting':'等待结果...',
+        'download.title':'结果下载',
+        'download.open_folder':'打开结果目录',
+        'download.all':'全部下载',
+        'download.video':'标注视频',
+        'download.track':'轨迹 CSV',
+        'download.protocol_summary':'Protocol 汇总',
+        'download.phase_summary':'阶段汇总',
+        'download.bins':'分箱 CSV',
+        'download.report':'TXT 报告',
+        'download.heatmap':'热图',
+        'download.trackmap':'轨迹图',
+        'download.saved_at':'保存位置:',
+        'log.title':'日志',
+        'status.analyzing':'分析中',
+        'status.completed':'已完成',
+        'status.error':'错误',
+        'status.stopped':'已停止',
+        'status.invalid':'会话失效',
+        'phase.habituation_center':'中心室适应',
+        'phase.habituation_all':'三室适应',
+        'phase.sociability':'Sociability 社交性',
+        'phase.social_novelty':'Social novelty 社交新奇',
+        'phase.ignore':'空白/忽略',
+        'zone.left':'左室',
+        'zone.center':'中室',
+        'zone.right':'右室',
+        'zone.unknown':'Unknown',
+        'stats.in':'统计中',
+        'stats.out':'空白/窗口外',
+        'log.wait':'$ 等待日志输出...',
+        'stop.sent':'已发送停止命令',
+        'folder.error':'打开结果目录失败',
+    },
+    en: {
+        'header.title':'Three-Chamber Social Test Monitor',
+        'header.subtitle':'Live view of current phase, chamber, sociability index, and social novelty index.',
+        'btn.stop':'Stop Analysis',
+        'btn.refresh':'Refresh',
+        'status.title':'Processing Status',
+        'status.wait_engine':'Waiting for engine response...',
+        'status.label':'Status',
+        'status.progress':'Progress',
+        'status.waiting':'Waiting',
+        'overview.title':'Session Overview',
+        'metric.frames':'Processed Frames',
+        'metric.elapsed':'Elapsed Time',
+        'metric.speed':'Processing Speed',
+        'table.title':'Live ROI Results',
+        'table.note':'Shows current phase, zone, speed, distance, and preference indices.',
+        'table.phase':'Phase',
+        'table.zone':'Zone',
+        'table.speed':'Speed',
+        'table.distance':'Distance',
+        'table.transitions':'Transitions',
+        'table.stats_status':'Stats Status',
+        'table.waiting':'Waiting for results...',
+        'download.title':'Downloads',
+        'download.open_folder':'Open Result Folder',
+        'download.all':'Download All',
+        'download.video':'Annotated Video',
+        'download.track':'Track CSV',
+        'download.protocol_summary':'Protocol Summary',
+        'download.phase_summary':'Phase Summary',
+        'download.bins':'Bins CSV',
+        'download.report':'TXT Report',
+        'download.heatmap':'Heatmap',
+        'download.trackmap':'Trackmap',
+        'download.saved_at':'Saved at:',
+        'log.title':'Logs',
+        'status.analyzing':'Analyzing',
+        'status.completed':'Completed',
+        'status.error':'Error',
+        'status.stopped':'Stopped',
+        'status.invalid':'Session invalid',
+        'phase.habituation_center':'Center habituation',
+        'phase.habituation_all':'All-chamber habituation',
+        'phase.sociability':'Sociability',
+        'phase.social_novelty':'Social novelty',
+        'phase.ignore':'Gap / ignored',
+        'zone.left':'Left',
+        'zone.center':'Center',
+        'zone.right':'Right',
+        'zone.unknown':'Unknown',
+        'stats.in':'In stats window',
+        'stats.out':'Gap / outside window',
+        'log.wait':'$ Waiting for logs...',
+        'stop.sent':'Stop command sent',
+        'folder.error':'Failed to open result folder',
+    }
+};
+function lang(){ return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh'); }
+function tr(key, fallback){ return ((PAGE_I18N[lang()] || {})[key]) || fallback || key; }
+function escapeHtml(text){return String(text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function statusText(s){return {waiting:tr('status.waiting','等待中'),analyzing:tr('status.analyzing','分析中'),completed:tr('status.completed','已完成'),error:tr('status.error','错误'),stopped:tr('status.stopped','已停止')}[s]||s;}
+function zoneClass(z){const v=String(z||'').toLowerCase(); if(v.includes('left'))return'left'; if(v.includes('center'))return'center'; if(v.includes('right'))return'right'; return'unknown';}
+function zoneText(z){const cls=zoneClass(z); return cls==='unknown' ? (z||tr('zone.unknown','Unknown')) : tr('zone.'+cls, z);}
+function phaseText(p){return tr('phase.'+String(p||'').toLowerCase(), p || '-');}
+function fmtIndex(value){return value===null||value===undefined||value===''?'-':Number(value).toFixed(3);}
+function updateStatus(){fetch(`/api/status/${sessionId}`).then(r=>{if(!r.ok)throw new Error('session');return r.json();}).then(data=>{lastStatus=data.status;document.getElementById('statusText').textContent=statusText(data.status);document.getElementById('messageText').textContent=data.message||'-';document.getElementById('progressBar').style.width=`${data.progress||0}%`;document.getElementById('progressBar').textContent=`${data.progress||0}%`;document.getElementById('progressText').textContent=`${data.progress||0}%`;const stats=data.stats||{};document.getElementById('processedFrames').textContent=stats.processed_frames||0;document.getElementById('elapsedTime').textContent=`${(stats.elapsed_time||0).toFixed(1)}s`;document.getElementById('processingSpeed').textContent=(stats.fps||0).toFixed(1);const rows=data.realtime_data||[];const exp=data.experiment_stats||{};lastRows=rows;lastLogs=data.logs||[];document.getElementById('socMetric').textContent=fmtIndex(exp.mean_sociability_index);document.getElementById('novMetric').textContent=fmtIndex(exp.mean_social_novelty_index);renderTable(rows);renderLogs(lastLogs);if(data.status==='completed'){showDownloads();clearInterval(updateInterval);updateInterval=null;fetchResultDir();document.getElementById('stopBtn').style.display='none';}if(data.status==='error'||data.status==='stopped'){clearInterval(updateInterval);updateInterval=null;document.getElementById('stopBtn').style.display='none';}}).catch(()=>{clearInterval(updateInterval);updateInterval=null;lastStatus='invalid';document.getElementById('statusText').textContent=tr('status.invalid','会话失效');document.getElementById('stopBtn').style.display='none';});}
+function renderTable(rows){const body=document.getElementById('roiTableBody');if(!rows.length){body.innerHTML=`<tr><td colspan="9" class="text-secondary">${tr('table.waiting','等待结果...')}</td></tr>`;return;}body.innerHTML=rows.map(row=>`<tr><td><strong>${escapeHtml(row.roi_name||('ROI '+row.roi_id))}</strong></td><td>${escapeHtml(phaseText(row.phase))}</td><td><span class="zone-pill ${zoneClass(row.zone)}">${escapeHtml(zoneText(row.zone))}</span></td><td>${Number(row.speed_cm_s||0).toFixed(2)} cm/s</td><td>${Number(row.distance_cm||0).toFixed(1)} cm</td><td>${row.total_transitions||0}</td><td>${fmtIndex(row.sociability_index)}</td><td>${fmtIndex(row.social_novelty_index)}</td><td>${row.in_stats_window===false?tr('stats.out','空白/窗口外'):tr('stats.in','统计中')}</td></tr>`).join('');}
+function renderLogs(logs){const box=document.getElementById('logBox');if(!logs.length){box.textContent=tr('log.wait','$ 等待日志输出...');return;}box.innerHTML=logs.map(log=>`<div style="color:${/error|failed|失败/i.test(log)?'#f87171':'#e2e8f0'}; margin-bottom:.35rem;">$ ${escapeHtml(log)}</div>`).join('');box.scrollTop=box.scrollHeight;}
+function showDownloads(){document.getElementById('downloadSection').style.display='block';document.getElementById('downloadAllBtn').href=`/api/download_all/${sessionId}`;document.getElementById('dlVideo').href=`/api/download/${sessionId}/video`;document.getElementById('dlTrack').href=`/api/download/${sessionId}/track_csv`;document.getElementById('dlSummary').href=`/api/download/${sessionId}/summary_csv`;document.getElementById('dlPhaseSummary').href=`/api/download/${sessionId}/phase_summary_csv`;document.getElementById('dlBins').href=`/api/download/${sessionId}/bins_csv`;document.getElementById('dlReport').href=`/api/download/${sessionId}/report`;document.getElementById('dlHeatmap').href=`/api/download/${sessionId}/heatmap`;document.getElementById('dlTrackmap').href=`/api/download/${sessionId}/trackmap`;}
+function stopAnalysis(){fetch(`/api/stop/${sessionId}`,{method:'POST'}).then(r=>r.json()).then(data=>alert(data.message||tr('stop.sent','已发送停止命令')));}
+function openResultFolder(){fetch(`/api/open_folder/${sessionId}`,{method:'POST'}).then(r=>r.json()).then(data=>{if(!data.success)alert(data.error||tr('folder.error','打开结果目录失败'));});}
+function fetchResultDir(){fetch(`/api/result_dir/${sessionId}`).then(r=>r.json()).then(data=>{if(data.path){document.getElementById('resultPathInfo').style.display='block';document.getElementById('resultPathText').textContent=data.path;}});}
+function applyMonitorI18n(){ if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N); document.getElementById('statusText').textContent=lastStatus==='invalid'?tr('status.invalid','会话失效'):statusText(lastStatus); renderTable(lastRows); renderLogs(lastLogs); updateStatus(); }
+document.addEventListener('mousescope:langchange', applyMonitorI18n);
+applyMonitorI18n(); updateInterval=setInterval(updateStatus,1000);
+</script>
+{% endblock %}

@@ -10,6 +10,11 @@ from services.forced_swim_session import (
 from services.novel_object_session import NovelObjectMultiArenaAnalysisSession
 from services.elevated_plus_session import ElevatedPlusMultiArenaAnalysisSession
 from services.y_maze_session import YMazeMultiArenaAnalysisSession
+from services.light_dark_session import LightDarkBoxMultiArenaAnalysisSession
+from services.three_chamber_session import (
+    ThreeChamberMultiArenaAnalysisSession,
+    ThreeChamberSocialAnalysisSession,
+)
 
 __all__ = [
     'configure_analysis_runtime',
@@ -20,4 +25,7 @@ __all__ = [
     'NovelObjectMultiArenaAnalysisSession',
     'ElevatedPlusMultiArenaAnalysisSession',
     'YMazeMultiArenaAnalysisSession',
+    'LightDarkBoxMultiArenaAnalysisSession',
+    'ThreeChamberSocialAnalysisSession',
+    'ThreeChamberMultiArenaAnalysisSession',
 ]

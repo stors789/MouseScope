@@ -271,7 +271,7 @@
 
     function calibrationNavStep(moduleName, stepTextZh, stepTextEn) {
         return tourStep(
-            '.calibration-steps, .fst-steps, .oft-steps, .nor-steps, .maze-steps',
+            '.calibration-steps, .fst-steps, .oft-steps, .nor-steps, .maze-steps, .steps',
             `${moduleName} 流程`,
             stepTextZh,
             `${moduleName} Workflow`,
@@ -304,6 +304,38 @@
         const inDebug = !!visibleElement('#debug-step, #step2');
         const inRoi = !!visibleElement('#roi-step');
 
+        if (module === 'light_dark_box') {
+            if (inDebug) {
+                return [
+                    calibrationNavStep('LDB', '当前是第 2 步：调检测、检查预览，并确认真正参与统计的时间规则。', 'This is step 2: tune detection, inspect preview, and confirm timing rules used for metrics.'),
+                    tourStep('[data-tour-id="ldb-action-bar"]', '调参操作区', '这里可以返回标定、刷新当前帧预览，或在确认 ROI 和参数后开始分析。批量单视频编辑模式下，“开始”会保存当前视频配置并返回批次页。', 'Tuning Actions', 'Go back to ROI drawing, refresh the current-frame preview, or start after checking ROI and parameters. In batch single-video edit mode, Start saves this video setup and returns to the batch page.'),
+                    tourStep('[data-tour-id="ldb-preview-frame"]', '预览帧', '拖动这里选择用于调参的帧。建议看几帧明室、暗室和门口附近的画面，尤其检查黑门缝是否被误检。', 'Preview Frame', 'Drag this to choose the frame used for tuning. Check frames in the light chamber, dark chamber, and passage area, especially whether dark door seams are falsely detected.'),
+                    tourStep('[data-tour-id="ldb-preview-grid"]', '预览画面', '左侧是原始帧，右侧会叠加鼠体检测结果、明室、暗室和可选门区。理想状态是鼠体轮廓稳定，门缝或黑边不被识别成鼠体。', 'Preview Canvases', 'The left side is the original frame; the right side overlays mouse detection plus light, dark, and optional doorway zones. Aim for a stable body contour without door seams or dark edges being detected as the animal.'),
+                    tourStep('[data-tour-id="ldb-detection-params"]', '检测参数', '这些参数只负责把鼠体从背景中分出来。先选对背景类型，再调灰度阈值和最小面积；如果右侧轮廓断裂、粘住箱壁或漏检，优先在这里处理。', 'Detection Parameters', 'These settings only segment the animal from the background. Choose the correct background type, then tune gray threshold and minimum area. Use this section when the contour breaks, sticks to walls, or misses the animal.'),
+                    tourStep('[data-tour-id="ldb-core-stats"]', '核心统计参数', '这一栏会影响明暗箱的事件和时间统计：什么时候开始算、一次转换怎样才成立，以及 bins 文件按多长时间切片。暗箱不可见模式下，转换由“明室可见/不可见”的稳定变化推断。', 'Core Statistics', 'This section affects LDB timing and events: when counting starts, when a transition is accepted, and how long each bin is in the binned output. In invisible-dark mode, transitions are inferred from stable visible/not-visible changes in the light chamber.'),
+                    tourStep('[data-tour-id="ldb-door-delay"]', '开门延迟', '如果视频开头包含放鼠、开门、手还在画面里，填这里会从统计起点跳过这段秒数。它会影响首次入明室潜伏期和开头几秒的进入/转换事件；如果视频已经从正式实验开始，可设为 0。', 'Door-Open Delay', 'Use this when the video starts with placing the mouse, opening the door, or a hand still in frame. Those seconds are skipped from the metric start, affecting first-light latency and early entry/transition events. Set 0 if the video already starts at the formal trial.'),
+                    tourStep('[data-tour-id="ldb-transition-dwell"]', '转换稳定时间', '这是主要防抖参数：小鼠进入新主室后，需要连续稳定停留这么久才算转换。即使不画门区，也会用这个规则避免门口来回抖动被算成很多次。', 'Transition Dwell', 'This is the main debounce setting: after entering a new main chamber, the animal must remain there for this long before a transition is accepted. It works even when no doorway is drawn.'),
+                    tourStep('[data-tour-id="ldb-doorway-reset"]', '门区重置', '门区现在更像可选的门缝/边界忽略带。默认检测会避开门区，适合门口很黑、阈值容易识别门缝的情况；如果小鼠在门区附近停留超过这个时间，会重置候选转换。', 'Doorway Reset', 'Doorway now acts more like an optional door-seam/boundary ignore band. Default detection excludes it, which helps when a dark passage seam is falsely segmented; lingering there longer than this value resets the pending transition.'),
+                    tourStep('[data-tour-id="ldb-bin-seconds"]', '分箱时长', '只影响按时间分段导出的 bins 文件，例如每 60 秒汇总一次明室时间、暗室时间和转换次数；不改变整段实验的总指标。', 'Bin Length', 'This only affects the time-binned output, for example summarizing light time, dark time, and transitions every 60 seconds. It does not change whole-session totals.'),
+                    tourStep('[data-tour-id="ldb-aux-scale"]', '箱体尺寸（辅助）', '这里分别填写明箱和暗箱的真实长、宽。长宽只用于距离、速度、移动时间和规整轨迹图比例，不影响明暗室时间、进入次数、转换次数或首次入明室潜伏期。', 'Chamber Size (Auxiliary)', 'Enter the real length and width for the light and dark chambers separately. These values only affect distance, speed, movement time, and rectified trajectory-map scale; they do not affect core LDB metrics.'),
+                    tourStep('[data-tour-id="ldb-shared-edge"]', '两箱重合边', '填写明箱和暗箱贴在一起的那条公共边实际重合长度。它不是门洞宽度，也不是画面 x/y 方向；系统会结合你画的两个 ROI 中最靠近的边，自动判断轨迹图应该横向拼接还是纵向拼接。', 'Shared Edge', 'Enter the real overlap length of the side where the light and dark boxes touch. This is not the doorway width or image x/y size; MouseScope combines it with the closest ROI edges to infer horizontal or vertical layout for the trajectory map.'),
+                    tourStep('[data-tour-id="ldb-movement-threshold"]', '运动阈值（辅助）', '这个阈值只用于判断移动/低活动时间等辅助 QC 字段，不是明暗箱焦虑/探索核心指标。只需要在你关心运动学字段时认真校准。', 'Movement Threshold (Auxiliary)', 'This threshold only labels moving or low-activity time for auxiliary QC fields. It is not a core anxiety/exploration metric for LDB. Tune it carefully only when those motion fields matter.'),
+                    tourStep('#primaryActionBtn', '开始分析', '确认预览、ROI 和这些参数后，从这里启动分析；项目或批量编辑场景会先保存配置。', 'Start Analysis', 'After checking preview, ROI, and parameters, start analysis here. Project or batch-edit contexts save the setup first.')
+                ];
+            }
+            return [
+                calibrationNavStep('LDB', '明暗箱分两步：先画每个箱体的明室、暗室和可选门缝忽略带，再进入调参页确认检测与统计规则。', 'LDB has two steps: draw light, dark, and optional door-seam ignore zones for each box, then tune detection and statistics.'),
+                tourStep('[data-tour-id="ldb-core-note"]', '先理解统计边界', 'LDB 核心指标主要依赖明室、暗室和时间窗；转换防抖由稳定停留时间完成，不必须画门区。门区只在门口黑线/门缝误检时作为可选忽略带。', 'Core Metric Boundary', 'Core LDB metrics mainly depend on light/dark zones and timing windows; transition debounce is handled by stable dwell time and does not require doorway. Doorway is optional and useful as an ignore band for door-seam false positives.'),
+                tourStep('[data-tour-id="ldb-dark-visibility"]', '暗箱是否可见', '如果暗箱透明、能在暗室内追踪小鼠，选“可见”并画明室和暗室；如果暗箱不透明、暗室内看不到小鼠，选“不可见”，只画明室，系统用“明室内是否看见小鼠”推断明/暗时间，并关闭轨迹、热图、速度和距离输出。', 'Dark-Chamber Visibility', 'Choose Visible when the animal can be tracked inside the dark chamber, then draw both light and dark zones. Choose Invisible for opaque dark boxes: draw only the light chamber, infer light/dark time from whether the mouse is visible in light, and disable trajectory, heatmap, speed, and distance outputs.'),
+                tourStep('[data-tour-id="ldb-draw-frame"]', '选择标定帧', '拖动这里找一帧边界清楚、没有手遮挡、明暗室和门口都能看清的画面。标定帧只帮助你画 ROI，不决定最终只分析这一帧。', 'Drawing Frame', 'Drag this to a frame with clear boundaries, no hand occlusion, and visible light/dark/passage areas. This frame helps draw ROI; it does not limit analysis to this frame.'),
+                tourStep('[data-tour-id="ldb-draw-canvas"]', '绘制区域', '先点“新建 ROI”，再在右侧 ROI 卡片选择要画的区域。暗箱可见时明室和暗室各至少 3 个点；暗箱不可见时只需要明室至少 3 个点。点击顺序只决定多边形边界。', 'Draw Zones', 'Click New ROI first, then choose the zone from the ROI card. In visible-dark mode, light and dark need at least three points each; in invisible-dark mode, only the light chamber needs at least three points. Click order only defines the polygon boundary.'),
+                tourStep('[data-tour-id="ldb-roi-list"]', 'ROI 卡片', '每张卡片对应一个箱体/一只小鼠。在这里改 ROI 名称、选择明室/暗室/可选门区按钮、设置时间窗。默认检测使用明室+暗室，并会排除已画门区。', 'ROI Cards', 'Each card is one box or one animal. Rename ROI, choose Light/Dark/optional Doorway buttons, and set timing windows. Default detection uses light + dark and excludes doorway if drawn.'),
+                projectSubjectBindingStep(),
+                tourStep('[data-tour-id="ldb-roi-status"]', '完成状态', '这里会显示 ROI 数、完整 ROI 数、当前区域点数和遮罩点数。暗箱可见时需要明室和暗室都完成；暗箱不可见时只需要明室完成。', 'Completion Status', 'This shows ROI count, complete ROI count, current zone points, and mask points. Visible-dark mode needs both light and dark zones; invisible-dark mode only needs the light zone.'),
+                tourStep('[data-tour-id="ldb-draw-toolbar"]', '绘制工具', '撤销会撤掉当前区域最后一个点；清空当前区域只影响正在编辑的明室/暗室/门区；完成遮罩只在编辑检测遮罩时可用。画完后点“进入调参”。', 'Drawing Tools', 'Undo removes the last point in the current zone. Clear current zone affects only the active light/dark/doorway polygon. Finish mask is available only while editing a detection mask. Use Enter Tuning after drawing.')
+            ];
+        }
+
         if (module === 'tst') {
             if (inDebug) {
                 return [
@@ -311,7 +343,7 @@
                     calibrationActionStep(),
                     tourStep('[data-tour-id="tst-debug-preview"]', '预览结果', '左侧看原始帧，右侧看检测轮廓。目标是让绿色轮廓尽量紧密包住小鼠除尾巴外的主体躯干。', 'Preview', 'Original frame is on the left and detection result on the right. Aim for a tight green contour around the body trunk, excluding the tail.'),
                     tourStep('[data-tour-id="tst-detection-params"]', '检测参数', '背景类型决定阈值方向；灰度阈值、腐蚀/膨胀和最小面积一起决定轮廓是否紧密包住主体躯干。', 'Detection Parameters', 'Background type sets threshold direction; threshold, erosion/dilation, and minimum area determine how tightly the contour wraps the trunk.'),
-                    tourStep('[data-tour-id="tst-output-params"]', '输出与判断逻辑', '当前版本默认优化微小挣扎识别。如果感觉挣扎误判很多，可以打开“使用原本判断逻辑”切回旧逻辑；自动行为阈值和灵敏度只在原本逻辑下显示并生效。', 'Output and Decision Logic', 'This version is optimized for subtle struggling by default. If struggling looks over-called, turn on “Use original decision logic”; auto-threshold and sensitivity appear only for the original logic.'),
+                    tourStep('[data-tour-id="tst-output-params"]', '输出与判断逻辑', '当前版本默认使用原本判断逻辑。需要尝试微小挣扎优化时，打开“使用新算法”；自动行为阈值和灵敏度只在原本逻辑下显示并生效。', 'Output and Decision Logic', 'The original decision logic is the default. Turn on “Use new algorithm” to try the subtle-struggle optimized path; auto-threshold and sensitivity appear only for the original logic.'),
                     tourStep('#primaryActionBtn', '开始分析', '单视频会直接开始；项目/批量单视频编辑模式会先保存当前配置并返回批次页面。', 'Start Analysis', 'Single-video mode starts immediately. Project or batch editing saves this setup and returns to the batch page.')
                 ];
             }
@@ -425,7 +457,7 @@
     function registerAutoTours() {
         if (calibrationShell()) {
             register('calibration', {
-                version: 'v3',
+                version: 'v5',
                 steps: calibrationTourSteps,
             });
             document.body.setAttribute('data-tour-page', 'calibration');

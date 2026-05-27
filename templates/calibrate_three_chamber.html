@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block title %}3CST Calibration - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.tc-shell { max-width: 1480px; margin: 0 auto; }
+.tc-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+.steps { display:inline-flex; gap:.5rem; padding:.4rem; border:1px solid var(--border-card); background:var(--bg-card); border-radius:999px; }
+.step-btn { border:0; background:transparent; color:var(--text-muted); padding:.55rem 1rem; border-radius:999px; font-weight:600; }
+.step-btn.active { background:rgba(37,99,235,.12); color:var(--primary-color); }
+.panel { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1.2rem; margin-bottom:1rem; }
+.main-grid { display:grid; grid-template-columns:minmax(0,1.62fr) minmax(350px,.92fr); gap:1rem; align-items:start; }
+.grid-2,.grid-3,.preview-grid { display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.canvas-wrap { background:#09101d; border:1px solid rgba(148,163,184,.18); border-radius:18px; padding:.75rem; }
+.canvas-wrap canvas { display:block; width:100%; height:auto; max-width:100%; background:#000; border-radius:14px; cursor:crosshair; }
+.toolbar,.inline,.status-strip { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+.hint,.mini-note { color:var(--text-muted); font-size:.9rem; }
+.step-pane { display:none; }
+.step-pane.active { display:block; }
+.pill { display:inline-flex; align-items:center; gap:.35rem; padding:.4rem .75rem; border-radius:999px; background:var(--bg-page); border:1px solid var(--border-card); }
+.roi-list { display:grid; gap:.85rem; }
+.roi-card { border:1px solid var(--border-card); border-radius:16px; padding:.9rem; background:var(--bg-page); }
+.roi-card.active { border-color:rgba(37,99,235,.45); box-shadow:0 0 0 1px rgba(37,99,235,.14); }
+.zone-row { display:grid; grid-template-columns:1fr auto; gap:.45rem; margin-bottom:.45rem; }
+.timeline-table { width:100%; border-collapse:collapse; }
+.timeline-table th,.timeline-table td { padding:.45rem; border-bottom:1px solid var(--border-card); vertical-align:middle; }
+.timeline-table input,.timeline-table select { min-width:92px; }
+.loading-overlay { position:fixed; inset:0; background:rgba(241,245,249,.78); display:flex; justify-content:center; align-items:center; z-index:9999; }
+.spinner { width:48px; height:48px; border:3px solid var(--border-card); border-top-color:var(--primary-color); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (max-width:1100px) { .main-grid,.grid-2,.grid-3,.preview-grid { grid-template-columns:1fr; } .timeline-table { font-size:.86rem; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
+<div class="tc-shell" data-calibration-module="three_chamber">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div><strong data-page-i18n="workspace.title">批量单视频编辑模式</strong><div class="small mt-1" data-page-i18n="workspace.note">保存当前设置后返回批次页面，再统一启动整批分析。</div></div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}"><i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回批次页面</span></a>
+    </div>
+    {% endif %}
+    <div class="tc-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">三箱社交配置</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">支持完整流程视频和单阶段视频；完整流程可设置人工操作空白段。</div>
+        </div>
+        <div class="inline">
+            {% if is_batch and launch_mode != 'workspace' %}
+            <div><label class="form-label mb-1" data-page-i18n="common.preview_video">预览视频</label><select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">{% for video in video_list %}<option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>{% endfor %}</select></div>
+            {% endif %}
+            <a class="btn btn-outline-primary d-none" href="{{ url_for('manual', module='three_chamber') }}" target="_blank"><i class="fas fa-book-open me-2"></i><span data-page-i18n="header.manual">3CST 使用手册</span></a>
+            <div class="steps"><button class="step-btn active" id="stepNav1" onclick="goToStep(1)" data-page-i18n="common.step1">1. 标定与流程</button><button class="step-btn" id="stepNav2" onclick="goToStep(2)" data-page-i18n="common.step2">2. 调参与启动</button></div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="panel">
+            <div class="grid-3">
+                <div><label class="form-label" data-page-i18n="mode.label">视频模式</label><select class="form-select" id="analysisMode" onchange="onModeChange()"><option value="full_protocol" data-page-i18n="mode.full">完整流程 Full protocol</option><option value="single_phase" data-page-i18n="mode.single">单阶段 Single phase</option></select></div>
+                <div id="singlePhaseWrap"><label class="form-label" data-page-i18n="mode.single_phase">单阶段</label><select class="form-select" id="selectedPhase"><option value="habituation_center" data-page-i18n="phase.hab_center">中心室适应</option><option value="habituation_all" data-page-i18n="phase.hab_all">三室适应</option><option value="sociability" data-page-i18n="phase.sociability">Sociability</option><option value="social_novelty" data-page-i18n="phase.novelty">Social novelty</option></select></div>
+                <div><label class="form-label" data-page-i18n="arena.size">箱体尺寸 (cm)</label><div class="input-group"><input class="form-control" id="arenaWidthCm" type="number" value="60" step="0.1"><input class="form-control" id="arenaHeightCm" type="number" value="40" step="0.1"></div></div>
+            </div>
+            <div id="timelineWrap" class="mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="mb-0" data-page-i18n="timeline.title">Protocol timeline</h6><div class="toolbar"><button class="btn btn-sm btn-outline-primary" onclick="fillDefaultTimeline()" type="button" data-page-i18n="timeline.template">推荐模板</button><button class="btn btn-sm btn-outline-secondary" onclick="addSegment()" type="button" data-page-i18n="timeline.add">添加段</button></div></div>
+                <div class="table-responsive"><table class="timeline-table"><thead><tr><th data-page-i18n="timeline.phase">Phase</th><th data-page-i18n="timeline.start">Start (s)</th><th data-page-i18n="timeline.end">End (s)</th><th data-page-i18n="timeline.analyze">Analyze</th><th></th></tr></thead><tbody id="timelineBody"></tbody></table></div>
+            </div>
+            <div class="mt-3">
+                <h6 data-page-i18n="role.title">Role schedule</h6>
+                <div class="grid-3">
+                    <div><label class="form-label" data-page-i18n="role.soc_lr">Sociability 左/右</label><div class="input-group"><select class="form-select" id="socLeft"></select><select class="form-select" id="socRight"></select></div></div>
+                    <div><label class="form-label" data-page-i18n="role.nov_lr">Novelty 左/右</label><div class="input-group"><select class="form-select" id="novLeft"></select><select class="form-select" id="novRight"></select></div></div>
+                    <div><label class="form-label" data-page-i18n="role.hab_lr">Habituation 左/右</label><div class="input-group"><select class="form-select" id="habLeft"></select><select class="form-select" id="habRight"></select></div></div>
+                </div>
+            </div>
+        </div>
+        <div class="main-grid">
+            <div class="panel">
+                <div class="inline mb-3">
+                    <div class="pill"><strong data-page-i18n="status.active_roi">当前 ROI</strong> <span id="activeRoiText">-</span></div>
+                    <div class="pill"><strong data-page-i18n="status.draw_mode">绘制模式</strong> <span id="drawModeText">-</span></div>
+                    <select class="form-select" style="max-width:240px" id="drawMode" onchange="setDrawMode(this.value)">
+                        <option value="left" data-page-i18n="zone.left">左室 Left</option>
+                        <option value="center" data-page-i18n="zone.center">中室 Center</option>
+                        <option value="right" data-page-i18n="zone.right">右室 Right</option>
+                        <option value="left_door" data-page-i18n="zone.left_door">左门区 Left door</option>
+                        <option value="right_door" data-page-i18n="zone.right_door">右门区 Right door</option>
+                        <option value="left_cup" data-page-i18n="zone.left_cup">左 cup 点</option>
+                        <option value="right_cup" data-page-i18n="zone.right_cup">右 cup 点</option>
+                        <option value="mask" data-page-i18n="zone.mask">检测遮罩 Mask</option>
+                    </select>
+                </div>
+                <div class="hint mb-3" data-page-i18n="draw.hint">三个 chamber 至少 3 点；cup 点单击一次即可。门区和检测遮罩可选。</div>
+                <div class="mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><label class="form-label mb-0" data-page-i18n="common.select_frame">选择帧</label><span id="frameLabelDraw" class="mini-note">Frame 0 / 0</span></div><input type="range" class="form-range" id="frameSliderDraw" min="0" max="0" value="0" oninput="onFrameChange(this.value)"></div>
+                <div class="canvas-wrap"><canvas id="drawCanvas"></canvas></div>
+                <div class="toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="newROI()"><i class="fas fa-plus me-2"></i><span data-page-i18n="btn.new_roi">新建 ROI</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoPoint()"><i class="fas fa-undo me-2"></i><span data-page-i18n="btn.undo">撤销一点</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearZone()"><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.clear_current">清空当前</span></button>
+                    <button class="btn btn-outline-danger" type="button" onclick="clearAll()"><i class="fas fa-trash me-2"></i><span data-page-i18n="btn.clear_all">清空全部</span></button>
+                    <button class="btn btn-success ms-auto" type="button" id="toTuningBtn" onclick="goToStep(2)" disabled><i class="fas fa-arrow-right me-2"></i><span data-page-i18n="btn.to_tuning">进入调参</span></button>
+                </div>
+                <div class="status-strip mt-3"><div class="pill"><strong data-page-i18n="status.roi_count">ROI</strong> <span id="roiCountText">0</span></div><div class="pill"><strong data-page-i18n="status.complete">完整</strong> <span id="completeCountText">0</span></div><div class="pill"><strong data-page-i18n="status.points">当前点数</strong> <span id="pointCountText">0</span></div></div>
+            </div>
+            <div class="panel">
+                <h5 data-page-i18n="roi.title">ROI 列表</h5>
+                <div class="hint" data-page-i18n="roi.hint">每个 ROI 需要左/中/右三室和左右 cup 点。项目模式下还要绑定小鼠。</div>
+                {% if project_context and project_context.project_id %}<div class="alert alert-warning py-2 my-3"><i class="fas fa-circle-info me-2"></i><span data-page-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。</span></div>{% endif %}
+                <div id="roiList" class="roi-list mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div><h5 class="mb-1" data-page-i18n="preview.title">调参与预览</h5><div class="mini-note" data-page-i18n="preview.subtitle">右侧会显示 chamber、cup interaction radius 和 exclusion radius。</div></div>
+                <div class="toolbar"><button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)"><i class="fas fa-arrow-left me-2"></i><span data-page-i18n="btn.back">返回标定</span></button><button class="btn btn-outline-primary" type="button" onclick="updatePreview()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新预览</span></button><button class="btn btn-success" type="button" id="primaryActionBtn" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span data-page-i18n="btn.start">开始 3CST 分析</span></button></div>
+            </div>
+            <div class="preview-grid mb-4"><div class="canvas-wrap"><canvas id="previewOriginal"></canvas></div><div class="canvas-wrap"><canvas id="previewResult"></canvas></div></div>
+            <div class="grid-2">
+                <div class="panel mb-0"><h6 data-page-i18n="detect.title">检测参数</h6><div class="grid-2"><div><label class="form-label" data-page-i18n="detect.method">检测方法</label><select class="form-select" id="bgMethod" onchange="updatePreview()"><option value="threshold">Threshold</option><option value="static">Static BG</option></select></div><div><label class="form-label" data-page-i18n="detect.bg_type">背景类型</label><select class="form-select" id="bgType" onchange="updatePreview()"><option value="light" data-page-i18n="detect.light">浅色背景/深色鼠</option><option value="dark" data-page-i18n="detect.dark">深色背景/浅色鼠</option></select></div><div><label class="form-label" data-page-i18n="detect.gray">灰度阈值</label><input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncLabel('grayThreshold'); updatePreview();"><div class="mini-note" id="grayThresholdLabel">127</div></div><div><label class="form-label" data-page-i18n="detect.min_area">最小面积</label><input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncLabel('minArea'); updatePreview();"><div class="mini-note" id="minAreaLabel">120</div></div></div></div>
+                <div class="panel mb-0"><h6 data-page-i18n="stats.title">统计参数</h6><div class="grid-2"><div><label class="form-label" data-page-i18n="stats.interaction">交互半径 (cm)</label><input class="form-control" id="interactionRadius" type="number" min="0.1" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.cup_exclusion">Cup 排除半径 (cm)</label><input class="form-control" id="cupExclusionRadius" type="number" min="0" step="0.1" value="1.5"></div><div><label class="form-label" data-page-i18n="stats.dwell">转换稳定时间 (s)</label><input class="form-control" id="transitionDwell" type="number" min="0" step="0.01" value="0.12"></div><div><label class="form-label" data-page-i18n="stats.move">运动阈值 (cm/s)</label><input class="form-control" id="movementThreshold" type="number" min="0" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.bin">分箱时长 (s)</label><input class="form-control" id="binSeconds" type="number" min="1" step="1" value="60"></div><div class="d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" id="generateVideo" type="checkbox" checked><label class="form-check-label" for="generateVideo" data-page-i18n="stats.video">生成标注视频</label></div></div></div><div class="status-strip mt-3"><div class="pill" id="previewStatus" data-page-i18n="preview.waiting">等待预览</div></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const sessionId = '{{ session_id }}';
+const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
+const isBatch = {{ is_batch | tojson }};
+const launchMode = {{ launch_mode | tojson }};
+const currentVideoIndexFromServer = {{ current_video_index | tojson }};
+const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
+const initialDraftPayload = {{ draft_payload | tojson }};
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
+const PAGE_I18N = {
+    zh: {
+        'workspace.title':'批量单视频编辑模式',
+        'workspace.note':'保存当前设置后返回批次页面，再统一启动整批分析。',
+        'workspace.back':'返回批次页面',
+        'header.title':'三箱社交配置',
+        'header.subtitle':'支持完整流程视频和单阶段视频；完整流程可设置人工操作空白段。',
+        'header.manual':'3CST 使用手册',
+        'common.preview_video':'预览视频',
+        'common.step1':'1. 标定与流程',
+        'common.step2':'2. 调参与启动',
+        'common.select_frame':'选择帧',
+        'mode.label':'视频模式',
+        'mode.full':'完整流程 Full protocol',
+        'mode.single':'单阶段 Single phase',
+        'mode.single_phase':'单阶段',
+        'arena.size':'箱体尺寸 (cm)',
+        'phase.hab_center':'中心室适应',
+        'phase.hab_all':'三室适应',
+        'phase.sociability':'Sociability 社交性',
+        'phase.novelty':'Social novelty 社交新奇',
+        'phase.ignore':'忽略/空白段',
+        'timeline.title':'Protocol timeline',
+        'timeline.template':'推荐模板',
+        'timeline.add':'添加段',
+        'timeline.phase':'Phase',
+        'timeline.start':'Start (s)',
+        'timeline.end':'End (s)',
+        'timeline.analyze':'Analyze',
+        'role.title':'Role schedule',
+        'role.soc_lr':'Sociability 左/右',
+        'role.nov_lr':'Novelty 左/右',
+        'role.hab_lr':'Habituation 左/右',
+        'role.none':'无',
+        'role.empty_object':'空杯/空物体',
+        'role.social_stranger_1':'陌生鼠 1',
+        'role.familiar_stranger_1':'熟悉鼠 S1',
+        'role.novel_stranger_2':'新奇鼠 S2',
+        'status.active_roi':'当前 ROI',
+        'status.draw_mode':'绘制模式',
+        'status.roi_count':'ROI',
+        'status.complete':'完整',
+        'status.points':'当前点数',
+        'zone.left':'左室 Left',
+        'zone.center':'中室 Center',
+        'zone.right':'右室 Right',
+        'zone.left_door':'左门区 Left door',
+        'zone.right_door':'右门区 Right door',
+        'zone.left_cup':'左 cup 点',
+        'zone.right_cup':'右 cup 点',
+        'zone.mask':'检测遮罩 Mask',
+        'draw.hint':'三个 chamber 至少 3 点；cup 点单击一次即可。门区和检测遮罩可选。',
+        'btn.new_roi':'新建 ROI',
+        'btn.undo':'撤销一点',
+        'btn.clear_current':'清空当前',
+        'btn.clear_all':'清空全部',
+        'btn.to_tuning':'进入调参',
+        'btn.back':'返回标定',
+        'btn.refresh':'刷新预览',
+        'btn.start':'开始 3CST 分析',
+        'btn.save_return':'保存设置并返回批次页面',
+        'roi.title':'ROI 列表',
+        'roi.hint':'每个 ROI 需要左/中/右三室和左右 cup 点。项目模式下还要绑定小鼠。',
+        'project.subject_required':'项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。',
+        'preview.title':'调参与预览',
+        'preview.subtitle':'右侧会显示 chamber、cup interaction radius 和 exclusion radius。',
+        'preview.waiting':'等待预览',
+        'detect.title':'检测参数',
+        'detect.method':'检测方法',
+        'detect.bg_type':'背景类型',
+        'detect.light':'浅色背景/深色鼠',
+        'detect.dark':'深色背景/浅色鼠',
+        'detect.gray':'灰度阈值',
+        'detect.min_area':'最小面积',
+        'stats.title':'统计参数',
+        'stats.interaction':'交互半径 (cm)',
+        'stats.cup_exclusion':'Cup 排除半径 (cm)',
+        'stats.dwell':'转换稳定时间 (s)',
+        'stats.move':'运动阈值 (cm/s)',
+        'stats.bin':'分箱时长 (s)',
+        'stats.video':'生成标注视频',
+    },
+    en: {
+        'workspace.title':'Batch single-video edit mode',
+        'workspace.note':'Save this setup, return to the batch page, then start the whole batch together.',
+        'workspace.back':'Back to Batch Page',
+        'header.title':'Three-Chamber Social Test Setup',
+        'header.subtitle':'Supports full-protocol videos and single-phase videos. Full protocol can include manual-operation gap segments.',
+        'header.manual':'3CST Manual',
+        'common.preview_video':'Preview Video',
+        'common.step1':'1. Calibration & Protocol',
+        'common.step2':'2. Tuning & Start',
+        'common.select_frame':'Frame',
+        'mode.label':'Video Mode',
+        'mode.full':'Full protocol',
+        'mode.single':'Single phase',
+        'mode.single_phase':'Single Phase',
+        'arena.size':'Arena size (cm)',
+        'phase.hab_center':'Center habituation',
+        'phase.hab_all':'All-chamber habituation',
+        'phase.sociability':'Sociability',
+        'phase.novelty':'Social novelty',
+        'phase.ignore':'Ignore / gap',
+        'timeline.title':'Protocol timeline',
+        'timeline.template':'Recommended Template',
+        'timeline.add':'Add Segment',
+        'timeline.phase':'Phase',
+        'timeline.start':'Start (s)',
+        'timeline.end':'End (s)',
+        'timeline.analyze':'Analyze',
+        'role.title':'Role schedule',
+        'role.soc_lr':'Sociability left/right',
+        'role.nov_lr':'Novelty left/right',
+        'role.hab_lr':'Habituation left/right',
+        'role.none':'None',
+        'role.empty_object':'Empty/object',
+        'role.social_stranger_1':'Stranger 1',
+        'role.familiar_stranger_1':'Familiar S1',
+        'role.novel_stranger_2':'Novel S2',
+        'status.active_roi':'Active ROI',
+        'status.draw_mode':'Draw Mode',
+        'status.roi_count':'ROI',
+        'status.complete':'Complete',
+        'status.points':'Current Points',
+        'zone.left':'Left chamber',
+        'zone.center':'Center chamber',
+        'zone.right':'Right chamber',
+        'zone.left_door':'Left door',
+        'zone.right_door':'Right door',
+        'zone.left_cup':'Left cup point',
+        'zone.right_cup':'Right cup point',
+        'zone.mask':'Detection mask',
+        'draw.hint':'Each chamber needs at least 3 points. Cup points need one click each. Door zones and detection mask are optional.',
+        'btn.new_roi':'New ROI',
+        'btn.undo':'Undo Point',
+        'btn.clear_current':'Clear Current',
+        'btn.clear_all':'Clear All',
+        'btn.to_tuning':'Go to Tuning',
+        'btn.back':'Back to Calibration',
+        'btn.refresh':'Refresh Preview',
+        'btn.start':'Start 3CST Analysis',
+        'btn.save_return':'Save Setup and Return to Batch Page',
+        'roi.title':'ROI List',
+        'roi.hint':'Each ROI needs left, center, and right chambers plus left and right cup points. Project mode also requires animal binding.',
+        'project.subject_required':'In project mode, every complete ROI must be linked to a registered animal.',
+        'preview.title':'Tuning & Preview',
+        'preview.subtitle':'The right panel shows chambers, cup interaction radius, and exclusion radius.',
+        'preview.waiting':'Waiting for preview',
+        'detect.title':'Detection Parameters',
+        'detect.method':'Detection Method',
+        'detect.bg_type':'Background Type',
+        'detect.light':'Light background / dark mouse',
+        'detect.dark':'Dark background / light mouse',
+        'detect.gray':'Gray Threshold',
+        'detect.min_area':'Minimum Area',
+        'stats.title':'Statistics',
+        'stats.interaction':'Interaction radius (cm)',
+        'stats.cup_exclusion':'Cup exclusion radius (cm)',
+        'stats.dwell':'Transition stable dwell (s)',
+        'stats.move':'Movement threshold (cm/s)',
+        'stats.bin':'Bin size (s)',
+        'stats.video':'Generate annotated video',
+    }
+};
+let currentVideoIdx = Number(currentVideoIndexFromServer || 0);
+let currentFrameIdx = 0;
+let frameImage = new Image();
+let rois = [];
+let activeRoi = -1;
+let drawMode = 'left';
+let videoConfigs = [];
+let protocolSegments = [];
+const roleOptionValues = ['', 'empty_object', 'social_stranger_1', 'familiar_stranger_1', 'novel_stranger_2'];
+function lang(){ return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh'); }
+function tr(key, fallback){ return ((PAGE_I18N[lang()] || {})[key]) || fallback || key; }
+function phaseLabel(value){ return tr('phase.' + ({habituation_center:'hab_center', habituation_all:'hab_all', sociability:'sociability', social_novelty:'novelty', ignore:'ignore'}[value] || value), value); }
+function roleLabel(value){ return tr('role.' + (value || 'none'), value || 'None'); }
+function zoneLabel(value){ return tr('zone.' + value, value); }
+function escapeHtml(value){ return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function escAttr(value){ return escapeHtml(value).replace(/`/g, '&#96;'); }
+function clone(value){ return JSON.parse(JSON.stringify(value)); }
+function defaultSegments(){ return [{id:'habituation_center',phase:'habituation_center',start_s:0,end_s:300,analyze:true},{id:'gap_1',phase:'ignore',start_s:300,end_s:420,analyze:false},{id:'habituation_all',phase:'habituation_all',start_s:420,end_s:1020,analyze:true},{id:'gap_2',phase:'ignore',start_s:1020,end_s:1140,analyze:false},{id:'sociability',phase:'sociability',start_s:1140,end_s:1740,analyze:true},{id:'gap_3',phase:'ignore',start_s:1740,end_s:1860,analyze:false},{id:'social_novelty',phase:'social_novelty',start_s:1860,end_s:2460,analyze:true}]; }
+function defaultRoles(){ return {habituation_center:{left:'',right:''}, habituation_all:{left:'empty_object',right:'empty_object'}, sociability:{left:'social_stranger_1',right:'empty_object'}, social_novelty:{left:'familiar_stranger_1',right:'novel_stranger_2'}}; }
+function defaultConfig(){ return {analysis_mode:'full_protocol', selected_phase:'sociability', protocol_segments:defaultSegments(), role_schedule:defaultRoles(), bg_method:'threshold', bg_type:'light', gray_threshold:127, erosion_kernel:3, erosion_iter:1, dilation_kernel:5, dilation_iter:2, min_area:120, arena_width_cm:60, arena_height_cm:40, interaction_radius_cm:2, cup_exclusion_radius_cm:1.5, use_head_direction:false, head_angle_threshold_deg:60, head_confidence_threshold:0.35, transition_min_dwell_s:0.12, center_reset_s:0.2, movement_threshold_cm_s:2, bin_seconds:60, rois:[]}; }
+function normalizeConfigs(){ const count = Math.max(1, (videoInfoList || []).length); const raw = (initialDraftPayload && Array.isArray(initialDraftPayload.per_video_configs)) ? initialDraftPayload.per_video_configs : []; videoConfigs = Array.from({length:count}, (_, i) => Object.assign(defaultConfig(), clone(raw[i] || {}))); }
+function currentConfig(){ return videoConfigs[currentVideoIdx] || defaultConfig(); }
+function totalFrames(){ const info = videoInfoList[currentVideoIdx] || videoInfo || {}; return Number(info.total_frames || 0); }
+function roleSelect(id, selected){ const node = document.getElementById(id); node.innerHTML = roleOptionValues.map(value => `<option value="${value}" ${value===selected?'selected':''}>${escapeHtml(roleLabel(value))}</option>`).join(''); }
+function setRoleControls(schedule){ roleSelect('socLeft', schedule.sociability.left); roleSelect('socRight', schedule.sociability.right); roleSelect('novLeft', schedule.social_novelty.left); roleSelect('novRight', schedule.social_novelty.right); roleSelect('habLeft', schedule.habituation_all.left); roleSelect('habRight', schedule.habituation_all.right); }
+function readRoleSchedule(){ return {habituation_center:{left:'',right:''}, habituation_all:{left:document.getElementById('habLeft').value,right:document.getElementById('habRight').value}, sociability:{left:document.getElementById('socLeft').value,right:document.getElementById('socRight').value}, social_novelty:{left:document.getElementById('novLeft').value,right:document.getElementById('novRight').value}}; }
+function collectParams(target){ target.analysis_mode = document.getElementById('analysisMode').value; target.selected_phase = document.getElementById('selectedPhase').value; target.phase = target.selected_phase; target.protocol_segments = clone(protocolSegments); target.role_schedule = readRoleSchedule(); target.bg_method = document.getElementById('bgMethod').value; target.bg_type = document.getElementById('bgType').value; target.gray_threshold = Number(document.getElementById('grayThreshold').value); target.min_area = Number(document.getElementById('minArea').value); target.arena_width_cm = Number(document.getElementById('arenaWidthCm').value || 60); target.arena_height_cm = Number(document.getElementById('arenaHeightCm').value || 40); target.interaction_radius_cm = Number(document.getElementById('interactionRadius').value || 2); target.cup_exclusion_radius_cm = Number(document.getElementById('cupExclusionRadius').value || 1.5); target.transition_min_dwell_s = Number(document.getElementById('transitionDwell').value || 0.12); target.movement_threshold_cm_s = Number(document.getElementById('movementThreshold').value || 2); target.bin_seconds = Number(document.getElementById('binSeconds').value || 60); }
+function setParams(cfg){ document.getElementById('analysisMode').value = cfg.analysis_mode || 'full_protocol'; document.getElementById('selectedPhase').value = cfg.selected_phase || cfg.phase || 'sociability'; protocolSegments = clone(cfg.protocol_segments && cfg.protocol_segments.length ? cfg.protocol_segments : defaultSegments()); document.getElementById('arenaWidthCm').value = cfg.arena_width_cm || 60; document.getElementById('arenaHeightCm').value = cfg.arena_height_cm || 40; document.getElementById('bgMethod').value = cfg.bg_method || 'threshold'; document.getElementById('bgType').value = cfg.bg_type || 'light'; document.getElementById('grayThreshold').value = cfg.gray_threshold || 127; document.getElementById('minArea').value = cfg.min_area || 120; document.getElementById('interactionRadius').value = cfg.interaction_radius_cm ?? 2; document.getElementById('cupExclusionRadius').value = cfg.cup_exclusion_radius_cm ?? 1.5; document.getElementById('transitionDwell').value = cfg.transition_min_dwell_s ?? 0.12; document.getElementById('movementThreshold').value = cfg.movement_threshold_cm_s ?? 2; document.getElementById('binSeconds').value = cfg.bin_seconds || 60; setRoleControls(Object.assign(defaultRoles(), cfg.role_schedule || {})); syncLabel('grayThreshold'); syncLabel('minArea'); renderTimeline(); onModeChange(); }
+function persistCurrent(){ const cfg = currentConfig(); cfg.rois = getCompletePayloadRois(false); collectParams(cfg); videoConfigs[currentVideoIdx] = cfg; }
+function loadCurrent(){ const cfg = currentConfig(); rois = clone(cfg.rois || []); activeRoi = rois.length ? 0 : -1; setParams(cfg); renderAll(); }
+function syncLabel(id){ const n = document.getElementById(id+'Label'); if (n) n.textContent = document.getElementById(id).value; }
+function onModeChange(){ document.getElementById('timelineWrap').style.display = document.getElementById('analysisMode').value === 'full_protocol' ? 'block' : 'none'; document.getElementById('singlePhaseWrap').style.display = document.getElementById('analysisMode').value === 'single_phase' ? 'block' : 'none'; }
+function renderTimeline(){ const body = document.getElementById('timelineBody'); const phases = ['habituation_center','habituation_all','sociability','social_novelty','ignore']; body.innerHTML = protocolSegments.map((seg,i) => `<tr><td><select class="form-select form-select-sm" onchange="protocolSegments[${i}].phase=this.value; protocolSegments[${i}].analyze=this.value!=='ignore'; renderTimeline();">${phases.map(phase => `<option value="${phase}" ${seg.phase===phase?'selected':''}>${escapeHtml(phaseLabel(phase))}</option>`).join('')}</select></td><td><input class="form-control form-control-sm" type="number" step="0.1" value="${Number(seg.start_s||0)}" onchange="protocolSegments[${i}].start_s=Number(this.value)"></td><td><input class="form-control form-control-sm" type="number" step="0.1" value="${Number(seg.end_s||0)}" onchange="protocolSegments[${i}].end_s=Number(this.value)"></td><td><input class="form-check-input" type="checkbox" ${seg.analyze?'checked':''} ${seg.phase==='ignore'?'disabled':''} onchange="protocolSegments[${i}].analyze=this.checked"></td><td><button class="btn btn-sm btn-outline-danger" onclick="protocolSegments.splice(${i},1); renderTimeline();" type="button"><i class="fas fa-trash"></i></button></td></tr>`).join(''); }
+function fillDefaultTimeline(){ protocolSegments = defaultSegments(); renderTimeline(); }
+function addSegment(){ const last = protocolSegments[protocolSegments.length - 1] || {end_s:0}; protocolSegments.push({id:'segment_'+(protocolSegments.length+1), phase:'ignore', start_s:Number(last.end_s || 0), end_s:Number(last.end_s || 0)+60, analyze:false}); renderTimeline(); }
+function projectSubjectById(id){ return (projectSubjects || []).find(s => s.subject_id === id) || null; }
+function applySubject(index,id){ const roi = rois[index]; if (!roi) return; const subject = projectSubjectById(id); ['subject_id','animal_code','group_id','group_name','project_unit_id'].forEach(k => delete roi[k]); if (subject){ roi.subject_id=subject.subject_id; roi.animal_code=subject.animal_code; roi.group_id=subject.group_id||''; roi.group_name=subject.group_name||''; roi.name=subject.animal_code||roi.name; } renderAll(); }
+function newROI(){ rois.push({name:`3CST ${rois.length+1}`, zones:{left:[],center:[],right:[],left_door:[],right_door:[]}, objects:[], detection_points:[], time_config:{mode:'global',start:null,end:null}}); activeRoi = rois.length-1; renderAll(); }
+function active(){ if (activeRoi < 0) newROI(); return rois[activeRoi]; }
+function setDrawMode(mode){ drawMode = mode; renderAll(); }
+function pointsFor(roi){ roi.zones = roi.zones || {}; if (drawMode === 'mask') return roi.detection_points || (roi.detection_points=[]); if (drawMode.endsWith('_cup')) return null; return roi.zones[drawMode] || (roi.zones[drawMode]=[]); }
+function setCup(roi, side, p){ roi.objects = (roi.objects || []).filter(o => o.side !== side); roi.objects.push({side, name:(side==='left'?'Left cup':'Right cup'), point:p}); }
+function cupPoint(roi, side){ const obj = (roi.objects || []).find(o => o.side === side); return obj ? obj.point : null; }
+function canvasPoint(evt){ const canvas = document.getElementById('drawCanvas'); const rect = canvas.getBoundingClientRect(); return {x:(evt.clientX-rect.left)*canvas.width/rect.width, y:(evt.clientY-rect.top)*canvas.height/rect.height}; }
+function onCanvasClick(evt){ const roi = active(); const p = canvasPoint(evt); if (drawMode === 'left_cup') setCup(roi,'left',p); else if (drawMode === 'right_cup') setCup(roi,'right',p); else pointsFor(roi).push(p); renderAll(); }
+function undoPoint(){ const roi = active(); if (drawMode === 'left_cup') roi.objects = (roi.objects||[]).filter(o=>o.side!=='left'); else if (drawMode === 'right_cup') roi.objects = (roi.objects||[]).filter(o=>o.side!=='right'); else pointsFor(roi).pop(); renderAll(); }
+function clearZone(){ const roi = active(); if (drawMode === 'mask') roi.detection_points=[]; else if (drawMode === 'left_cup') roi.objects=(roi.objects||[]).filter(o=>o.side!=='left'); else if (drawMode === 'right_cup') roi.objects=(roi.objects||[]).filter(o=>o.side!=='right'); else roi.zones[drawMode]=[]; renderAll(); }
+function clearAll(){ if (confirm(lang()==='en'?'Clear all ROIs?':'清空全部 ROI？')){ rois=[]; activeRoi=-1; renderAll(); } }
+function isComplete(roi){ return roi && roi.zones && (roi.zones.left||[]).length>=3 && (roi.zones.center||[]).length>=3 && (roi.zones.right||[]).length>=3 && cupPoint(roi,'left') && cupPoint(roi,'right'); }
+function getCompletePayloadRois(completeOnly=true){ return rois.filter(r => !completeOnly || isComplete(r)).map((roi,i) => { const out = {name:roi.name||`3CST ${i+1}`, zones:clone(roi.zones||{}), objects:clone(roi.objects||[]), role_schedule:readRoleSchedule(), time_config:roi.time_config||{mode:'global',start:null,end:null}}; if ((roi.detection_points||[]).length>=3) out.detection_points=clone(roi.detection_points); ['subject_id','animal_code','group_id','group_name','project_unit_id'].forEach(k=>{ if(roi[k]) out[k]=roi[k]; }); return out; }); }
+function validateProjectSubjects(silent=false){ if (!isProjectMode) return true; const missing = rois.find(r => isComplete(r) && !projectSubjectById(r.subject_id)); if (missing && !silent) alert(lang()==='en'?'Please bind every complete ROI to a project animal.':'请为每个完整 ROI 绑定项目小鼠。'); return !missing; }
+function renderAll(){ renderCanvas(); renderRoiList(); const complete=rois.filter(isComplete).length; document.getElementById('roiCountText').textContent=rois.length; document.getElementById('completeCountText').textContent=complete; document.getElementById('activeRoiText').textContent=activeRoi>=0?(rois[activeRoi].name||`ROI ${activeRoi+1}`):'-'; document.getElementById('drawModeText').textContent=zoneLabel(drawMode); document.getElementById('pointCountText').textContent=activeRoi>=0?(pointsFor(rois[activeRoi])||[]).length || (drawMode.endsWith('_cup')?(cupPoint(rois[activeRoi], drawMode.split('_')[0])?1:0):0):0; document.getElementById('toTuningBtn').disabled=complete===0 || !validateProjectSubjects(true); }
+function renderRoiList(){ const list=document.getElementById('roiList'); if(!rois.length){ list.innerHTML=`<div class="mini-note">${lang()==='en'?'No ROI yet.':'还没有 ROI'}</div>`; return; } list.innerHTML=rois.map((roi,i)=>{ const subj=isProjectMode?subjectSelect(i,roi):`<label class="form-label">${lang()==='en'?'Name':'名称'}</label><input class="form-control" value="${escAttr(roi.name||'')}" oninput="rois[${i}].name=this.value">`; return `<div class="roi-card ${i===activeRoi?'active':''}" onclick="activeRoi=${i}; renderAll();"><div class="d-flex justify-content-between gap-2 mb-2"><strong>${escapeHtml(roi.name||'ROI '+(i+1))}</strong><button class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); rois.splice(${i},1); activeRoi=Math.min(activeRoi,rois.length-1); renderAll();"><i class="fas fa-trash"></i></button></div>${subj}<div class="mt-2">${zoneLine(zoneLabel('left'),(roi.zones.left||[]).length)}${zoneLine(zoneLabel('center'),(roi.zones.center||[]).length)}${zoneLine(zoneLabel('right'),(roi.zones.right||[]).length)}${zoneLine(zoneLabel('left_cup'),cupPoint(roi,'left')?1:0)}${zoneLine(zoneLabel('right_cup'),cupPoint(roi,'right')?1:0)}${zoneLine(zoneLabel('mask'),(roi.detection_points||[]).length)}</div></div>`; }).join(''); }
+function subjectSelect(i,roi){ const pickText = lang()==='en'?'Select a registered animal':'请选择已有小鼠'; const noteText = lang()==='en'?'Project mode requires a registered animal.':'项目模式下必须选择已登记小鼠'; const options=[`<option value="">${pickText}</option>`].concat((projectSubjects||[]).map(s=>`<option value="${escAttr(s.subject_id)}" ${s.subject_id===roi.subject_id?'selected':''}>${escapeHtml((s.animal_code||'')+(s.group_name?' · '+s.group_name:''))}</option>`)).join(''); return `<label class="form-label">${lang()==='en'?'Animal / Experimental Unit':'小鼠 / 实验单元'}</label><select class="form-select" onchange="event.stopPropagation(); applySubject(${i}, this.value);">${options}</select><div class="mini-note mt-1">${escapeHtml(roi.group_name||noteText)}</div>`; }
+function zoneLine(label,count){ return `<div class="zone-row"><span>${escapeHtml(label)}</span><span>${count}</span></div>`; }
+function renderCanvas(){ const canvas=document.getElementById('drawCanvas'); const ctx=canvas.getContext('2d'); if(!frameImage.complete||!frameImage.naturalWidth) return; canvas.width=frameImage.naturalWidth; canvas.height=frameImage.naturalHeight; ctx.drawImage(frameImage,0,0); drawOverlays(ctx); }
+function drawOverlays(ctx){ const colors={left:'#3b82f6',center:'#22c55e',right:'#f97316',left_door:'#06b6d4',right_door:'#06b6d4',mask:'#facc15'}; rois.forEach((roi,i)=>{ Object.keys(roi.zones||{}).forEach(k=>drawPoly(ctx,roi.zones[k]||[],colors[k]||'#fff',i===activeRoi&&drawMode===k)); drawPoly(ctx,roi.detection_points||[],colors.mask,i===activeRoi&&drawMode==='mask',true); ['left','right'].forEach(side=>{ const p=cupPoint(roi,side); if(p) drawCup(ctx,p,colors[side],i===activeRoi&&drawMode===side+'_cup',side); }); }); }
+function drawPoly(ctx,pts,color,active,dashed=false){ if(!pts.length) return; ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color+'22'; ctx.lineWidth=active?4:2; if(dashed) ctx.setLineDash([8,5]); ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); if(pts.length>=3){ctx.closePath();ctx.fill();} ctx.stroke(); ctx.setLineDash([]); pts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();}); ctx.restore(); }
+function drawCup(ctx,p,color,active,label){ ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=active?4:2; ctx.beginPath(); ctx.arc(p.x,p.y,9,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill(); ctx.fillText(label,p.x+10,p.y-8); ctx.restore(); }
+function drawImageToCanvas(id,b64){ const img=new Image(); img.onload=()=>{ const canvas=document.getElementById(id); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight; canvas.getContext('2d').drawImage(img,0,0); }; img.src='data:image/jpeg;base64,'+b64; }
+function loadFrame(){ const slider=document.getElementById('frameSliderDraw'); slider.max=Math.max(0,totalFrames()-1); currentFrameIdx=Math.min(Number(slider.value||0),Math.max(0,totalFrames()-1)); document.getElementById('frameLabelDraw').textContent=`Frame ${currentFrameIdx} / ${Math.max(0,totalFrames()-1)}`; fetch(`/api/get_first_frame/${sessionId}?video=${currentVideoIdx}&frame=${currentFrameIdx}`).then(r=>r.json()).then(data=>{ frameImage.onload=renderCanvas; frameImage.src='data:image/jpeg;base64,'+data.image; }); }
+function onFrameChange(value){ currentFrameIdx=Number(value||0); loadFrame(); }
+function onVideoChange(value){ persistCurrent(); currentVideoIdx=Number(value||0); loadCurrent(); loadFrame(); }
+function validateTimeline(){ if(document.getElementById('analysisMode').value !== 'full_protocol') return true; const sorted=clone(protocolSegments).sort((a,b)=>Number(a.start_s)-Number(b.start_s)); for(let i=0;i<sorted.length;i++){ if(Number(sorted[i].end_s)<=Number(sorted[i].start_s)){ alert(lang()==='en'?'A timeline segment ends before its start time.':'时间轴存在结束时间早于起始时间的段。'); return false; } if(i>0 && Number(sorted[i].start_s)<Number(sorted[i-1].end_s)){ alert(lang()==='en'?'Timeline segments overlap.':'时间轴存在重叠段。'); return false; } } const hasAnalyzed = sorted.some(s=>s.phase!=='ignore' && s.analyze); if(!hasAnalyzed) alert(lang()==='en'?'At least one non-gap segment must be analyzed.':'至少需要一个参与统计的非空白段。'); return hasAnalyzed; }
+function buildPayload(){ persistCurrent(); const cfg=Object.assign(defaultConfig(),currentConfig()); cfg.rois=getCompletePayloadRois(true); collectParams(cfg); videoConfigs[currentVideoIdx]=clone(cfg); return Object.assign({},cfg,{generate_video:document.getElementById('generateVideo').checked,per_video_configs:clone(videoConfigs),video:currentVideoIdx}); }
+async function saveDraft(redirect=false){ const body=buildPayload(); body._selected_video_idx=currentVideoIdx; const response=await fetch(`/api/draft/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(data.error||'save failed'); if(redirect&&batchWorkspaceUrl) window.location.href=batchWorkspaceUrl; return data; }
+async function updatePreview(){ if(!validateProjectSubjects() || !validateTimeline()) return; const status=document.getElementById('previewStatus'); status.textContent=lang()==='en'?'Previewing...':'正在预览...'; try{ const response=await fetch(`/api/debug_preview/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'preview failed'); drawImageToCanvas('previewOriginal',data.original); drawImageToCanvas('previewResult',data.result); status.textContent=`${lang()==='en'?'Detections':'检测数'}: ${data.detections||0}`; } catch(err){ status.textContent=err.message; } }
+async function startAnalysis(){ if(!rois.some(isComplete)){ alert(lang()==='en'?'Please complete at least one ROI.':'请至少完成一个 ROI。'); return; } if(!validateProjectSubjects()||!validateTimeline()) return; document.getElementById('loading').style.display='flex'; try{ await saveDraft(false); const response=await fetch(`/api/start_analysis/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(data.error||'start failed'); window.location.href=`/monitor/${sessionId}`; } catch(err){ document.getElementById('loading').style.display='none'; alert(err.message); } }
+function goToStep(step){ if(step===2 && (!rois.some(isComplete)||!validateProjectSubjects()||!validateTimeline())) return; document.querySelectorAll('.step-pane').forEach(p=>p.classList.remove('active')); document.getElementById('step'+step).classList.add('active'); document.querySelectorAll('.step-btn').forEach(b=>b.classList.remove('active')); document.getElementById('stepNav'+step).classList.add('active'); if(step===2) updatePreview(); }
+function applyThreeChamberI18n(){
+    if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N);
+    setRoleControls(readRoleSchedule());
+    renderTimeline();
+    if (Array.isArray(rois)) renderAll();
+    const startText = document.querySelector('[data-page-i18n="btn.start"]');
+    if (launchMode === 'workspace' && startText) startText.textContent = tr('btn.save_return', '保存设置并返回批次页面');
+}
+document.getElementById('drawCanvas').addEventListener('click', onCanvasClick);
+document.addEventListener('mousescope:langchange', applyThreeChamberI18n);
+normalizeConfigs(); loadCurrent(); loadFrame();
+applyThreeChamberI18n();
+</script>
+{% endblock %}

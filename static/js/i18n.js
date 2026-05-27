@@ -9,7 +9,7 @@
         'nav.tour':           '新手引导',
         'lang.toggle':        'English',
 
-        'footer.rights':      'MouseScope Desktop v3.1.0 © 2026 All Rights Reserved | 版权所有',
+        'footer.rights':      'MouseScope Desktop v3.2.0 © 2026 All Rights Reserved | 版权所有',
         'footer.academic':    '仅限学术研究使用 · 禁止商业用途 · 禁止二次分发',
         'footer.viewlicense': '查看完整许可协议',
 
@@ -95,14 +95,14 @@
         'tour.monitor.download.title':'结果下载',
         'tour.monitor.download.body':'分析完成后这里会出现下载和打开结果目录按钮。',
 
-        'home.subtitle':     '面向小鼠行为学视频分析的桌面软件平台<br>当前支持悬尾实验、强迫游泳、旷场实验、新奇物体识别、高架十字迷宫与 Y 迷宫',
-        'home.version':      'Desktop Edition v3.1.0 · 学术研究专用',
+        'home.subtitle':     '面向小鼠行为学视频分析的桌面软件平台<br>当前支持悬尾、强迫游泳、旷场、新奇物体、高架十字迷宫、Y 迷宫与明暗箱',
+        'home.version':      'Desktop Edition v3.2.0 · 学术研究专用',
         'home.note':         '正式实验可进入项目工作台管理组别、小鼠、视频和结果；临时或单次任务可使用快速分析入口，仍保留原有配置流程。',
         'home.btn.projects': '项目工作台',
         'home.btn.start':    '快速分析',
         'home.btn.manual':   '查看手册',
         'home.feature1.title': '多实验入口',
-        'home.feature1.desc':  '统一实验入口，当前支持 TST、FST、OFT、NOR、EPM 与 Y-Maze，并保留一致的配置与结果流',
+        'home.feature1.desc':  '统一实验入口，当前支持 TST、FST、OFT、NOR、EPM、Y-Maze 与 LDB，并保留一致的配置与结果流',
         'home.feature2.title': '标定与配置',
         'home.feature2.desc':  '支持体长/圆筒直径标定、四角点场地标定、多 ROI 命名、时间窗与参数调试',
         'home.feature3.title': '结果导出',
@@ -137,7 +137,7 @@
         'projects.empty_archived':'还没有已归档项目。',
         'projects.create_failed':'创建失败',
 
-        'project.kicker':        'MouseScope Project Workspace v3.1.0',
+        'project.kicker':        'MouseScope Project Workspace v3.2.0',
         'project.back':          '项目列表',
         'project.open_folder':   '打开项目文件夹',
         'project.tabs.overview': '概览',
@@ -413,6 +413,8 @@
         'upload.exp.nor_option':  '新奇物体识别 Novel Object Recognition',
         'upload.exp.epm_option':  '高架十字迷宫 Elevated Plus Maze',
         'upload.exp.ymaze_option':'Y 迷宫 Y Maze',
+        'upload.exp.ldb_option':  '明暗箱 Light-Dark Box',
+        'upload.exp.three_chamber_option':'三箱社交 Three-Chamber Social Test',
         'upload.exp.help':        '选择后进入对应配置流程；多视频会先进入批次页。',
         'upload.side.entry.title':'实验入口',
         'upload.side.entry.sub':  '选择实验模块后进入对应配置页',
@@ -613,6 +615,8 @@
         'manual.switch.nor':          'NOR 手册',
         'manual.switch.epm':          'EPM 手册',
         'manual.switch.ymaze':        'Y 迷宫手册',
+        'manual.switch.ldb':          'LDB 手册',
+        'manual.switch.three_chamber':'3CST 手册',
         'manual.oft.flow.1':          '视频采集要求',
         'manual.oft.flow.2':          '上传视频',
         'manual.oft.flow.3':          '多 arena 标定',
@@ -952,7 +956,7 @@
         'nav.tour':           'Guide',
         'lang.toggle':        '中文',
 
-        'footer.rights':      'MouseScope Desktop v3.1.0 © 2026 All Rights Reserved',
+        'footer.rights':      'MouseScope Desktop v3.2.0 © 2026 All Rights Reserved',
         'footer.academic':    'For Academic Research Only · No Commercial Use · No Redistribution',
         'footer.viewlicense': 'View Full License',
 
@@ -1038,14 +1042,14 @@
         'tour.monitor.download.title':'Downloads',
         'tour.monitor.download.body':'After completion, download buttons and Open Result Folder appear here.',
 
-        'home.subtitle':     'A modular desktop platform for automated mouse behavioral video analysis<br>Now supports TST, FST, OFT, Novel Object Recognition, Elevated Plus Maze, and Y-Maze',
-        'home.version':      'Desktop Edition v3.1.0 · Academic Research Only',
+        'home.subtitle':     'A modular desktop platform for automated mouse behavioral video analysis<br>Now supports TST, FST, OFT, NOR, EPM, Y-Maze, and LDB',
+        'home.version':      'Desktop Edition v3.2.0 · Academic Research Only',
         'home.note':         'Use Project Workspace for formal studies with groups, animals, videos, and results. Use Quick Analysis for temporary or single-run work with the original setup flow.',
         'home.btn.projects': 'Project Workspace',
         'home.btn.start':    'Quick Analysis',
         'home.btn.manual':   'User Manual',
         'home.feature1.title': 'Multi-Experiment',
-        'home.feature1.desc':  'Unified experiment entry with TST, FST, OFT, NOR, EPM, and Y-Maze already wired into the same setup and export flow',
+        'home.feature1.desc':  'Unified experiment entry with TST, FST, OFT, NOR, EPM, Y-Maze, and LDB wired into the same setup and export flow',
         'home.feature2.title': 'Setup & Calibration',
         'home.feature2.desc':  'Body-length, cylinder-diameter, and arena calibration with ROI naming, time windows and parameter tuning',
         'home.feature3.title': 'Export Results',
@@ -1080,7 +1084,7 @@
         'projects.empty_archived':'No archived projects yet.',
         'projects.create_failed':'Failed to create project',
 
-        'project.kicker':        'MouseScope Project Workspace v3.1.0',
+        'project.kicker':        'MouseScope Project Workspace v3.2.0',
         'project.back':          'Project List',
         'project.open_folder':   'Open Project Folder',
         'project.tabs.overview': 'Overview',
@@ -1356,6 +1360,8 @@
         'upload.exp.nor_option':  'Novel Object Recognition',
         'upload.exp.epm_option':  'Elevated Plus Maze',
         'upload.exp.ymaze_option':'Y-Maze',
+        'upload.exp.ldb_option':  'Light-Dark Box',
+        'upload.exp.three_chamber_option':'Three-Chamber Social Test',
         'upload.exp.help':        'Choose a module to open the matching setup flow; multiple videos open the batch page first.',
         'upload.side.entry.title':'Experiment Entry',
         'upload.side.entry.sub':  'Choose a module to enter the matching configuration page',
@@ -1587,6 +1593,8 @@
         'manual.switch.nor':          'NOR Manual',
         'manual.switch.epm':          'EPM Manual',
         'manual.switch.ymaze':        'Y-Maze Manual',
+        'manual.switch.ldb':          'LDB Manual',
+        'manual.switch.three_chamber':'3CST Manual',
         'manual.oft.flow.1':          'Video Requirements',
         'manual.oft.flow.2':          'Upload Video',
         'manual.oft.flow.3':          'Multi-Arena Calibration',
@@ -1917,6 +1925,31 @@ function applyLang(lang) {
 
     document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
     document.dispatchEvent(new CustomEvent('mousescope:langchange', { detail: { lang } }));
+}
+
+function applyPageI18n(pageDict, root) {
+    const lang = getLang();
+    const dict = (pageDict && (pageDict[lang] || pageDict.zh)) || {};
+    const scope = root || document;
+
+    scope.querySelectorAll('[data-page-i18n]').forEach(el => {
+        const key = el.getAttribute('data-page-i18n');
+        const val = dict[key];
+        if (val === undefined) return;
+
+        const attr = el.getAttribute('data-page-i18n-attr');
+        if (attr) {
+            el.setAttribute(attr, val);
+        } else if (el.getAttribute('data-page-i18n-html') !== null) {
+            el.innerHTML = val;
+        } else {
+            el.textContent = val;
+        }
+    });
+}
+
+if (typeof window !== 'undefined') {
+    window.applyPageI18n = applyPageI18n;
 }
 
 function toggleLang() {

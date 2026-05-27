@@ -1,0 +1,757 @@
+<div id="three-chamber-manual-root"></div>
+
+<script>
+(function () {
+    const THREE_CHAMBER_MANUAL = {
+        zh: {
+            heroEyebrow: 'Three-Chamber Social Test / 3CST',
+            heroTitle: '三箱社交完整操作手册',
+            heroSubtitle: '本手册覆盖完整流程与单阶段模式、三室和 cup 点标定、阶段时间轴、左右 cup 角色、interaction / exclusion 半径、主要参数、全部结果字段，以及批量模式下每个视频的独立配置方式。',
+            heroChips: ['左 / 中 / 右三室', '左右 cup 点', 'Full protocol timeline', 'Sociability / Social novelty', 'track / summary / phase_summary / bins'],
+            heroCards: [
+                ['fas fa-people-arrows', '模块真正统计什么', '3CST 会统计测试鼠在左室、中室、右室的停留、进入和转换，左右 cup 附近的 interaction 时间，并根据阶段角色计算 sociability index 与 social novelty index。'],
+                ['fas fa-timeline', '为什么要时间轴', '完整流程视频通常包含中心室适应、三室适应、社交性、社交新奇和换鼠 / 开门等人工操作段。时间轴把可分析阶段和 ignore 间隔切开，避免把操作段混入行为统计。'],
+                ['fas fa-tags', '为什么角色很关键', '左右 cup 的身份不是固定的。每个阶段都要明确左 / 右是 empty、social stranger、familiar 还是 novel，否则社交性和社交新奇指标会被反向解释。'],
+            ],
+            flow: ['视频采集要求', '上传与时间范围', '三室 + cup 标定', '阶段 / 角色 / 时间轴', '调参与预览', '结果字段复核'],
+            nav: [
+                ['overview', '总览'],
+                ['recording', '采集要求'],
+                ['upload', '上传与时间范围'],
+                ['calibration', '标定 / 时间轴 / 角色'],
+                ['params', '参数字典'],
+                ['outputs', '结果字典'],
+                ['batch', '批量流程'],
+                ['troubleshooting', '常见问题与排错'],
+            ],
+            sections: {
+                overview: {
+                    title: '总览',
+                    lead: '三箱社交模块用于分析社交趋近和社会新奇偏好。每个 ROI 代表一个完整三箱装置，必须包含 left、center、right 三个室，以及 left cup 和 right cup 两个点。',
+                    points: [
+                        '<code>analysis_mode = full_protocol</code> 适合一条视频包含完整流程；系统按 <code>protocol_segments</code> 分段统计。',
+                        '<code>analysis_mode = single_phase</code> 适合每条视频已经裁成单个阶段；此时用 <code>selected_phase</code> 指明当前阶段。',
+                        '<code>sociability_index</code> 通常按 social 与 object 所在侧室时间计算；<code>social_novelty_index</code> 通常按 novel 与 familiar 所在侧室时间计算。',
+                        'Interaction 时间默认是 cup 周围接近区时间，而不是人工鼻触 sniff 的逐帧标注。'
+                    ],
+                    callouts: [
+                        ['warning', '最容易出错的是左右角色', '不要假定左侧固定是 social 或 novel。正式分析前务必核对 <code>role_schedule</code>，并在结果视频里确认左右 cup 标签和阶段相符。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: '3CST 对箱体分隔线、cup 位置、刺激鼠遮挡和阶段切换时间都很敏感。稳定视角和清晰的左右 cup 是后续解释的基础。',
+                    blocks: [
+                        {
+                            title: '机位与箱体',
+                            icon: 'fas fa-camera',
+                            items: [
+                                '优先使用固定俯视或接近俯视机位，录制期间不要移动相机。',
+                                '左室、中室、右室边界以及左右门洞都应清楚可见，避免门洞被反光、阴影或器材遮挡。',
+                                '如果同一视频里有多个三箱装置，尽量保持它们在同一平面且尺寸一致。'
+                            ]
+                        },
+                        {
+                            title: 'Cup 与刺激鼠',
+                            icon: 'fas fa-circle-dot',
+                            items: [
+                                '左右 cup 点应落在 cup 几何中心附近，因为 interaction 半径和 cup exclusion 半径都以该点为中心。',
+                                '刺激鼠、杯架和金属笼不要产生过强反光，否则可能被误检为测试鼠。',
+                                '如果刺激鼠区域经常被识别为测试鼠，优先调大 <code>cup_exclusion_radius_cm</code> 或使用检测遮罩避开刺激区域。'
+                            ]
+                        },
+                        {
+                            title: '阶段与操作段',
+                            icon: 'fas fa-stopwatch',
+                            items: [
+                                '完整流程视频应记录清楚每个阶段开始 / 结束秒数，包括换鼠、放杯、开门等人工操作间隔。',
+                                '人工操作段应设置为 <code>ignore</code>，否则手、杯或门的移动会污染轨迹和交互统计。',
+                                '如果不同样本的阶段时长不同，建议在批量模式中逐视频校准时间轴。'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Interaction 不是越大半径越好', '交互半径过大容易把路过 cup 附近算成 interaction，过小又会漏掉真实接近。建议先用少量样本预览，观察左右 cup 圆圈和轨迹是否符合肉眼判断。']
+                    ]
+                },
+                upload: {
+                    title: '上传与时间范围',
+                    lead: '上传页定义视频、默认统计时间、FPS 覆盖和输出目录。三箱模块还会在标定页保存每个视频的流程模式、时间轴、角色表和 ROI 配置。',
+                    points: [
+                        '完整流程模式下，<code>protocol_segments</code> 中的 start / end 秒数决定每个阶段统计范围。',
+                        '单阶段模式下，<code>selected_phase</code> 决定当前视频按 habituation_center、habituation_all、sociability 或 social_novelty 哪一类解释。',
+                        '如果视频 FPS 元数据不稳定，建议手动覆盖 FPS，因为阶段边界、速度、潜伏期和交互时间都依赖准确时间轴。',
+                        '批量分析时，每个视频都可以保存自己的阶段、时间轴、角色、三室区域、cup 点、遮罩和参数。'
+                    ],
+                    callouts: [
+                        ['success', '输出目录结构', '批量分析会在总输出目录下为每个视频建立子文件夹，并把该视频的 track、summary、phase_summary、bins、报告、热图、轨迹图和标注视频放入对应目录。']
+                    ]
+                },
+                calibration: {
+                    title: '标定、阶段时间轴与左右角色',
+                    lead: '3CST 的配置可以理解为三层：先画空间区域，再定义 cup 点和检测范围，最后定义阶段时间轴与每个阶段左右 cup 的角色。',
+                    blocks: [
+                        {
+                            title: '左 / 中 / 右三室',
+                            icon: 'fas fa-vector-square',
+                            items: [
+                                '每个 ROI 必须画 <code>left</code>、<code>center</code>、<code>right</code> 三个多边形，每个至少 3 个点。',
+                                '可选 <code>left_door</code> 和 <code>right_door</code> 用于可视化门区，但主统计仍以三室区域为核心。',
+                                '三个主室之间不要留明显空隙或大面积重叠，否则 <code>Unknown</code>、chamber time 和 transitions 会异常。'
+                            ]
+                        },
+                        {
+                            title: '左右 cup 点与检测遮罩',
+                            icon: 'fas fa-bullseye',
+                            items: [
+                                '左 cup 和右 cup 都必须点出。系统用它们计算 interaction 圆、cup exclusion 圆和左右角色指标。',
+                                '检测遮罩用于限制测试鼠检测范围，不改变三室边界或 cup 位置。',
+                                '<code>cup_exclusion_radius_cm</code> 会在 cup 周围排除检测，降低刺激鼠或杯架被当成测试鼠的风险。'
+                            ]
+                        },
+                        {
+                            title: '完整流程时间轴',
+                            icon: 'fas fa-timeline',
+                            items: [
+                                '默认完整流程包含 <code>habituation_center</code>、<code>habituation_all</code>、<code>sociability</code>、<code>social_novelty</code>，中间可插入 <code>ignore</code> 操作段。',
+                                '每段必须有有效的 <code>start_s</code> 和 <code>end_s</code>，并且时间段不能重叠。',
+                                '<code>ignore</code> 段不会进入 track 的统计窗口，也不会写入 phase summary。'
+                            ]
+                        },
+                        {
+                            title: '角色表 role_schedule',
+                            icon: 'fas fa-tags',
+                            items: [
+                                '<code>sociability</code> 阶段通常一侧为 <code>social_stranger_1</code>，另一侧为 <code>empty_object</code>。',
+                                '<code>social_novelty</code> 阶段通常一侧为 <code>familiar_stranger_1</code>，另一侧为 <code>novel_stranger_2</code>。',
+                                '如果左右放置在不同样本中做了 counterbalance，必须逐视频确认角色表。'
+                            ]
+                        }
+                    ],
+                    phaseTable: {
+                        headers: ['配置项', '作用', '备注'],
+                        rows: [
+                            ['<code>full_protocol</code>', '按完整时间轴把一条视频切成多个阶段。', '推荐用于完整录制的连续视频。'],
+                            ['<code>single_phase</code>', '整条视频按一个阶段解释。', '适合已裁剪好的单阶段视频。'],
+                            ['<code>habituation_center</code>', '中心室适应阶段。', '常用于观察中心室停留和初始检测质量。'],
+                            ['<code>habituation_all</code>', '三室自由适应阶段。', '左右侧明显偏倚会触发 <code>habituation_side_bias</code> 质控标记。'],
+                            ['<code>sociability</code>', '社交性阶段。', '比较 social 与 empty/object 侧室或 interaction 时间。'],
+                            ['<code>social_novelty</code>', '社会新奇阶段。', '比较 novel 与 familiar 侧室或 interaction 时间。']
+                        ]
+                    },
+                    timeTable: {
+                        headers: ['ROI 时间模式', '含义', '推荐场景'],
+                        rows: [
+                            ['<code>global</code>', '跟随上传页全局时间范围。', '整条视频或时间轴已经在全局范围内。'],
+                            ['<code>precise</code>', '按视频绝对秒数设置 ROI 自己的开始 / 结束。', '不同 ROI 或不同装置需要不同统计片段。'],
+                            ['<code>relative</code>', '按该 ROI 首次检测到测试鼠后的相对时间计算。', '配置数据支持该模式，适合特殊对齐需求。']
+                        ]
+                    },
+                    callouts: [
+                        ['danger', '角色错了，指标方向就错了', '<code>sociability_index</code> 和 <code>social_novelty_index</code> 都依赖角色表。如果 social / empty 或 novel / familiar 方向写反，summary 仍能生成，但科学解释会反过来。']
+                    ]
+                },
+                params: {
+                    title: '参数字典',
+                    lead: '三箱参数可以分为检测参数、空间与阶段参数、交互判定参数。建议先让测试鼠检测稳定，再解释社交偏好指标。',
+                    detectTable: {
+                        headers: ['参数', '作用', '常见调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '检测方式。<code>threshold</code> 使用灰度阈值，<code>static</code> 使用静态背景减除。', '固定机位且背景稳定时两者都可试；刺激鼠或 cup 反光严重时优先检查遮罩和 exclusion。'],
+                            ['<code>bg_type</code>', '指定背景偏浅还是偏深，决定分割方向。', '深色鼠配浅背景选 <code>light</code>；浅色鼠配深背景选 <code>dark</code>。'],
+                            ['<code>gray_threshold</code>', '灰度阈值法下的分割阈值。', '噪点多就提高；测试鼠轮廓断裂或漏检就降低。'],
+                            ['<code>min_area</code>', '最小轮廓面积。', '杯架或碎点误检多时提高；测试鼠被过滤时降低。']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['参数', '作用', '结果影响'],
+                        rows: [
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', '定义三箱装置真实尺度。', '影响距离、速度、interaction 半径换算、热图和轨迹图。'],
+                            ['<code>interaction_radius_cm</code>', 'cup 点周围多大半径内算 interaction 候选。', '过大容易把路过算进交互；过小会漏掉真实接近。'],
+                            ['<code>cup_exclusion_radius_cm</code>', 'cup 周围排除检测的半径。', '降低刺激鼠或杯架被误检为测试鼠的风险。'],
+                            ['<code>transition_min_dwell_s</code>', '进入候选室后需稳定停留多久才接受 chamber 切换。', '影响 left / center / right entries 和 <code>total_transitions</code>。'],
+                            ['<code>center_reset_s</code>', '保存在 summary 的中心重置参数。', '用于追溯本次分析配置；当前转换实现主要使用稳定停留规则。'],
+                            ['<code>movement_threshold_cm_s</code>', '速度高于该值记为移动，否则记为低活动 / 静止。', '影响 <code>moving_time_s</code> 和 <code>immobility_time_s</code>。'],
+                            ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每一行覆盖的时间范围。'],
+                            ['<code>use_head_direction</code> / <code>head_angle_threshold_deg</code> / <code>head_confidence_threshold</code>', '高级配置中的头向辅助 sniff 支持，默认关闭。', '标准 GUI 主要使用 proximity interaction；启用后才会输出 <code>head_directed_sniff_time_s</code>。']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'Interaction 的当前含义', '当前 3CST interaction 以 cup 点半径内的接近为主。它适合作为自动化接近 / 探索指标，但不等同于人工逐帧 sniff 标注。']
+                    ]
+                },
+                outputs: {
+                    title: '结果字典',
+                    lead: '3CST 会导出结果视频、逐帧 track CSV、protocol summary、phase summary、bins CSV、TXT 报告，以及每个 ROI 的热图和轨迹图。',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', '带三室区域、cup 点、interaction 半径、exclusion 半径、当前阶段、区域标签和轨迹的结果视频。'],
+                        ['<code>*_track.csv</code>', '逐帧轨迹和行为状态表，适合复核阶段、zone、interaction 和 transition。'],
+                        ['<code>*_summary.csv</code>', '每个 ROI 一行的 protocol 汇总，包含 sociability 和 social novelty 的核心指标。'],
+                        ['<code>*_phase_summary.csv</code>', '每个 ROI 每个可分析阶段一行，包含阶段内三室时间、interaction、latency、entries 和 QC flags。'],
+                        ['<code>*_bins.csv</code>', '按阶段内相对时间分箱的距离、速度、三室时间、interaction 和 transitions。'],
+                        ['<code>*_report.txt</code>', '基于 protocol summary 和 phase summary 生成的文本报告。'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', '每个 ROI 的热图和轨迹图；多 ROI 时还会生成拼图。']
+                    ],
+                    trackTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>video_name</code>', '视频原始名称。', '批量汇总时用于回溯来源。'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI 编号和名称。', '区分同一视频内不同三箱装置。'],
+                            ['<code>frame</code> / <code>time_s</code> / <code>dt_s</code>', '帧号、视频绝对时间和步长。', '用于定位结果视频和做时序复核。'],
+                            ['<code>analysis_mode</code> / <code>phase</code> / <code>segment_id</code>', '分析模式、当前阶段和时间段 ID。', '检查某帧是否归入正确阶段。'],
+                            ['<code>segment_time_s</code>', '当前阶段内相对时间。', 'bins 使用该时间而不是整条视频时间。'],
+                            ['<code>detected</code> / <code>carried_position</code> / <code>in_stats_window</code>', '检测状态、短暂漏检沿用位置、是否参与统计。', '操作段和 ignore 段通常不在统计窗口内。'],
+                            ['<code>x_px</code> / <code>y_px</code> / <code>x_cm</code> / <code>y_cm</code>', '像素坐标与估算厘米坐标。', '用于轨迹、速度和图像输出。'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code>', '速度和单步距离。', '检测跳变会造成速度异常。'],
+                            ['<code>zone_key</code> / <code>zone</code>', '当前区域。', '常见值为 <code>left</code>、<code>center</code>、<code>right</code>、door 或 <code>Unknown</code>。'],
+                            ['<code>stable_chamber</code> / <code>transition_event</code> / <code>entry_chamber</code>', '稳定室、是否触发转换、进入的室。', '复核 chamber entries 和 transitions 时使用。'],
+                            ['<code>left_interaction</code> / <code>right_interaction</code>', '当前帧是否在左右 cup interaction 区。', '这是 proximity interaction 的逐帧来源。'],
+                            ['<code>left_role</code> / <code>right_role</code>', '当前阶段左右 cup 角色。', '复核 sociability / novelty 指标方向。']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>analysis_mode</code> / <code>phase_count</code>', '分析模式和被汇总的阶段数量。', '完整流程应包含多个可分析阶段。'],
+                            ['<code>total_time_s</code> / <code>detected_rate_percent</code>', '总统计时长和加权检测率。', '检测率低时所有社交指标都需人工复核。'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', '总距离、平均速度和最大速度。', '用于排除运动能力或跟踪异常。'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', '所有可分析阶段合计三室停留。', 'protocol 级总览，不替代阶段明细。'],
+                            ['<code>left_entries</code> / <code>center_entries</code> / <code>right_entries</code> / <code>total_transitions</code>', '三室进入次数和转换次数。', '低转换提示探索不足或检测问题。'],
+                            ['<code>sociability_index</code> / <code>sociability_interaction_index</code>', '社交性阶段 social 与 object 的侧室时间指数和 interaction 指数。', '公式为 (social - object) / (social + object)。'],
+                            ['<code>social_novelty_index</code> / <code>social_novelty_interaction_index</code>', '社交新奇阶段 novel 与 familiar 的侧室时间指数和 interaction 指数。', '公式为 (novel - familiar) / (novel + familiar)。'],
+                            ['<code>social_interaction_time_s</code> / <code>object_interaction_time_s</code>', '社交性阶段角色化 interaction 时间。', '依赖 role_schedule。'],
+                            ['<code>novel_interaction_time_s</code> / <code>familiar_interaction_time_s</code>', '社交新奇阶段角色化 interaction 时间。', '依赖 role_schedule。'],
+                            ['<code>latency_to_social_chamber_s</code> / <code>latency_to_novel_chamber_s</code>', '首次进入 social 或 novel 所在侧室的潜伏期。', '未进入时可能为空。'],
+                            ['<code>proximity_only_time_s</code> / <code>head_directed_sniff_time_s</code>', '接近规则时间和可选头向辅助 sniff 时间。', '头向辅助默认关闭，关闭时 head 字段为空。'],
+                            ['<code>interaction_radius_cm</code> / <code>cup_exclusion_radius_cm</code> / <code>qc_flags</code>', '关键配置和质量标记。', '常见标记包括 <code>low_detection</code>、<code>low_exploration</code>、<code>habituation_side_bias</code>、角色缺失等。']
+                        ]
+                    },
+                    phaseTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>phase</code> / <code>segment_id</code> / <code>segment_start_s</code> / <code>segment_end_s</code>', '阶段类型、段 ID 和时间边界。', '复核时间轴是否切对。'],
+                            ['<code>segment_duration_s</code> / <code>detected_frames</code> / <code>detected_rate_percent</code>', '阶段时长、检测帧数和检测率。', '低检测阶段不宜只看指数。'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', '阶段内三室停留时间。', '核心空间偏好字段。'],
+                            ['<code>left_time_percent</code> / <code>center_time_percent</code> / <code>right_time_percent</code>', '阶段内三室比例。', '适合阶段内对比。'],
+                            ['<code>left_interaction_time_s</code> / <code>right_interaction_time_s</code>', '左右 cup interaction 时间。', '角色化指标由这些字段按 role_schedule 转换而来。'],
+                            ['<code>left_interaction_bouts</code> / <code>right_interaction_bouts</code>', '左右 interaction bout 次数。', '可辅助判断是否一次长停留或多次接近。'],
+                            ['<code>left_role</code> / <code>right_role</code>', '该阶段左右 cup 角色。', '所有角色化指标的来源。'],
+                            ['<code>sociability_index</code> / <code>social_novelty_index</code>', '该阶段能计算时输出的偏好指数。', '不相关阶段通常为空。'],
+                            ['<code>latency_to_social_interaction_s</code> / <code>latency_to_novel_interaction_s</code>', '首次接近 social 或 novel cup 的潜伏期。', '未接近时为空。'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code> / <code>qc_flags</code>', '阶段内活动状态和质量标记。', '解释偏好指标前应一起查看。']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['字段', '含义', '解读建议'],
+                        rows: [
+                            ['<code>phase</code> / <code>segment_id</code> / <code>bin_index</code>', '该时间箱属于哪个阶段和第几个箱。', '分箱从每个阶段内部重新计数。'],
+                            ['<code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', '阶段内相对时间范围。', '最后一个时间箱可能更短。'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', '时间箱内距离和速度。', '用于观察活动变化。'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', '时间箱内三室停留。', '适合绘制阶段内位置偏好变化。'],
+                            ['<code>left_interaction_time_s</code> / <code>right_interaction_time_s</code>', '时间箱内左右 cup interaction。', '可看 social 或 novel 接近是否集中在早期。'],
+                            ['<code>transitions</code>', '时间箱内 chamber 转换次数。', '用于判断探索活动是否足够。']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'summary 与 phase_summary 的关系', '<code>*_summary.csv</code> 是 protocol 级汇总，方便快速看 sociability 和 social novelty。正式检查具体阶段时，应同时打开 <code>*_phase_summary.csv</code>。']
+                    ]
+                },
+                batch: {
+                    title: '批量流程',
+                    lead: '3CST 批量模式是每个视频独立完成流程、角色、ROI 和调参，然后统一运行。完整流程尤其不能跳过逐视频时间轴检查。',
+                    steps: [
+                        '上传多个 3CST 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '逐个打开视频卡片，选择完整流程或单阶段模式。',
+                        '如果是完整流程，核对每个 segment 的 phase、start、end 和 analyze 状态，把人工操作段设为 ignore。',
+                        '核对 sociability 和 social_novelty 阶段左右 cup 角色，特别是做过左右平衡设计的批次。',
+                        '完成每个 ROI 的 left / center / right 三室、左右 cup 点、可选门区和检测遮罩。',
+                        '调节检测与 interaction 参数，预览确认测试鼠没有被刺激鼠或杯架误检。',
+                        '保存当前视频配置并返回批量页面，所有视频完成后再开始批量分析。'
+                    ],
+                    rules: [
+                        '每个视频保存自己的 analysis_mode、时间轴、role_schedule、ROI、cup 点、遮罩和参数。',
+                        '同一视频内多个 ROI 共享该视频的检测和统计参数。',
+                        '完整流程时间轴如果缺失、重叠或没有可分析阶段，会在开始前被拦截。',
+                        '缺少任一主室或左右 cup 点的 ROI 不会通过校验。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '常见问题与排错',
+                    lead: '3CST 排错要同时看时间轴、角色表、三室区域、cup 点和检测质量。多数异常不是单个 summary 数值能解释清楚的。',
+                    items: [
+                        'sociability 指标方向反了：优先检查 sociability 阶段 left_role / right_role 是否把 social 和 empty 写反。',
+                        'social novelty 指标方向反了：检查 social_novelty 阶段 familiar 和 novel 的左右角色是否正确。',
+                        'interaction 时间异常高：检查 <code>interaction_radius_cm</code> 是否过大，cup 点是否偏离中心，或测试鼠是否长时间贴边路过 cup 圆。',
+                        'interaction 时间异常低：检查 interaction 半径是否过小、cup 点是否点错，或 <code>cup_exclusion_radius_cm</code> 是否过大导致测试鼠靠近 cup 时被排除。',
+                        '刺激鼠被误检：增大 <code>cup_exclusion_radius_cm</code>、调整检测遮罩，或改善 cup / 笼具反光。',
+                        '阶段数据为空：检查 full protocol 时间轴是否覆盖视频当前时间，segment 是否被设为 analyze，ROI 时间窗是否额外排除了该阶段。',
+                        '转换次数很低：确认三室边界没有空隙，检测率足够，且小鼠确实进入左右室。'
+                    ],
+                    callouts: [
+                        ['danger', '什么时候不能只看 summary', '如果角色表、时间轴、检测率、cup 点或 interaction 圆有任何疑问，都不要只凭 <code>*_summary.csv</code> 下结论。请复核结果视频、<code>*_track.csv</code> 和 <code>*_phase_summary.csv</code>。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Three-Chamber Social Test / 3CST',
+            heroTitle: 'Complete Three-Chamber Social Test Manual',
+            heroSubtitle: 'This manual covers full-protocol and single-phase modes, chamber and cup calibration, phase timeline, cup roles, interaction / exclusion radii, key parameters, result fields, and per-video batch setup.',
+            heroChips: ['Left / center / right chambers', 'Left and right cup points', 'Full protocol timeline', 'Sociability / social novelty', 'track / summary / phase_summary / bins'],
+            heroCards: [
+                ['fas fa-people-arrows', 'What the module quantifies', '3CST measures chamber occupancy, entries, transitions, cup interaction time, and role-derived sociability and social novelty indices.'],
+                ['fas fa-timeline', 'Why timeline matters', 'Full recordings often contain habituation, sociability, social novelty, and manual handling gaps. The timeline separates analyzable phases from ignore intervals.'],
+                ['fas fa-tags', 'Why roles matter', 'Cup identity is not fixed by side. Each phase must define whether left and right cups are empty, social, familiar, or novel.']
+            ],
+            flow: ['Recording', 'Upload and timing', 'Chambers + cups', 'Phases / roles / timeline', 'Preview and tuning', 'Review outputs'],
+            nav: [
+                ['overview', 'Overview'],
+                ['recording', 'Recording requirements'],
+                ['upload', 'Upload and timing'],
+                ['calibration', 'Calibration / timeline / roles'],
+                ['params', 'Parameters'],
+                ['outputs', 'Outputs'],
+                ['batch', 'Batch workflow'],
+                ['troubleshooting', 'Troubleshooting']
+            ],
+            sections: {
+                overview: {
+                    title: 'Overview',
+                    lead: 'The 3CST module analyzes social approach and social novelty preference. Each ROI is one complete three-chamber apparatus with left, center, right chamber polygons plus left and right cup points.',
+                    points: [
+                        '<code>analysis_mode = full_protocol</code> is for continuous videos that contain multiple phases.',
+                        '<code>analysis_mode = single_phase</code> is for videos already trimmed to one phase.',
+                        '<code>sociability_index</code> compares social versus object sides, and <code>social_novelty_index</code> compares novel versus familiar sides.',
+                        'Interaction time currently represents proximity to the cup area, not manual frame-by-frame sniff annotation.'
+                    ],
+                    callouts: [
+                        ['warning', 'Cup roles are the most common source of mistakes', 'Do not assume the left side is always social or novel. Confirm <code>role_schedule</code> and the cup labels in the annotated video before interpreting indices.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording Requirements',
+                    lead: '3CST is sensitive to chamber dividers, cup placement, stimulus-mouse interference, and phase timing. Stable video and clear cup centers are essential.',
+                    blocks: [
+                        {
+                            title: 'Camera and apparatus',
+                            icon: 'fas fa-camera',
+                            items: [
+                                'Use a fixed top view or near-top view and avoid moving the camera.',
+                                'Keep left, center, right chambers and both doors visible.',
+                                'For multiple apparatuses in one video, keep them on the same plane with consistent scale.'
+                            ]
+                        },
+                        {
+                            title: 'Cups and stimulus mouse',
+                            icon: 'fas fa-circle-dot',
+                            items: [
+                                'Place cup points near the geometric cup centers because interaction and exclusion radii use those points.',
+                                'Avoid strong reflections from wire cups, cup holders, or stimulus cages.',
+                                'If the stimulus mouse is detected as the test mouse, increase <code>cup_exclusion_radius_cm</code> or refine the detection mask.'
+                            ]
+                        },
+                        {
+                            title: 'Phase handling',
+                            icon: 'fas fa-stopwatch',
+                            items: [
+                                'Record the start and end second for each phase and each manual handling interval.',
+                                'Set handling, cup placement, door opening, and mouse exchange intervals to <code>ignore</code>.',
+                                'If phase durations vary across samples, calibrate the timeline per video in batch mode.'
+                            ]
+                        }
+                    ],
+                    callouts: [
+                        ['info', 'Bigger interaction radius is not always better', 'Too large a radius counts pass-through frames; too small a radius misses real approaches. Preview a few samples and compare the drawn circles with visual behavior.']
+                    ]
+                },
+                upload: {
+                    title: 'Upload and Timing',
+                    lead: 'The upload page defines videos, default timing, FPS override, and output directory. The calibration page then stores mode, timeline, roles, and ROI geometry per video.',
+                    points: [
+                        'In full-protocol mode, <code>protocol_segments</code> start and end seconds define each phase.',
+                        'In single-phase mode, <code>selected_phase</code> tells MouseScope how to interpret the entire video.',
+                        'Override FPS when metadata is unreliable because phase boundaries, speed, latency, and interaction time depend on the time base.',
+                        'Each batch video can store its own phase setup, timeline, roles, chamber polygons, cup points, masks, and parameters.'
+                    ],
+                    callouts: [
+                        ['success', 'Output folder structure', 'Batch analysis creates one child folder per video containing track, summary, phase_summary, bins, report, maps, and annotated video.']
+                    ]
+                },
+                calibration: {
+                    title: 'Calibration, Timeline, and Roles',
+                    lead: '3CST setup has three layers: draw spatial zones, define cups and detection range, then define phase timing and cup roles.',
+                    blocks: [
+                        {
+                            title: 'Left / center / right chambers',
+                            icon: 'fas fa-vector-square',
+                            items: [
+                                'Each ROI requires <code>left</code>, <code>center</code>, and <code>right</code> polygons with at least 3 points each.',
+                                'Optional <code>left_door</code> and <code>right_door</code> zones are mainly visual guides.',
+                                'Avoid gaps and large overlaps between the three main chambers.'
+                            ]
+                        },
+                        {
+                            title: 'Cup points and detection mask',
+                            icon: 'fas fa-bullseye',
+                            items: [
+                                'Both left and right cup points are required.',
+                                'The detection mask limits allowed test-mouse detection and does not change chamber geometry or cup coordinates.',
+                                '<code>cup_exclusion_radius_cm</code> excludes detection around cups to reduce stimulus-mouse false positives.'
+                            ]
+                        },
+                        {
+                            title: 'Full protocol timeline',
+                            icon: 'fas fa-timeline',
+                            items: [
+                                'Default phases include <code>habituation_center</code>, <code>habituation_all</code>, <code>sociability</code>, and <code>social_novelty</code>, with optional <code>ignore</code> gaps.',
+                                'Every segment needs valid non-overlapping <code>start_s</code> and <code>end_s</code> values.',
+                                '<code>ignore</code> segments do not enter statistics or phase_summary output.'
+                            ]
+                        },
+                        {
+                            title: 'Role schedule',
+                            icon: 'fas fa-tags',
+                            items: [
+                                '<code>sociability</code> usually compares <code>social_stranger_1</code> with <code>empty_object</code>.',
+                                '<code>social_novelty</code> usually compares <code>familiar_stranger_1</code> with <code>novel_stranger_2</code>.',
+                                'If side placement was counterbalanced, verify roles separately for every video.'
+                            ]
+                        }
+                    ],
+                    phaseTable: {
+                        headers: ['Setting', 'Role', 'Notes'],
+                        rows: [
+                            ['<code>full_protocol</code>', 'Splits one continuous video into multiple phases.', 'Recommended for complete recordings.'],
+                            ['<code>single_phase</code>', 'Treats the whole video as one selected phase.', 'Useful for pre-trimmed phase clips.'],
+                            ['<code>habituation_center</code>', 'Center-chamber habituation.', 'Useful for early QC.'],
+                            ['<code>habituation_all</code>', 'Free exploration of all chambers.', 'Strong side bias can add <code>habituation_side_bias</code>.'],
+                            ['<code>sociability</code>', 'Social approach phase.', 'Compares social and empty/object sides.'],
+                            ['<code>social_novelty</code>', 'Social novelty phase.', 'Compares novel and familiar sides.']
+                        ]
+                    },
+                    timeTable: {
+                        headers: ['ROI time mode', 'Meaning', 'Recommended use'],
+                        rows: [
+                            ['<code>global</code>', 'Follow the upload-page global time range.', 'Most standard analyses.'],
+                            ['<code>precise</code>', 'Use absolute video-time start and end seconds for that ROI.', 'When different apparatuses need different windows.'],
+                            ['<code>relative</code>', 'Use time relative to first detection in that ROI.', 'Supported by config for special alignment needs.']
+                        ]
+                    },
+                    callouts: [
+                        ['danger', 'Wrong roles invert interpretation', '<code>sociability_index</code> and <code>social_novelty_index</code> depend on role_schedule. A wrong role table can produce valid files with the wrong biological meaning.']
+                    ]
+                },
+                params: {
+                    title: 'Parameters',
+                    lead: 'Tune test-mouse detection first, then interpret social preference metrics.',
+                    detectTable: {
+                        headers: ['Parameter', 'Role', 'Typical adjustment'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Detection method: threshold or static background subtraction.', 'Use masks and cup exclusion first when stimulus areas cause false positives.'],
+                            ['<code>bg_type</code>', 'Defines whether the background is light or dark.', 'Use <code>light</code> for dark mice on light floors and <code>dark</code> for light mice on dark floors.'],
+                            ['<code>gray_threshold</code>', 'Threshold split value.', 'Increase for noise; decrease for broken or missing contours.'],
+                            ['<code>min_area</code>', 'Minimum contour area.', 'Increase for small false positives; decrease if the test mouse is filtered out.']
+                        ]
+                    },
+                    statsTable: {
+                        headers: ['Parameter', 'Role', 'Effect'],
+                        rows: [
+                            ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', 'Real apparatus dimensions.', 'Affects distance, speed, interaction radius conversion, maps, and trackmaps.'],
+                            ['<code>interaction_radius_cm</code>', 'Radius around each cup counted as interaction candidate.', 'Too large overcounts pass-through; too small misses approaches.'],
+                            ['<code>cup_exclusion_radius_cm</code>', 'Radius around each cup excluded from detection.', 'Reduces stimulus-mouse or cup false positives.'],
+                            ['<code>transition_min_dwell_s</code>', 'Minimum chamber dwell time before accepting a switch.', 'Affects chamber entries and transitions.'],
+                            ['<code>center_reset_s</code>', 'Recorded in summary for provenance.', 'Current switching primarily uses stable dwell logic.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Speed threshold for moving versus immobile time.', 'Affects movement-state outputs.'],
+                            ['<code>bin_seconds</code>', 'Duration of each time bin.', 'Controls <code>*_bins.csv</code> row width.'],
+                            ['<code>use_head_direction</code> / <code>head_angle_threshold_deg</code> / <code>head_confidence_threshold</code>', 'Advanced head-direction sniff support, off by default.', 'Only enabled configs output <code>head_directed_sniff_time_s</code>.']
+                        ]
+                    },
+                    callouts: [
+                        ['info', 'Current interaction definition', 'The default 3CST interaction is proximity to the cup point. It is an automated approach measure, not a substitute for manual sniff scoring.']
+                    ]
+                },
+                outputs: {
+                    title: 'Outputs',
+                    lead: '3CST exports annotated video, track CSV, protocol summary, phase summary, bins CSV, TXT report, and per-ROI maps.',
+                    files: [
+                        ['<code>*_analyzed.mp4</code>', 'Annotated video with chambers, cups, interaction radius, exclusion radius, current phase, zone label, and trajectory.'],
+                        ['<code>*_track.csv</code>', 'Frame-level trajectory and behavior state table.'],
+                        ['<code>*_summary.csv</code>', 'One protocol-level row per ROI with core sociability and novelty metrics.'],
+                        ['<code>*_phase_summary.csv</code>', 'One row per ROI per analyzable phase.'],
+                        ['<code>*_bins.csv</code>', 'Within-phase time bins for distance, chamber time, interaction, and transitions.'],
+                        ['<code>*_report.txt</code>', 'Readable report generated from summaries.'],
+                        ['<code>*_heatmap.png</code> / <code>*_trackmap.png</code>', 'Per-ROI heatmap and trajectory map; multi-ROI videos also get grids.']
+                    ],
+                    trackTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>video_name</code>', 'Original video name.', 'Used for batch provenance.'],
+                            ['<code>roi_id</code> / <code>roi_name</code>', 'ROI identifier and name.', 'Separates apparatuses inside one video.'],
+                            ['<code>frame</code> / <code>time_s</code> / <code>dt_s</code>', 'Frame index, absolute time, and step duration.', 'Useful for locating frames.'],
+                            ['<code>analysis_mode</code> / <code>phase</code> / <code>segment_id</code>', 'Mode, current phase, and segment ID.', 'Checks whether a frame belongs to the intended phase.'],
+                            ['<code>segment_time_s</code>', 'Time relative to the current segment.', 'Bins use this value.'],
+                            ['<code>detected</code> / <code>carried_position</code> / <code>in_stats_window</code>', 'Detection state, carried short-gap position, and statistics inclusion.', 'Ignore segments are outside the stats window.'],
+                            ['<code>x_px</code> / <code>y_px</code> / <code>x_cm</code> / <code>y_cm</code>', 'Pixel and centimeter coordinates.', 'Used for trajectories and maps.'],
+                            ['<code>speed_cm_s</code> / <code>step_distance_cm</code>', 'Speed and step distance.', 'Tracking jumps show up here.'],
+                            ['<code>zone_key</code> / <code>zone</code>', 'Current zone.', 'Common values are left, center, right, door, or Unknown.'],
+                            ['<code>stable_chamber</code> / <code>transition_event</code> / <code>entry_chamber</code>', 'Stable chamber, transition flag, and entered chamber.', 'Audits entries and transitions.'],
+                            ['<code>left_interaction</code> / <code>right_interaction</code>', 'Whether the frame is within each cup interaction zone.', 'Source of proximity interaction time.'],
+                            ['<code>left_role</code> / <code>right_role</code>', 'Cup roles for the current phase.', 'Determines direction of role-derived metrics.']
+                        ]
+                    },
+                    summaryTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>analysis_mode</code> / <code>phase_count</code>', 'Mode and number of summarized phases.', 'Full protocol should usually have multiple analyzed phases.'],
+                            ['<code>total_time_s</code> / <code>detected_rate_percent</code>', 'Total analyzed time and weighted detection rate.', 'Low detection requires manual review.'],
+                            ['<code>total_distance_cm</code> / <code>mean_speed_cm_s</code> / <code>max_speed_cm_s</code>', 'Total distance, mean speed, and max speed.', 'Useful for locomotion and QC.'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', 'Protocol-level chamber totals.', 'Use phase_summary for phase-specific interpretation.'],
+                            ['<code>left_entries</code> / <code>center_entries</code> / <code>right_entries</code> / <code>total_transitions</code>', 'Chamber entries and transitions.', 'Low values may indicate insufficient exploration.'],
+                            ['<code>sociability_index</code> / <code>sociability_interaction_index</code>', 'Social versus object chamber and interaction indices.', 'Formula: (social - object) / (social + object).'],
+                            ['<code>social_novelty_index</code> / <code>social_novelty_interaction_index</code>', 'Novel versus familiar chamber and interaction indices.', 'Formula: (novel - familiar) / (novel + familiar).'],
+                            ['<code>social_interaction_time_s</code> / <code>object_interaction_time_s</code>', 'Role-derived interaction time in sociability.', 'Depends on role_schedule.'],
+                            ['<code>novel_interaction_time_s</code> / <code>familiar_interaction_time_s</code>', 'Role-derived interaction time in social novelty.', 'Depends on role_schedule.'],
+                            ['<code>latency_to_social_chamber_s</code> / <code>latency_to_novel_chamber_s</code>', 'Latency to first entry into social or novel chamber.', 'May be empty if never entered.'],
+                            ['<code>proximity_only_time_s</code> / <code>head_directed_sniff_time_s</code>', 'Proximity-rule time and optional head-directed sniff time.', 'Head field is empty when head support is disabled.'],
+                            ['<code>interaction_radius_cm</code> / <code>cup_exclusion_radius_cm</code> / <code>qc_flags</code>', 'Key settings and QC flags.', 'Common flags include low_detection, low_exploration, habituation_side_bias, and missing roles.']
+                        ]
+                    },
+                    phaseTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>phase</code> / <code>segment_id</code> / <code>segment_start_s</code> / <code>segment_end_s</code>', 'Phase identity and time bounds.', 'Confirms timeline alignment.'],
+                            ['<code>segment_duration_s</code> / <code>detected_frames</code> / <code>detected_rate_percent</code>', 'Phase duration and detection quality.', 'Poor detection weakens all phase metrics.'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', 'Phase chamber occupancy.', 'Core spatial preference readout.'],
+                            ['<code>left_time_percent</code> / <code>center_time_percent</code> / <code>right_time_percent</code>', 'Phase chamber percentages.', 'Useful for within-phase comparisons.'],
+                            ['<code>left_interaction_time_s</code> / <code>right_interaction_time_s</code>', 'Cup interaction time by side.', 'Role-derived metrics are based on these columns.'],
+                            ['<code>left_interaction_bouts</code> / <code>right_interaction_bouts</code>', 'Interaction bout counts.', 'Distinguishes one long stay from many approaches.'],
+                            ['<code>left_role</code> / <code>right_role</code>', 'Cup roles in this phase.', 'Source of role-derived indices.'],
+                            ['<code>sociability_index</code> / <code>social_novelty_index</code>', 'Preference indices when applicable.', 'Usually empty for unrelated phases.'],
+                            ['<code>latency_to_social_interaction_s</code> / <code>latency_to_novel_interaction_s</code>', 'Latency to first social or novel cup interaction.', 'May be empty if no interaction occurred.'],
+                            ['<code>moving_time_s</code> / <code>immobility_time_s</code> / <code>qc_flags</code>', 'Activity and QC state for that phase.', 'Review before interpreting preference.']
+                        ]
+                    },
+                    binsTable: {
+                        headers: ['Field', 'Meaning', 'How to interpret it'],
+                        rows: [
+                            ['<code>phase</code> / <code>segment_id</code> / <code>bin_index</code>', 'Which phase and bin the row belongs to.', 'Bins restart inside each segment.'],
+                            ['<code>start_s</code> / <code>end_s</code> / <code>duration_s</code>', 'Within-segment time range.', 'The final bin may be shorter.'],
+                            ['<code>distance_cm</code> / <code>mean_speed_cm_s</code>', 'Distance and speed in that bin.', 'Useful for activity dynamics.'],
+                            ['<code>left_time_s</code> / <code>center_time_s</code> / <code>right_time_s</code>', 'Chamber occupancy in that bin.', 'Useful for phase time courses.'],
+                            ['<code>left_interaction_time_s</code> / <code>right_interaction_time_s</code>', 'Cup interaction in that bin.', 'Shows whether approach is early or late.'],
+                            ['<code>transitions</code>', 'Chamber transitions in that bin.', 'Helps assess exploration volume.']
+                        ]
+                    },
+                    callouts: [
+                        ['warning', 'Summary versus phase_summary', '<code>*_summary.csv</code> is the protocol overview. Use <code>*_phase_summary.csv</code> for phase-level review before formal interpretation.']
+                    ]
+                },
+                batch: {
+                    title: 'Batch Workflow',
+                    lead: 'Batch 3CST analysis uses per-video setup followed by one combined run. Full-protocol videos especially require per-video timeline review.',
+                    steps: [
+                        'Upload multiple 3CST videos and set global timing, FPS override, and output folder.',
+                        'Open each video card and choose full-protocol or single-phase mode.',
+                        'For full protocol, verify every segment phase, start, end, and analyze state; set handling gaps to ignore.',
+                        'Verify left and right cup roles for sociability and social_novelty, especially with counterbalanced designs.',
+                        'Complete left / center / right chambers, cup points, optional door zones, and detection mask for each ROI.',
+                        'Tune detection and interaction settings, then preview to ensure the stimulus mouse and cups are not misdetected.',
+                        'Save the video setup, return to the batch page, and start only after every video is complete.'
+                    ],
+                    rules: [
+                        'Each video stores its own analysis_mode, timeline, role_schedule, ROIs, cup points, masks, and parameters.',
+                        'Multiple ROIs inside one video share the detection and statistics parameters for that video.',
+                        'Invalid or empty full-protocol timelines block analysis start.',
+                        'ROIs missing any main chamber or either cup point fail validation.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'Common Issues and Troubleshooting',
+                    lead: '3CST troubleshooting should inspect timeline, roles, chamber zones, cup points, and detection quality together.',
+                    items: [
+                        'Sociability index direction looks inverted: check whether social and empty roles were swapped in the sociability phase.',
+                        'Social novelty index direction looks inverted: check whether familiar and novel roles were swapped in social_novelty.',
+                        'Interaction time is too high: check whether <code>interaction_radius_cm</code> is too large, cup points are off-center, or the path merely passes near the cup circle.',
+                        'Interaction time is too low: check whether interaction radius is too small, cup points are misplaced, or <code>cup_exclusion_radius_cm</code> is too large.',
+                        'Stimulus mouse is detected: increase <code>cup_exclusion_radius_cm</code>, refine the detection mask, or reduce reflections around the cup.',
+                        'A phase is empty: check timeline coverage, analyze flags, and ROI time windows.',
+                        'Transitions are very low: confirm chamber polygons have no gaps, detection rate is adequate, and the mouse truly enters side chambers.'
+                    ],
+                    callouts: [
+                        ['danger', 'When summary alone is not enough', 'If roles, timeline, detection rate, cup points, or interaction circles are uncertain, do not rely only on <code>*_summary.csv</code>. Review the annotated video, <code>*_track.csv</code>, and <code>*_phase_summary.csv</code>.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        return `<${tag} class="${ordered ? 'manual-step-list' : 'manual-list'}">${(items || []).map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderCards(cards) {
+        return `
+            <div class="manual-hero-grid">
+                ${(cards || []).map(card => `
+                    <div class="manual-mini-card">
+                        <h4><i class="${card[0]}" style="color: var(--primary-color);"></i><span>${card[1]}</span></h4>
+                        <p>${card[2]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderBlocks(blocks) {
+        return (blocks || []).map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="${block.icon}" style="color: var(--primary-color);"></i><span>${block.title}</span></h4>
+                ${renderList(block.items, false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(item => `
+            <div class="manual-callout ${item[0]}">
+                <h4>${item[1]}</h4>
+                <p>${item[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `
+            <div class="manual-file-grid">
+                ${(files || []).map(file => `
+                    <div class="manual-file-card">
+                        <h4><i class="fas fa-file-alt" style="color: var(--primary-color);"></i><span>${file[0]}</span></h4>
+                        <p>${file[1]}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function render(lang) {
+        const copy = THREE_CHAMBER_MANUAL[lang] || THREE_CHAMBER_MANUAL.zh;
+        const s = copy.sections || {};
+        const root = document.getElementById('three-chamber-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow(copy.flow)}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                        ${renderCallouts(s.recording.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        ${renderBlocks(s.calibration.blocks)}
+                        <div class="manual-caption"><i class="fas fa-timeline" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Phase definitions' : '阶段定义'}</span></div>
+                        ${window.manualRenderTable(s.calibration.phaseTable.headers, s.calibration.phaseTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI time-window modes' : 'ROI 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                        ${renderCallouts(s.calibration.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-search" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection parameters' : '检测参数'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-chart-line" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Interaction and statistics parameters' : '交互与统计参数'}</span></div>
+                        ${window.manualRenderTable(s.params.statsTable.headers, s.params.statsTable.rows)}
+                        ${renderCallouts(s.params.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_track.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.trackTable.headers, s.outputs.trackTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.summaryTable.headers, s.outputs.summaryTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_phase_summary.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.phaseTable.headers, s.outputs.phaseTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-table" style="color: var(--primary-color);"></i><span><code>*_bins.csv</code></span></div>
+                        ${window.manualRenderTable(s.outputs.binsTable.headers, s.outputs.binsTable.rows)}
+                        ${renderCallouts(s.outputs.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Rules that matter in practice' : '真正需要记住的规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : 'zh';
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

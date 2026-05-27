@@ -87,6 +87,7 @@ from services.project_store import ProjectStore
 from services.video_metadata import probe_video_info
 from services.experiment_registry import (
     get_manual_module,
+    is_three_chamber_enabled,
     list_experiments,
 )
 from services.analysis_sessions import configure_analysis_runtime
@@ -859,6 +860,7 @@ def inject_navigation_context():
         manual_nav_rel = 'noopener noreferrer' if manual_nav_target else None
 
     return {
+        'enable_three_chamber': is_three_chamber_enabled(),
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
         'manual_nav_rel': manual_nav_rel,

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from flask import jsonify, request, url_for
 
-from services.experiment_registry import get_experiment_spec, normalize_experiment_type
+from services.experiment_registry import get_experiment_spec, is_experiment_release_hidden, normalize_experiment_type
 
 
 logger = logging.getLogger(__name__)
@@ -368,6 +368,8 @@ def register_project_api_routes(app, ctx) -> None:
     def api_create_project_assignment(project_id):
         payload = _json_payload()
         if "experiment_type" in payload:
+            if is_experiment_release_hidden(payload.get("experiment_type")):
+                return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
             payload["experiment_type"] = normalize_experiment_type(payload.get("experiment_type"))
         try:
             assignment = project_store.create_assignment(project_id, payload)
@@ -379,6 +381,8 @@ def register_project_api_routes(app, ctx) -> None:
     def api_update_project_assignment(project_id, assignment_id):
         payload = _json_payload()
         if "experiment_type" in payload:
+            if is_experiment_release_hidden(payload.get("experiment_type")):
+                return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
             try:
                 assignment = project_store.update_assignment_experiment(
                     project_id,
@@ -420,7 +424,10 @@ def register_project_api_routes(app, ctx) -> None:
         experiment_types = {item.get("experiment_type") for item in assignments}
         if len(experiment_types) != 1:
             return _error("一次项目分析只能包含同一种实验类型")
-        experiment_type = normalize_experiment_type(assignments[0].get("experiment_type"))
+        requested_experiment_type = assignments[0].get("experiment_type")
+        if is_experiment_release_hidden(requested_experiment_type):
+            return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
+        experiment_type = normalize_experiment_type(requested_experiment_type)
         spec = get_experiment_spec(experiment_type)
 
         session_id = secrets.token_hex(16)

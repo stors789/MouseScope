@@ -418,6 +418,14 @@
                 <a href="{{ url_for('manual', module='ymaze') }}" class="manual-switch-btn {% if manual_type == 'ymaze' %}active{% endif %}">
                     <span data-i18n="manual.switch.ymaze">Y 迷宫手册</span>
                 </a>
+                <a href="{{ url_for('manual', module='ldb') }}" class="manual-switch-btn {% if manual_type == 'ldb' %}active{% endif %}">
+                    <span data-i18n="manual.switch.ldb">LDB 手册</span>
+                </a>
+                {% if enable_three_chamber %}
+                <a href="{{ url_for('manual', module='three_chamber') }}" class="manual-switch-btn {% if manual_type == 'three_chamber' %}active{% endif %}">
+                    <span data-i18n="manual.switch.three_chamber">3CST 手册</span>
+                </a>
+                {% endif %}
             </div>
         </div>
 
@@ -431,6 +439,10 @@
         {% include "manual_epm_content.html" %}
         {% elif manual_type == 'ymaze' %}
         {% include "manual_ymaze_content.html" %}
+        {% elif manual_type == 'ldb' %}
+        {% include "manual_ldb_content.html" %}
+        {% elif manual_type == 'three_chamber' and enable_three_chamber %}
+        {% include "manual_three_chamber_content.html" %}
         {% else %}
         {% include "manual_nor_content.html" %}
         {% endif %}

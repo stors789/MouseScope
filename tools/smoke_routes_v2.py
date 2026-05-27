@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Route and inline-script smoke test for the v2.3.0 workbench flow."""
+"""Route and inline-script smoke test for the v3.2.0 workbench flow."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app import app, analysis_sessions, _now_ts  # noqa: E402
+from services.experiment_registry import is_three_chamber_enabled, list_experiments  # noqa: E402
 
 
 SAMPLE_VIDEO = REPO_ROOT / "test.mp4"
@@ -31,7 +32,7 @@ BASE_VIDEO_INFO = {
     "height": 480,
     "total_frames": 900,
 }
-EXPERIMENTS = ("tst", "forced_swim", "open_field", "novel_object", "elevated_plus", "y_maze")
+EXPERIMENTS = tuple(spec.key for spec in list_experiments())
 
 
 def _rendered_script_blocks(html: str) -> list[str]:
@@ -91,7 +92,10 @@ def main() -> int:
         "/manual?module=nor",
         "/manual?module=epm",
         "/manual?module=ymaze",
+        "/manual?module=ldb",
     ]
+    if is_three_chamber_enabled():
+        public_paths.append("/manual?module=three_chamber")
 
     with app.test_client() as client:
         with client.session_transaction() as sess:
@@ -126,7 +130,7 @@ def main() -> int:
                 if expected_status == 200 and response.content_type.startswith("text/html"):
                     _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
 
-    print("v2.3.0 route smoke test passed")
+    print("v3.2.0 route smoke test passed")
     return 0
 
 

@@ -116,7 +116,7 @@
         <div>
             <div class="upload-kicker">
                 <i class="fas fa-clapperboard"></i>
-                <span>MouseScope v3.1.0</span>
+                <span>MouseScope v3.2.0</span>
             </div>
             <h1 class="upload-title" data-page-i18n="hero.title">快速分析</h1>
             <p class="upload-copy" data-page-i18n="hero.copy">
@@ -142,6 +142,10 @@
                             <option value="novel_object" data-i18n="upload.exp.nor_option">新奇物体识别 Novel Object Recognition</option>
                             <option value="elevated_plus" data-i18n="upload.exp.epm_option">高架十字迷宫 Elevated Plus Maze</option>
                             <option value="y_maze" data-i18n="upload.exp.ymaze_option">Y 迷宫 Y Maze</option>
+                            <option value="light_dark_box" data-i18n="upload.exp.ldb_option">明暗箱 Light-Dark Box</option>
+                            {% if enable_three_chamber %}
+                            <option value="three_chamber" data-i18n="upload.exp.three_chamber_option">三箱社交 Three-Chamber Social Test</option>
+                            {% endif %}
                         </select>
                         <p class="upload-experiment-help" data-i18n="upload.exp.help" data-i18n-html>
                             选择后进入对应配置流程；多视频会先进入批次页。

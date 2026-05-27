@@ -19,13 +19,15 @@ from services.analysis_builders import build_analysis_config
 from services.analysis_sessions import (
     ElevatedPlusMultiArenaAnalysisSession,
     ForcedSwimMultiCylinderAnalysisSession,
+    LightDarkBoxMultiArenaAnalysisSession,
     NovelObjectMultiArenaAnalysisSession,
     OpenFieldMultiArenaAnalysisSession,
+    ThreeChamberSocialAnalysisSession,
     VisionAnalysisSession,
     YMazeMultiArenaAnalysisSession,
 )
 from services.debug_preview import build_debug_preview_response
-from services.experiment_registry import get_experiment_spec, summarize_batch_state
+from services.experiment_registry import get_experiment_spec, is_experiment_release_hidden, summarize_batch_state
 from services.video_frame_reader import read_video_frame
 
 
@@ -731,6 +733,8 @@ def register_api_routes(app, ctx) -> None:
         sess = analysis_sessions.get(session_id)
         if not sess:
             return jsonify({'error': '会话不存在'}), 404
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         cards = summarize_batch_state(
             sess.get('experiment_type'),
             sess.get('draft_payload'),
@@ -756,6 +760,9 @@ def register_api_routes(app, ctx) -> None:
         sess = analysis_sessions.get(session_id)
         if not sess:
             return jsonify({'error': '会话不存在'}), 404
+
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
 
         if request.method == 'GET':
             return jsonify({
@@ -791,6 +798,8 @@ def register_api_routes(app, ctx) -> None:
             return jsonify({'error': '会话不存在'}), 404
 
         payload = request.get_json(silent=True) or {}
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         action = str(payload.get('action') or '').strip().lower()
         draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
         total_videos = len(sess.get('video_infos') or [])
@@ -857,6 +866,9 @@ def register_api_routes(app, ctx) -> None:
         if not sess:
             return jsonify({'error': '会话不存在'}), 404
 
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+
         data = request.get_json()
         if not isinstance(data, dict):
             data = {}
@@ -893,6 +905,8 @@ def register_api_routes(app, ctx) -> None:
             analysis_sessions.save_draft(session_id, data, selected_video_idx=selected_video_idx)
 
         experiment_type = str(sess.get('experiment_type') or 'tst').strip().lower()
+        if is_experiment_release_hidden(experiment_type):
+            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         vision_config = build_analysis_config(experiment_type, sess, data)
         analysis_class_map = {
             'tst': VisionAnalysisSession,
@@ -901,6 +915,8 @@ def register_api_routes(app, ctx) -> None:
             'elevated_plus': ElevatedPlusMultiArenaAnalysisSession,
             'y_maze': YMazeMultiArenaAnalysisSession,
             'forced_swim': ForcedSwimMultiCylinderAnalysisSession,
+            'light_dark_box': LightDarkBoxMultiArenaAnalysisSession,
+            'three_chamber': ThreeChamberSocialAnalysisSession,
         }
         analysis_class = analysis_class_map.get(experiment_type, VisionAnalysisSession)
         analysis = analysis_class(

@@ -62,3 +62,6 @@ result/
 
 # Root-level scratch screenshots/covers
 /*.png
+
+# Local promotion drafts and generated social-media assets
+promo/

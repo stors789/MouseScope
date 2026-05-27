@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Short end-to-end analysis smoke test for MouseScope v2.3.0."""
+"""Short end-to-end analysis smoke test for MouseScope v3.2.0."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app import app, analysis_sessions, _now_ts  # noqa: E402
+from services.experiment_registry import list_experiments  # noqa: E402
 
 
 SAMPLE_VIDEO = REPO_ROOT / "test.mp4"
@@ -124,6 +125,36 @@ def _ymaze_roi() -> dict:
                 {"x": 256, "y": 234},
             ],
         },
+        "time_config": {"mode": "global", "start": 0, "end": 0},
+    }
+
+
+def _ldb_roi() -> dict:
+    return {
+        "name": "LDB 1",
+        "zones": {
+            "light": [{"x": 100, "y": 100}, {"x": 200, "y": 100}, {"x": 200, "y": 380}, {"x": 100, "y": 380}],
+            "dark": [{"x": 210, "y": 100}, {"x": 310, "y": 100}, {"x": 310, "y": 380}, {"x": 210, "y": 380}],
+            "doorway": [{"x": 195, "y": 210}, {"x": 215, "y": 210}, {"x": 215, "y": 270}, {"x": 195, "y": 270}],
+        },
+        "time_config": {"mode": "global", "start": 0, "end": 0},
+    }
+
+
+def _three_chamber_roi() -> dict:
+    return {
+        "name": "3CST 1",
+        "zones": {
+            "left": [{"x": 80, "y": 100}, {"x": 180, "y": 100}, {"x": 180, "y": 380}, {"x": 80, "y": 380}],
+            "center": [{"x": 185, "y": 100}, {"x": 255, "y": 100}, {"x": 255, "y": 380}, {"x": 185, "y": 380}],
+            "right": [{"x": 260, "y": 100}, {"x": 360, "y": 100}, {"x": 360, "y": 380}, {"x": 260, "y": 380}],
+            "left_door": [{"x": 176, "y": 210}, {"x": 190, "y": 210}, {"x": 190, "y": 270}, {"x": 176, "y": 270}],
+            "right_door": [{"x": 250, "y": 210}, {"x": 264, "y": 210}, {"x": 264, "y": 270}, {"x": 250, "y": 270}],
+        },
+        "objects": [
+            {"side": "left", "name": "Left cup", "point": {"x": 130, "y": 240}},
+            {"side": "right", "name": "Right cup", "point": {"x": 310, "y": 240}},
+        ],
         "time_config": {"mode": "global", "start": 0, "end": 0},
     }
 
@@ -236,6 +267,42 @@ def _payload_for(experiment_type: str) -> dict:
                 "rois": [_ymaze_roi()],
             }],
         }
+    if experiment_type == "light_dark_box":
+        return {
+            "generate_video": False,
+            "per_video_configs": [{
+                "arena_width_cm": 40.0,
+                "arena_height_cm": 20.0,
+                "door_open_delay_s": 0.0,
+                "transition_min_dwell_s": 0.01,
+                "doorway_reset_s": 0.05,
+                "movement_threshold_cm_s": 2.0,
+                "bin_seconds": 30,
+                "rois": [_ldb_roi()],
+            }],
+        }
+    if experiment_type == "three_chamber":
+        return {
+            "generate_video": False,
+            "per_video_configs": [{
+                "analysis_mode": "single_phase",
+                "selected_phase": "sociability",
+                "arena_width_cm": 60.0,
+                "arena_height_cm": 40.0,
+                "interaction_radius_cm": 2.0,
+                "cup_exclusion_radius_cm": 1.0,
+                "transition_min_dwell_s": 0.01,
+                "movement_threshold_cm_s": 2.0,
+                "bin_seconds": 30,
+                "role_schedule": {
+                    "sociability": {"left": "social_stranger_1", "right": "empty_object"},
+                    "social_novelty": {"left": "familiar_stranger_1", "right": "novel_stranger_2"},
+                    "habituation_all": {"left": "empty_object", "right": "empty_object"},
+                    "habituation_center": {"left": "", "right": ""},
+                },
+                "rois": [_three_chamber_roi()],
+            }],
+        }
     raise ValueError(f"Unknown experiment type: {experiment_type}")
 
 
@@ -243,7 +310,7 @@ def main() -> int:
     if not SAMPLE_VIDEO.exists():
         raise FileNotFoundError(f"Missing sample video for smoke test: {SAMPLE_VIDEO}")
 
-    experiments = ("tst", "forced_swim", "open_field", "novel_object", "elevated_plus", "y_maze")
+    experiments = tuple(spec.key for spec in list_experiments())
     with tempfile.TemporaryDirectory(prefix="mousescope_smoke_") as temp_dir:
         with app.test_client() as client:
             with client.session_transaction() as sess:
@@ -272,7 +339,7 @@ def main() -> int:
 
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    print("v2.3.0 short analysis smoke test passed")
+    print("v3.2.0 short analysis smoke test passed")
     return 0
 
 

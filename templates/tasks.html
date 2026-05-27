@@ -316,6 +316,10 @@
             <option value="novel_object">NOR</option>
             <option value="elevated_plus">EPM</option>
             <option value="y_maze">Y-Maze</option>
+            <option value="light_dark_box">LDB</option>
+            {% if enable_three_chamber %}
+            <option value="three_chamber">3CST</option>
+            {% endif %}
         </select>
         <button type="button" class="btn btn-outline-secondary" id="clearFiltersBtn">
             <i class="fas fa-xmark me-2"></i><span data-i18n="tasks.action.clear">清除</span>
