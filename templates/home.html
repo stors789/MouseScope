@@ -60,7 +60,7 @@
 .hero-note { color: var(--text-muted); line-height: 1.7; max-width: 580px; margin-bottom: 0; }
 .hero-visual {
     position: relative;
-    min-height: 330px;
+    min-height: 370px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -77,9 +77,9 @@
 }
 .hero-stage {
     position: relative;
-    width: min(100%, 340px);
+    width: min(100%, 396px);
     aspect-ratio: 1 / 1;
-    border-radius: 34px;
+    border-radius: 38px;
     border: 1px solid rgba(201, 100, 66, 0.14);
     background:
         radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.94), rgba(255, 246, 238, 0.7) 45%, transparent 74%),
@@ -93,13 +93,13 @@
     border: 1px dashed rgba(201, 100, 66, 0.22);
 }
 .hero-orbit.orbit-one { inset: 12%; }
-.hero-orbit.orbit-two { inset: 24%; border-style: solid; border-color: rgba(201, 100, 66, 0.12); }
+.hero-orbit.orbit-two { inset: 25%; border-style: solid; border-color: rgba(201, 100, 66, 0.12); }
 .hero-core {
     position: absolute;
     inset: 50%;
     transform: translate(-50%, -50%);
-    width: 156px;
-    height: 156px;
+    width: 138px;
+    height: 138px;
     border-radius: 50%;
     background:
         linear-gradient(180deg, rgba(255,255,255,0.95), rgba(252, 244, 236, 0.86));
@@ -133,16 +133,18 @@
     font-size: 0.84rem;
     font-weight: 700;
     letter-spacing: 0.02em;
+    z-index: 2;
+    white-space: nowrap;
 }
 .module-pill i { color: var(--primary-color); font-size: 0.8rem; }
-.pill-tst { top: 12%; left: 8%; }
-.pill-ldb { top: 43%; left: 5%; }
-.pill-fst { top: 44%; right: 3%; }
-.pill-oft { top: 18%; right: 5%; }
-.pill-nor { left: 3%; bottom: 28%; }
-.pill-mwm { left: 27%; bottom: 17%; }
-.pill-epm { right: 10%; bottom: 16%; }
-.pill-ymaze { left: 50%; bottom: 7%; transform: translateX(-50%); }
+.pill-tst { top: 16%; left: 26%; transform: translate(-50%, -50%); }
+.pill-oft { top: 23%; left: 74%; transform: translate(-50%, -50%); }
+.pill-fst { top: 50%; left: 86%; transform: translate(-50%, -50%); }
+.pill-epm { top: 77%; left: 73%; transform: translate(-50%, -50%); }
+.pill-ymaze { top: 88%; left: 50%; transform: translate(-50%, -50%); }
+.pill-mwm { top: 77%; left: 27%; transform: translate(-50%, -50%); }
+.pill-nor { top: 52%; left: 12%; transform: translate(-50%, -50%); }
+.pill-ldb { top: 29%; left: 13%; transform: translate(-50%, -50%); }
 .feature-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .feature-card {
     background: rgba(250, 249, 245, 0.94);
@@ -173,19 +175,23 @@
 }
 @media (max-width: 576px) {
     .hero-banner { padding: 1.6rem 1.15rem; border-radius: 22px; }
-    .hero-visual { min-height: 280px; }
+    .hero-visual { min-height: 312px; }
+    .hero-stage { width: min(100%, 318px); }
     .hero-core {
-        width: 170px;
-        height: 170px;
+        width: 118px;
+        height: 118px;
     }
     .hero-core-logo {
-        width: 88px;
-        height: 88px;
+        width: 72px;
+        height: 72px;
     }
     .module-pill {
-        font-size: 0.75rem;
-        padding: 0.38rem 0.65rem;
+        font-size: 0.72rem;
+        padding: 0.34rem 0.56rem;
     }
+    .pill-oft { top: 21%; left: 72%; }
+    .pill-fst { top: 49%; left: 84%; }
+    .pill-nor { top: 53%; left: 14%; }
 }
 </style>
 {% endblock %}
