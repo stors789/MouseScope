@@ -288,8 +288,6 @@ MouseScope Desktop stores runtime data locally by default. It does not introduce
   Project Workspace data is stored under `data/projects/`, including local SQLite databases, video indexes, and project result folders.
 - 不建议把 `data/` 下的实验数据、数据库、密钥或视频文件提交到 Git。
   Do not commit experimental data, local databases, secrets, or videos under `data/`.
-- 计划文档、发布草稿、测试视频和生成结果默认只作为本地工作区内容保留；公开仓库以 README、源码、测试与演示资源为主。
-  Planning notes, release drafts, test videos, and generated results are kept as local workspace files by default; the public repository focuses on README, source code, tests, and demo assets.
 
 ## 仓库结构 | Repository Structure
 
