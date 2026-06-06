@@ -12,6 +12,11 @@ data/
 *.sqlite3
 *.db
 
+# Local docs, planning notes, and release drafts
+/*.md
+!/README.md
+docs/**/*.md
+
 # Python cache
 __pycache__/
 *.py[cod]

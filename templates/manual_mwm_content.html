@@ -1,0 +1,553 @@
+<div id="mwm-manual-root"></div>
+
+<script>
+(function () {
+    const COPY = {
+        zh: {
+            heroEyebrow: 'Morris Water Maze / MWM',
+            heroTitle: '水迷宫完整操作手册',
+            heroSubtitle: '覆盖视频采集、泳池/平台椭圆标定、标准圆形坐标校正、探测试次指标、搜索策略、批量配置、结果文件和质量控制。',
+            heroChips: ['PPT 式椭圆编辑', '标准圆形轨迹图', 'ROI 坐标轴', '平台穿越', '目标象限', '搜索策略'],
+            heroCards: [
+                ['fa-video', '固定视角优先', '水迷宫最适合固定俯视或近俯视视频；相机、焦距、泳池位置在一个试次内不要改变。'],
+                ['fa-circle-nodes', '椭圆校正到标准圆', '原视频里泳池可以呈椭圆；每个 ROI 的坐标轴、象限和平台会一起映射到标准圆后再计算指标。'],
+                ['fa-table', '表格与图像并重', '输出逐帧轨迹、summary、时间分箱、报告、标准圆轨迹图、热图和可选标注视频。']
+            ],
+            flow: ['上传视频', '绘制泳池/平台', '调检测与校正', '启动分析', '复核轨迹图和 CSV'],
+            nav: [
+                ['overview', '模块用途'],
+                ['recording', '视频要求'],
+                ['upload', '进入配置'],
+                ['calibration', 'ROI 标定'],
+                ['params', '参数说明'],
+                ['outputs', '输出与指标'],
+                ['batch', '批量与项目'],
+                ['troubleshooting', '质控排查']
+            ],
+            sections: {
+                overview: {
+                    title: '模块用途',
+                    lead: '水迷宫模块用于 Morris Water Maze 的隐藏平台训练、可见平台和 probe trial 试次分析。',
+                    points: [
+                        '适合单泳池或多泳池同画面分析；每个 Pool ROI 可以独立命名、绑定项目小鼠、设置时间窗、泳池直径和平台半径。',
+                        '水池在相机画面中可能不是标准圆。模块使用你绘制的泳池椭圆作为几何校正入口，把轨迹转换到标准圆形泳池坐标。',
+                        '每个 Pool ROI 都有自己的实验坐标系：中心固定为泳池中心，I/II/III/IV 象限由右侧卡片里的坐标轴旋转决定。',
+                        '正式统计以校正后的标准圆坐标为准；原视频坐标主要用于检测、预览和标注视频。'
+                    ],
+                    callouts: [
+                        ['info', '先看标准圆轨迹图', '判断水迷宫结果是否可信时，优先复核 <code>*_trackmap.png</code> 和 <code>*_heatmap.png</code>。它们应该是标准圆，而不是原视频中的椭圆透视。']
+                    ]
+                },
+                recording: {
+                    title: '视频采集要求',
+                    lead: '稳定的视频输入比后期参数更重要。以下条件会显著影响检测和校正质量。',
+                    blocks: [
+                        ['fa-camera', '相机与视角', [
+                            '推荐固定俯视或近俯视相机。整段试次中不要移动相机、改变焦距或移动泳池。',
+                            '泳池尽量位于画面中心；广角镜头会带来边缘畸变，应优先使用固定俯视视频并仔细调整泳池椭圆。'
+                        ]],
+                        ['fa-water', '水面与平台', [
+                            '泳池边界、平台位置和动物轮廓要清楚。水面强反光会造成误检，应优先调整照明。',
+                            '隐藏平台训练中平台不可见也没关系，但平台真实位置必须在 ROI 卡片中标定。'
+                        ]],
+                        ['fa-clock', '时间与帧率', [
+                            '试次起止时间尽量清晰；需要只分析部分片段时，在 ROI 卡片中设置精确时间窗。',
+                            '可变帧率视频建议在上传页填写手动 FPS 或先转码，避免时间轴偏差。'
+                        ]]
+                    ]
+                },
+                upload: {
+                    title: '进入水迷宫配置',
+                    lead: '快速分析和项目工作台都使用同一套水迷宫配置页。',
+                    points: [
+                        '快速分析：在上传页选择“水迷宫 Morris Water Maze”，上传或填写本机视频路径。',
+                        '项目模式：先在项目里导入视频并分配实验类型，再从分析页选择水迷宫视频进入批量配置。',
+                        '多视频批量时，每个视频都需要保存自己的 Pool ROI；工作台会逐视频记住配置。'
+                    ],
+                    callouts: [
+                        ['warning', '项目模式必须绑定小鼠', '项目模式下，完整 ROI 如果没有绑定已登记小鼠，不能进入正式批量分析。']
+                    ]
+                },
+                calibration: {
+                    title: '泳池、平台与检测遮罩',
+                    lead: '水迷宫的几何标定采用图形编辑式椭圆，而不是多点拟合。',
+                    steps: [
+                        '先在画布上方选择实验时期：隐藏平台训练期、探测试次或可见平台期。这个设置会随当前视频保存。',
+                        '点击“新增泳池”，右侧会出现一个 Pool ROI 卡片。',
+                        '在该卡片里点击“绘制泳池”，在画布上按住鼠标拖出一个椭圆，使它贴合可见池壁。',
+                        '框定后可以像 PPT 图形一样编辑：拖椭圆内部移动位置，拖边缘或角点手柄调整大小。',
+                        '点击“绘制平台”，用同样方式标定平台位置；平台真实半径在卡片中填写。',
+                        '如果反光、池壁或外部物体干扰检测，可点击“编辑遮罩”画多边形检测范围；完成后点击“完成检测遮罩”保存，或点击“取消遮罩编辑”放弃草稿。',
+                        '按需要设置名称/小鼠绑定、泳池真实直径、平台半径、目标象限、释放点、坐标轴旋转和时间窗，然后进入调参与预览。'
+                    ],
+                    timeTable: {
+                        headers: ['时间模式', '用途', '说明'],
+                        rows: [
+                            ['跟随全局', '大多数单试次视频', '使用上传页或视频配置中的全局开始/结束时间。'],
+                            ['精确时间窗', '同一视频含多个阶段或需要裁剪', '只统计该 ROI 的指定秒数范围；开始/结束留空时回退到全局设置。']
+                        ]
+                    },
+                    callouts: [
+                        ['success', '为什么用椭圆', '俯视视频中的圆形泳池常因相机角度、画面拉伸或镜头畸变呈椭圆。直接编辑椭圆比多点拟合更稳定，也更容易复核。']
+                    ]
+                },
+                params: {
+                    title: '调参与关键参数',
+                    lead: '进入第二步后，实验时期、目标象限、释放点和坐标轴仍由 ROI 页面按泳池设置；这里只保留会直接影响统计、检测和质控的常用参数。',
+                    trialTable: {
+                        headers: ['参数', '影响', '调法'],
+                        rows: [
+                            ['<code>trial_type</code>', '决定成功判定和 probe 指标解释。', '在第一步 ROI 页面选择隐藏平台训练期、探测试次或可见平台期。'],
+                            ['<code>target_quadrant</code>', '目标象限占比、目标象限距离等指标。', '在每个 ROI 卡片中设置；界面显示 I/II/III/IV，内部字段仍保存为 NE/NW/SW/SE。'],
+                            ['<code>start_position</code>', '释放点、Whishaw corridor 和路径效率。', '在每个 ROI 卡片中按实际下水方向选择 N/E/S/W 或对角方向。'],
+                            ['<code>coordinate_rotation_deg</code>', '决定 I/II/III/IV 象限轴线、目标象限判断和标准圆轨迹图方向。', '如果视频里平台在右上但轨迹图不一致，优先回到 ROI 卡片旋转坐标轴，而不是改检测阈值。'],
+                            ['<code>pool_diameter_cm</code>', '像素到厘米的尺度换算。', '填写真实泳池直径；多泳池可在每个 ROI 卡片单独设置。'],
+                            ['<code>platform_radius_cm</code>', '平台进入、停留、穿越判定。', '填写真实平台半径；太小会漏判，太大可能过判。'],
+                            ['<code>thigmotaxis_band_cm</code>', '距池壁多少厘米内记为趋边区域。', '按 protocol 设置；MouBeAT 示例论文为 10 cm。'],
+                            ['<code>platform_dwell_s</code>', '连续停留多久才算找到平台。', '影响 hidden/visible 平台的成功判定和逃避潜伏期。'],
+                            ['<code>movement_threshold_cm_s</code>', '区分移动与低速/漂浮。', '主要用于运动/漂浮 QC，不改变平台和象限判定。'],
+                            ['<code>track_smoothing_max_jump_cm</code> / <code>max_gap_s</code>', '过滤不合理跳点，并补偿很短的漏检。', '轨迹有误跳时调跳点过滤；连续漏检较多时不要靠过大的补偿值掩盖问题。'],
+                            ['<code>bin_seconds</code>', '时间分箱长度。', '决定 <code>*_bins.csv</code> 每行覆盖的时长。'],
+                            ['生成标注视频', '决定是否导出带检测轮廓和 ROI 的复核视频。', '正式批量前建议打开，确认稳定后可按需要关闭以节省时间。']
+                        ]
+                    },
+                    detectTable: {
+                        headers: ['参数', '影响', '调法'],
+                        rows: [
+                            ['<code>bg_method</code>', '前景分割方式。', '阈值法适合对比明显；静态背景适合水面稳定但光照不均。'],
+                            ['<code>bg_type</code> / <code>gray_threshold</code>', '决定深色鼠/浅色鼠如何从水面分离。', '小鼠漏检时调整灰度阈值，噪声太多时反向调整。'],
+                            ['<code>min_area</code>', '过滤小反光点、气泡和碎片轮廓。', '碎点太多时提高；小鼠被过滤时降低。'],
+                            ['<code>exclude_platform_from_detection</code>', '检测时把平台区从前景范围中排除。', '可见平台或平台边缘被误识别为小鼠时打开。'],
+                            ['检测遮罩', '限制检测范围，排除固定反光或外部物体。', '只在默认泳池范围仍有稳定误检时使用；遮罩不会改变标准圆轨迹图。'],
+                            ['内部默认值', '形态学清理和标准圆映射。', '这些字段不需要日常手动调整，模块会用稳定默认值保存到分析配置。']
+                        ]
+                    }
+                },
+                outputs: {
+                    title: '输出文件与核心指标',
+                    lead: '水迷宫输出既包含逐帧轨迹，也包含 summary、分箱统计和复核图像。',
+                    files: [
+                        ['*_track.csv', '逐帧原图坐标、标准圆坐标、按 ROI 坐标轴判定的象限、平台、趋边、速度、过滤标记。'],
+                        ['*_summary.csv', '每个 Pool ROI 一行，包含逃避潜伏期、路径长度、目标象限、平台、搜索策略和 QC 指标。'],
+                        ['*_bins.csv', '按固定秒数分箱的距离、速度、象限、平台和趋边统计。'],
+                        ['*_trackmap.png', '校正到标准圆形泳池并按 ROI 坐标轴旋转后的轨迹图，是几何复核重点。'],
+                        ['*_heatmap.png', '标准圆坐标和 ROI 坐标轴下的停留热图。'],
+                        ['*_report.txt / *_analyzed.mp4', '文本报告和可选标注视频，用于人工复核。']
+                    ],
+                    metricTable: {
+                        headers: ['指标', '含义', '注意事项'],
+                        rows: [
+                            ['<code>escape_latency_s</code>', '从统计开始到到达并停留在平台区的时间。', 'probe trial 通常不以逃避潜伏期作为核心解释。'],
+                            ['<code>path_length_to_platform_cm</code>', '成功找到平台前的路径长度。', '低检测率会影响该值。'],
+                            ['<code>time_to_first_platform_entry_s</code> / <code>time_in_platform_zone_s</code>', '首次进入平台区潜伏期和平台区停留时间。', '隐藏平台/可见平台看当前平台；探测试次看原平台区。'],
+                            ['<code>platform_entries</code> / <code>platform_crossings</code>', '进入或穿越平台区次数。', '探测试次中常用于评估空间记忆。'],
+                            ['<code>target_quadrant_time_s</code> / <code>target_quadrant_percent</code> / <code>target_quadrant_distance_cm</code>', '目标象限时间、占比和路程。', '目标象限应与平台或实验设计一致。'],
+                            ['<code>quadrant_ne_time_s</code> / <code>quadrant_nw_time_s</code> / <code>quadrant_sw_time_s</code> / <code>quadrant_se_time_s</code>', '四个象限的停留时间；同名 <code>*_percent</code> 和 <code>*_distance_cm</code> 字段给出比例和路程。', '象限方向由 ROI 卡片里的坐标轴旋转决定。'],
+                            ['<code>total_distance_cm</code> / <code>mean_swim_speed_cm_s</code> / <code>max_swim_speed_cm_s</code>', '总路程、平均游泳速度和逐帧最大游泳速度。', '速度类指标主要作为运动能力和质控参考，最大速度不建议单独作为行为学结论。'],
+                            ['<code>thigmotaxis_time_s</code> / <code>thigmotaxis_percent</code>', '靠近池壁区域的时间和占比。', '可反映趋边策略，也可能提示压力或检测问题。'],
+                            ['<code>whishaw_corridor_time_s</code> / <code>whishaw_corridor_percent</code>', '释放点到平台直线路径附近的时间和占比。', '用于辅助判断定向搜索，不应脱离轨迹图单独解释。'],
+                            ['<code>moving_time_s</code> / <code>floating_time_s</code>', '基于运动阈值划分的运动和低速/漂浮时间。', '这是辅助活动量指标；当前按逐帧速度阈值判定。'],
+                            ['<code>search_strategy</code> / <code>search_strategy_label</code> / <code>search_strategy_display</code>', '基于标准圆轨迹自动判断搜索策略类型。', '<code>search_strategy</code> 是代码值，<code>search_strategy_display</code> 是报告用双语显示。'],
+                            ['<code>search_strategy_score</code> / <code>search_strategy_confidence</code>', '策略评分和规则置信度。', '分数越高通常越接近空间定向搜索；不确定样本不参与简单排序。'],
+                            ['<code>search_strategy_basis</code>', '本次分类使用的关键特征，如路径直达性、趋边比例、覆盖率、近平台比例等。', '当分类不符合直觉时，优先查看该字段和标准圆轨迹图。'],
+                            ['<code>mean_distance_to_platform_cm</code> / <code>gallagher_proximity_score</code> / <code>cipl</code>', '平均距平台距离、Gallagher 接近度和路径积分接近度。', '距离型指标比单次潜伏期更能反映搜索质量。'],
+                            ['<code>qc_flags</code>', '检测率、跳点、边界残差等质量标记。', '出现标记时必须复核视频和轨迹图。']
+                        ]
+                    },
+                    strategyTable: {
+                        headers: ['类别', '含义', '常见判定依据'],
+                        rows: [
+                            ['直接路径 / Direct Path', '动物从释放点附近直接游向平台或原平台位置。', '路径直达性高、航向误差低、平均距平台较小。'],
+                            ['定向搜索 / Directed Search', '动物大体朝目标区域搜索，但路径不如直接路径紧凑。', 'Whishaw corridor 或航向指标较好，路径效率中等以上。'],
+                            ['局灶搜索 / Focal Search', '动物集中在平台或原平台附近局部搜索。', '近平台停留比例高、轨迹质心接近平台、目标象限占用较高。'],
+                            ['间接搜索 / Indirect Search', '有目标区域偏好，但路线绕行或不够稳定。', '目标象限、平均距平台或平台穿越提示一定空间偏向。'],
+                            ['环形搜索 / Chaining', '沿接近平台半径的圆环游动。', '环带占用高、经过多个象限、不是单纯趋边。'],
+                            ['扫描搜索 / Scanning', '在泳池中部或多个局部区域扫描。', '覆盖率中等、平均径向位置不贴边。'],
+                            ['随机搜索 / Random Search', '缺少清晰目标或结构化模式。', '覆盖较散，目标象限和近平台特征都不明显。'],
+                            ['趋边搜索 / Thigmotaxis', '长时间贴近池壁游动。', '趋边比例和平均径向位置较高。']
+                        ]
+                    }
+                },
+                batch: {
+                    title: '批量与项目模式',
+                    lead: '批量分析时，配置完整性比单个参数更重要。',
+                    steps: [
+                        '在批量工作台逐个视频检查泳池椭圆和平台位置，不要假设所有视频完全一致。',
+                        '如果相机、泳池位置、裁剪或缩放不同，每个视频都应重新调整椭圆。',
+                        '项目模式中，每个 ROI 绑定小鼠后，结果会回写到项目结果页，便于按组别和动物追踪。',
+                        '批量启动前，系统会检查每个视频是否至少有一个完整 Pool ROI。'
+                    ],
+                    rules: [
+                        '同一视频内多个泳池可以共用全局检测参数，但每个泳池的直径、平台和时间窗可独立设置。',
+                        '正式统计前建议抽查每组至少 1 到 2 个视频的标注视频、轨迹图和 summary。'
+                    ]
+                },
+                troubleshooting: {
+                    title: '质量控制与故障排查',
+                    lead: '水迷宫最常见的问题来自几何标定不准、反光误检和视频视角不稳定。',
+                    items: [
+                        '轨迹图不是标准圆或轨迹贴边异常：重新调整泳池椭圆，使其贴合可见池壁，并确认视频不是移动视角。',
+                        '动物轮廓断断续续：调整灰度阈值；不要用大量后处理去掩盖长时间丢检。',
+                        '水面反光被识别为动物：提高最小目标面积，或画检测遮罩排除强反光区域。',
+                        '平台进入次数异常高：检查平台椭圆位置和平台半径是否过大。',
+                        '目标象限不符合实验设计：检查 ROI 卡片里的坐标轴旋转、目标象限设置和平台位置是否一致。',
+                        '批量结果中某个视频明显偏离：优先打开该视频的 trackmap、heatmap 和 report，不要只看总表。'
+                    ],
+                    callouts: [
+                        ['danger', '正式结论前必须复核', '自动化结果不能替代人工复核。用于论文、课题结论或统计检验前，请至少复核异常样本和代表性样本的标注视频与标准圆轨迹图。']
+                    ]
+                }
+            }
+        },
+        en: {
+            heroEyebrow: 'Morris Water Maze / MWM',
+            heroTitle: 'Morris Water Maze Manual',
+            heroSubtitle: 'Covers recording, pool/platform ellipse setup, standard circular coordinate correction, probe metrics, search strategy, batch setup, outputs, and QC.',
+            heroChips: ['PowerPoint-style ellipse editing', 'Standard circular maps', 'ROI axes', 'Platform crossings', 'Target quadrant', 'Search strategy'],
+            heroCards: [
+                ['fa-video', 'Fixed Camera First', 'MWM works best with a fixed overhead or near-overhead camera. Do not move the camera, zoom, or pool within a trial.'],
+                ['fa-circle-nodes', 'Ellipse to Circle Correction', 'The visible pool may be oval in the camera view. Each ROI axis, quadrant, and platform is mapped into the standard circular pool before metrics are computed.'],
+                ['fa-table', 'Tables and Review Images', 'Exports framewise tracks, summaries, bins, reports, standard circular maps, heatmaps, and optional annotated videos.']
+            ],
+            flow: ['Upload Video', 'Draw Pool/Platform', 'Tune Detection', 'Run Analysis', 'Review Maps and CSV'],
+            nav: [
+                ['overview', 'Purpose'],
+                ['recording', 'Recording'],
+                ['upload', 'Setup Entry'],
+                ['calibration', 'ROI Setup'],
+                ['params', 'Parameters'],
+                ['outputs', 'Outputs'],
+                ['batch', 'Batch/Project'],
+                ['troubleshooting', 'QC']
+            ],
+            sections: {
+                overview: {
+                    title: 'Purpose',
+                    lead: 'The MWM module analyzes hidden-platform acquisition, visible-platform trials, and probe trials.',
+                    points: [
+                        'It supports one or multiple pools per frame. Each Pool ROI can have its own name, project animal, time window, pool diameter, platform radius, release point, target quadrant, and axis rotation.',
+                        'The pool may not look circular in the camera view. The dragged pool ellipse is used to correct trajectories into standard circular pool coordinates.',
+                        'Each Pool ROI has its own experiment coordinate system: the center is the drawn pool center, and I/II/III/IV are defined by the axis rotation in the right-side card.',
+                        'Formal statistics use corrected standard-pool coordinates; original image coordinates are mainly for detection, preview, and annotated video.'
+                    ],
+                    callouts: [
+                        ['info', 'Review the standard maps first', 'When judging MWM result quality, inspect <code>*_trackmap.png</code> and <code>*_heatmap.png</code> first. They should be standard circles, not the oval camera view.']
+                    ]
+                },
+                recording: {
+                    title: 'Recording Requirements',
+                    lead: 'Stable video input matters more than late parameter tuning.',
+                    blocks: [
+                        ['fa-camera', 'Camera and View', [
+                            'Use a fixed overhead or near-overhead camera. Do not move the camera, change zoom, or move the pool during a trial.',
+                            'Keep the pool near the image center. Wide-angle lenses can distort edges, so prefer a fixed overhead view and carefully adjust the pool ellipse.'
+                        ]],
+                        ['fa-water', 'Water and Platform', [
+                            'The pool wall, platform position, and animal contour should be visible. If reflections are strong, improve lighting first.',
+                            'Hidden-platform trials are fine, but the true platform position still must be marked in the ROI card.'
+                        ]],
+                        ['fa-clock', 'Timing and FPS', [
+                            'Use ROI time windows when a video contains multiple phases or needs trimming.',
+                            'For variable-frame-rate videos, enter a manual FPS on upload or transcode before analysis.'
+                        ]]
+                    ]
+                },
+                upload: {
+                    title: 'Entering MWM Setup',
+                    lead: 'Quick Analysis and Project Workspace use the same MWM setup page.',
+                    points: [
+                        'Quick Analysis: choose Morris Water Maze on the upload page, then upload or paste local video paths.',
+                        'Project mode: import videos, assign the MWM experiment type, then start configuration from the project analysis page.',
+                        'For batch videos, each video needs its own saved Pool ROI configuration.'
+                    ],
+                    callouts: [
+                        ['warning', 'Project animal binding is required', 'In project mode, completed ROIs must be bound to registered animals before batch analysis can start.']
+                    ]
+                },
+                calibration: {
+                    title: 'Pool, Platform, and Detection Mask',
+                    lead: 'MWM geometry uses editable ellipses rather than multi-point ellipse fitting.',
+                    steps: [
+                        'First choose the experiment period above the canvas: hidden-platform training, probe trial, or visible-platform trial. This setting is saved with the current video.',
+                        'Click Add Pool. A Pool ROI card appears on the right.',
+                        'Click Draw Pool in that card, then drag an ellipse around the visible pool wall.',
+                        'After drawing, edit it like a PowerPoint shape: drag inside to move it, or drag edge/corner handles to resize it.',
+                        'Click Draw Platform and mark the platform with the same ellipse tool. Enter the real platform radius in the card.',
+                        'Use Edit Mask only when reflections or external objects interfere. Draw the draft polygon, then click Finish Detection Mask to save it or Cancel Mask Editing to discard it.',
+                        'Set name/animal binding, pool diameter, platform radius, target quadrant, release point, axis rotation, and timing, then proceed to tuning.'
+                    ],
+                    timeTable: {
+                        headers: ['Mode', 'Use Case', 'Notes'],
+                        rows: [
+                            ['Follow Global', 'Most single-trial videos', 'Uses the global start/end time from upload or video setup.'],
+                            ['Precise Time Range', 'Videos with multiple phases or trimming needs', 'Applies a ROI-specific seconds range; empty values fall back to global settings.']
+                        ]
+                    },
+                    callouts: [
+                        ['success', 'Why ellipses', 'Circular pools often appear oval because of camera angle, stretching, or lens distortion. Direct ellipse editing is easier to adjust and review than multi-point fitting.']
+                    ]
+                },
+                params: {
+                    title: 'Tuning and Key Parameters',
+                    lead: 'On the second step, experiment period, target quadrant, release point, and axes still come from each ROI card; this page keeps only common statistics, detection, and QC controls that directly affect outputs.',
+                    trialTable: {
+                        headers: ['Parameter', 'Impact', 'How to Tune'],
+                        rows: [
+                            ['<code>trial_type</code>', 'Controls success rules and probe interpretation.', 'Choose hidden-platform training, probe trial, or visible-platform trial on the first ROI page.'],
+                            ['<code>target_quadrant</code>', 'Affects target-quadrant metrics.', 'Set it in each ROI card. The UI shows I/II/III/IV while the exported field remains NE/NW/SW/SE for compatibility.'],
+                            ['<code>start_position</code>', 'Used for release point, corridor metrics, and path efficiency.', 'Choose the actual release direction in each ROI card.'],
+                            ['<code>coordinate_rotation_deg</code>', 'Defines the I/II/III/IV axes, target-quadrant assignment, and standard-circle map orientation.', 'If the platform appears upper right in the video but not in the trackmap, return to the ROI card and rotate the axes before changing detection thresholds.'],
+                            ['<code>pool_diameter_cm</code>', 'Converts pixels to centimeters.', 'Enter the real pool diameter; each ROI can override it.'],
+                            ['<code>platform_radius_cm</code>', 'Defines platform entry, dwell, and crossing zones.', 'Too small may miss entries; too large may overcall them.'],
+                            ['<code>thigmotaxis_band_cm</code>', 'Width of the wall-adjacent zone counted as thigmotaxis.', 'Set it from the protocol; the MouBeAT example paper uses 10 cm.'],
+                            ['<code>platform_dwell_s</code>', 'Required continuous time on the platform before escape is scored.', 'Affects success and escape latency in hidden/visible platform trials.'],
+                            ['<code>movement_threshold_cm_s</code>', 'Separates moving from low-speed/floating frames.', 'Mainly used for locomotion QC; it does not change platform or quadrant assignment.'],
+                            ['<code>track_smoothing_max_jump_cm</code> / <code>max_gap_s</code>', 'Filters implausible jumps and carries very short missed detections.', 'Tune jump filtering for sudden tracking spikes; do not hide long detection loss with a large gap value.'],
+                            ['<code>bin_seconds</code>', 'Time-bin length.', 'Controls the row duration in <code>*_bins.csv</code>.'],
+                            ['Annotated video', 'Controls whether the review video with contours and ROIs is exported.', 'Recommended before formal batch runs; disable later if you need faster output.']
+                        ]
+                    },
+                    detectTable: {
+                        headers: ['Parameter', 'Impact', 'How to Tune'],
+                        rows: [
+                            ['<code>bg_method</code>', 'Foreground segmentation strategy.', 'Threshold works for strong contrast; static background can help uneven but stable water.'],
+                            ['<code>bg_type</code> / <code>gray_threshold</code>', 'Separates dark/light animals from water.', 'Adjust gray threshold when the animal is missed or when noise is over-detected.'],
+                            ['<code>min_area</code>', 'Filters small reflections, bubbles, and speckle contours.', 'Raise it for speckles; lower it if the animal is filtered out.'],
+                            ['<code>exclude_platform_from_detection</code>', 'Removes the platform zone from foreground detection.', 'Enable it when a visible platform or its edge is detected as the animal.'],
+                            ['Detection mask', 'Restricts the detection area and excludes fixed reflections or external objects.', 'Use only when the default pool area still contains stable false detections; it does not change standard circular maps.'],
+                            ['Internal defaults', 'Morphology cleanup and standard-circle mapping.', 'These fields do not need routine manual tuning and are saved with stable defaults.']
+                        ]
+                    }
+                },
+                outputs: {
+                    title: 'Outputs and Core Metrics',
+                    lead: 'MWM exports framewise data, summaries, bins, and review images.',
+                    files: [
+                        ['*_track.csv', 'Framewise original coordinates, standard-pool coordinates, ROI-axis quadrant, platform, thigmotaxis, speed, and filter flags.'],
+                        ['*_summary.csv', 'One row per Pool ROI with escape latency, path length, target quadrant, platform metrics, search strategy, and QC.'],
+                        ['*_bins.csv', 'Time-binned distance, speed, quadrant, platform, and thigmotaxis statistics.'],
+                        ['*_trackmap.png', 'Trajectory in the corrected standard circular pool after ROI-axis rotation. This is the key geometry review image.'],
+                        ['*_heatmap.png', 'Occupancy heatmap in standard circular pool coordinates and ROI axes.'],
+                        ['*_report.txt / *_analyzed.mp4', 'Text report and optional annotated video for manual review.']
+                    ],
+                    metricTable: {
+                        headers: ['Metric', 'Meaning', 'Notes'],
+                        rows: [
+                            ['<code>escape_latency_s</code>', 'Time until the animal reaches and dwells on the platform.', 'Usually not the central metric for probe trials.'],
+                            ['<code>path_length_to_platform_cm</code>', 'Path length before successful escape.', 'Low detection rate affects this value.'],
+                            ['<code>time_to_first_platform_entry_s</code> / <code>time_in_platform_zone_s</code>', 'Latency to first platform-zone entry and time in the platform zone.', 'Hidden/visible trials use the current platform; probe trials use the former platform zone.'],
+                            ['<code>platform_entries</code> / <code>platform_crossings</code>', 'Entries/crossings of the platform zone.', 'Commonly useful for probe trials.'],
+                            ['<code>target_quadrant_time_s</code> / <code>target_quadrant_percent</code> / <code>target_quadrant_distance_cm</code>', 'Time, percentage, and distance in the target quadrant.', 'Must match the platform location or protocol design.'],
+                            ['<code>quadrant_ne_time_s</code> / <code>quadrant_nw_time_s</code> / <code>quadrant_sw_time_s</code> / <code>quadrant_se_time_s</code>', 'Occupancy time for all four quadrants; matching <code>*_percent</code> and <code>*_distance_cm</code> fields report percentages and distance.', 'Quadrant orientation follows the ROI card axis rotation.'],
+                            ['<code>total_distance_cm</code> / <code>mean_swim_speed_cm_s</code> / <code>max_swim_speed_cm_s</code>', 'Total path length, mean swim speed, and framewise maximum swim speed.', 'Speed metrics are mainly locomotion/QC controls; max speed should not be used alone as a behavioral conclusion.'],
+                            ['<code>thigmotaxis_time_s</code> / <code>thigmotaxis_percent</code>', 'Time and percentage near the pool wall.', 'May reflect strategy, stress, or detection issues.'],
+                            ['<code>whishaw_corridor_time_s</code> / <code>whishaw_corridor_percent</code>', 'Time and percentage near the direct corridor from release point to platform.', 'Supports directed-search review, but should be interpreted with the trajectory map.'],
+                            ['<code>moving_time_s</code> / <code>floating_time_s</code>', 'Movement and low-speed/floating time from the movement threshold.', 'Auxiliary locomotion metric; currently judged from framewise speed.'],
+                            ['<code>search_strategy</code> / <code>search_strategy_label</code> / <code>search_strategy_display</code>', 'Automated search-strategy classification from the standard-pool trajectory.', '<code>search_strategy</code> is the code value; <code>search_strategy_display</code> is the bilingual report label.'],
+                            ['<code>search_strategy_score</code> / <code>search_strategy_confidence</code>', 'Strategy rank and rule confidence.', 'Higher scores generally indicate more spatially directed search; uncertain samples are not ranked.'],
+                            ['<code>search_strategy_basis</code>', 'Key features used by the classifier, such as directness, thigmotaxis, coverage, and near-platform occupancy.', 'If the class looks surprising, inspect this field and the standard track map first.'],
+                            ['<code>mean_distance_to_platform_cm</code> / <code>gallagher_proximity_score</code> / <code>cipl</code>', 'Average distance to platform, Gallagher proximity, and cumulative integrated path length.', 'Proximity metrics often reveal search quality beyond latency.'],
+                            ['<code>qc_flags</code>', 'Detection rate, jump filtering, and geometry quality flags.', 'Review video and maps whenever flags appear.']
+                        ]
+                    },
+                    strategyTable: {
+                        headers: ['Class', 'Meaning', 'Typical Rule Evidence'],
+                        rows: [
+                            ['Direct Path', 'The animal swims directly toward the platform or former platform location.', 'High directness, low heading error, and low mean distance to platform.'],
+                            ['Directed Search', 'The animal searches broadly toward the target area but less tightly than a direct path.', 'Good corridor or heading features with moderate-to-high path efficiency.'],
+                            ['Focal Search', 'The animal searches locally around the platform region.', 'High near-platform occupancy, centroid close to platform, or strong target-quadrant occupancy.'],
+                            ['Indirect Search', 'The animal shows target-area preference but with a less stable route.', 'Target quadrant, mean distance, or platform crossings indicate partial spatial bias.'],
+                            ['Chaining', 'The animal swims around an annulus near the platform radius.', 'High annulus occupancy, several quadrants visited, and not dominated by wall swimming.'],
+                            ['Scanning', 'The animal scans the middle pool or several local areas.', 'Moderate coverage and mean radial position away from the wall.'],
+                            ['Random Search', 'No clear target-oriented or structured pattern is detected.', 'Diffuse coverage without strong target-quadrant or near-platform evidence.'],
+                            ['Thigmotaxis', 'The animal swims close to the pool wall for much of the trial.', 'High thigmotaxis percentage and high mean radial position.']
+                        ]
+                    }
+                },
+                batch: {
+                    title: 'Batch and Project Mode',
+                    lead: 'Configuration completeness is the main risk in batch MWM analysis.',
+                    steps: [
+                        'Check the pool ellipse and platform position for each video in the batch workspace.',
+                        'If camera view, pool position, crop, or scale changes, adjust the ellipse for that video.',
+                        'In project mode, ROI animal binding writes results back to the project result page by animal/group.',
+                        'Before batch start, MouseScope checks that every video has at least one complete Pool ROI.'
+                    ],
+                    rules: [
+                        'Multiple pools can share global detection parameters while keeping independent diameter, platform, and time-window settings.',
+                        'For formal statistics, review representative and abnormal videos with annotated video, track map, and summary CSV.'
+                    ]
+                },
+                troubleshooting: {
+                    title: 'QC and Troubleshooting',
+                    lead: 'Most MWM problems come from geometry mismatch, reflections, or unstable video perspective.',
+                    items: [
+                        'Track map is not circular or tracks hug the wall strangely: adjust the pool ellipse and confirm the video perspective is fixed.',
+                        'Contours are intermittent: tune gray threshold; do not hide long missed detections with heavy post-processing.',
+                        'Reflections are detected as animals: raise minimum target area or draw a detection mask.',
+                        'Platform entries are too high: check platform ellipse placement and platform radius.',
+                        'Target quadrant looks wrong: check ROI axis rotation, target quadrant setting, and platform position.',
+                        'One batch video is an outlier: open its trackmap, heatmap, and report before trusting the aggregate table.'
+                    ],
+                    callouts: [
+                        ['danger', 'Manual review is mandatory for formal conclusions', 'Automation does not replace review. Before papers, reports, or statistical conclusions, inspect abnormal and representative samples with annotated videos and standard circular maps.']
+                    ]
+                }
+            }
+        }
+    };
+
+    function renderCards(cards) {
+        return `<div class="manual-card-grid">${cards.map(card => `
+            <div class="manual-mini-card">
+                <h4><i class="fas ${card[0]}" style="color: var(--primary-color);"></i> ${card[1]}</h4>
+                <p>${card[2]}</p>
+            </div>
+        `).join('')}</div>`;
+    }
+
+    function renderList(items, ordered) {
+        const tag = ordered ? 'ol' : 'ul';
+        const cls = ordered ? 'manual-step-list' : 'manual-list';
+        return `<${tag} class="${cls}">${items.map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+    }
+
+    function renderBlocks(blocks) {
+        return blocks.map(block => `
+            <div class="manual-sub-block">
+                <h4><i class="fas ${block[0]}" style="color: var(--primary-color);"></i><span>${block[1]}</span></h4>
+                ${renderList(block[2], false)}
+            </div>
+        `).join('');
+    }
+
+    function renderCallouts(callouts) {
+        return (callouts || []).map(callout => `
+            <div class="manual-callout ${callout[0]}">
+                <h4>${callout[1]}</h4>
+                <p>${callout[2]}</p>
+            </div>
+        `).join('');
+    }
+
+    function renderFileGrid(files) {
+        return `<div class="manual-file-grid">${files.map(file => `
+            <div class="manual-file-card">
+                <h4><code>${file[0]}</code></h4>
+                <p>${file[1]}</p>
+            </div>
+        `).join('')}</div>`;
+    }
+
+    function render(lang) {
+        const copy = COPY[lang] || COPY.zh;
+        const s = copy.sections;
+        const root = document.getElementById('mwm-manual-root');
+        if (!root) return;
+        root.innerHTML = `
+            <div class="manual-hero">
+                <div class="manual-hero-top">
+                    <div>
+                        <div class="manual-eyebrow">${copy.heroEyebrow}</div>
+                        <h2>${copy.heroTitle}</h2>
+                        <p>${copy.heroSubtitle}</p>
+                    </div>
+                    <div class="manual-chip-row">
+                        ${copy.heroChips.map(chip => `<span class="manual-chip"><i class="fas fa-water"></i>${chip}</span>`).join('')}
+                    </div>
+                </div>
+                ${renderCards(copy.heroCards)}
+            </div>
+
+            ${window.manualRenderFlow ? window.manualRenderFlow(copy.flow) : ''}
+
+            <div class="row">
+                <div class="col-lg-3 mb-4">
+                    <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
+                        ${copy.nav.map((item, index) => `
+                            <a href="#${item[0]}" class="list-group-item list-group-item-action">
+                                <span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">${index + 1}</span><span>${item[1]}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="col-lg-9">
+                    <div class="manual-section" id="overview">
+                        <h3><span class="step-number">1</span><span>${s.overview.title}</span></h3>
+                        <p>${s.overview.lead}</p>
+                        ${renderList(s.overview.points, false)}
+                        ${renderCallouts(s.overview.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="recording">
+                        <h3><span class="step-number">2</span><span>${s.recording.title}</span></h3>
+                        <p>${s.recording.lead}</p>
+                        ${renderBlocks(s.recording.blocks)}
+                    </div>
+
+                    <div class="manual-section" id="upload">
+                        <h3><span class="step-number">3</span><span>${s.upload.title}</span></h3>
+                        <p>${s.upload.lead}</p>
+                        ${renderList(s.upload.points, false)}
+                        ${renderCallouts(s.upload.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="calibration">
+                        <h3><span class="step-number">4</span><span>${s.calibration.title}</span></h3>
+                        <p>${s.calibration.lead}</p>
+                        ${renderList(s.calibration.steps, true)}
+                        <div class="manual-caption"><i class="fas fa-clock" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'ROI time-window modes' : 'ROI 时间窗模式'}</span></div>
+                        ${window.manualRenderTable(s.calibration.timeTable.headers, s.calibration.timeTable.rows)}
+                        ${renderCallouts(s.calibration.callouts)}
+                    </div>
+
+                    <div class="manual-section" id="params">
+                        <h3><span class="step-number">5</span><span>${s.params.title}</span></h3>
+                        <p>${s.params.lead}</p>
+                        <div class="manual-caption"><i class="fas fa-sliders-h" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Experiment and ROI settings' : '实验与 ROI 设置'}</span></div>
+                        ${window.manualRenderTable(s.params.trialTable.headers, s.params.trialTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-magnifying-glass-chart" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Detection settings' : '检测设置'}</span></div>
+                        ${window.manualRenderTable(s.params.detectTable.headers, s.params.detectTable.rows)}
+                    </div>
+
+                    <div class="manual-section" id="outputs">
+                        <h3><span class="step-number">6</span><span>${s.outputs.title}</span></h3>
+                        <p>${s.outputs.lead}</p>
+                        ${renderFileGrid(s.outputs.files)}
+                        <div class="manual-caption"><i class="fas fa-chart-line" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Key summary fields' : '关键 summary 字段'}</span></div>
+                        ${window.manualRenderTable(s.outputs.metricTable.headers, s.outputs.metricTable.rows)}
+                        <div class="manual-caption"><i class="fas fa-route" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Search strategy classes' : '搜索策略分类'}</span></div>
+                        ${window.manualRenderTable(s.outputs.strategyTable.headers, s.outputs.strategyTable.rows)}
+                    </div>
+
+                    <div class="manual-section" id="batch">
+                        <h3><span class="step-number">7</span><span>${s.batch.title}</span></h3>
+                        <p>${s.batch.lead}</p>
+                        ${renderList(s.batch.steps, true)}
+                        <div class="manual-sub-block">
+                            <h4><i class="fas fa-check-double" style="color: var(--primary-color);"></i><span>${lang === 'en' ? 'Practical rules' : '实际使用规则'}</span></h4>
+                            ${renderList(s.batch.rules, false)}
+                        </div>
+                    </div>
+
+                    <div class="manual-section" id="troubleshooting">
+                        <h3><span class="step-number">8</span><span>${s.troubleshooting.title}</span></h3>
+                        <p>${s.troubleshooting.lead}</p>
+                        ${renderList(s.troubleshooting.items, false)}
+                        ${renderCallouts(s.troubleshooting.callouts)}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.dispatchEvent(new CustomEvent('mousescope:manualrendered'));
+    }
+
+    function renderCurrent() {
+        const lang = window.manualCurrentLang ? window.manualCurrentLang() : (typeof getLang === 'function' ? getLang() : 'zh');
+        render(lang);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCurrent);
+    document.addEventListener('mousescope:langchange', renderCurrent);
+})();
+</script>

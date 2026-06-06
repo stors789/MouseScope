@@ -1,0 +1,1392 @@
+{% extends "base.html" %}
+{% block title %}水迷宫配置 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.mwm-shell { max-width: 1480px; margin: 0 auto; }
+.mwm-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.mwm-steps { display: inline-flex; gap: .5rem; padding: .4rem; border: 1px solid var(--border-card); background: var(--bg-card); border-radius: 999px; }
+.mwm-step { border: 0; background: transparent; color: var(--text-muted); padding: .55rem 1rem; border-radius: 999px; font-weight: 700; }
+.mwm-step.active { background: rgba(14, 165, 233, .12); color: #0369a1; }
+.mwm-step.done { color: var(--success-color); }
+.mwm-row { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(330px, .9fr); gap: 1rem; align-items: start; }
+.mwm-panel { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.15rem; margin-bottom: 1rem; }
+.mwm-panel h5, .mwm-panel h6 { margin-bottom: .85rem; color: var(--text-primary); }
+.mwm-hint { color: var(--text-muted); font-size: .92rem; line-height: 1.6; margin-bottom: .9rem; }
+.mwm-canvas-wrap { background: #07111f; border: 1px solid rgba(148, 163, 184, .2); border-radius: 18px; padding: .75rem; }
+.mwm-canvas-wrap canvas { display: block; width: 100%; max-width: 100%; height: auto; background: #000; border-radius: 14px; cursor: crosshair; touch-action: none; user-select: none; }
+.mwm-toolbar { display: flex; gap: .65rem; flex-wrap: wrap; align-items: center; }
+.mwm-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.mwm-preview canvas { min-height: 280px; }
+.mwm-list { display: grid; gap: .8rem; }
+.mwm-card { border: 1px solid var(--border-card); border-radius: 16px; padding: .9rem; background: var(--bg-page); }
+.mwm-card.active { border-color: rgba(14, 165, 233, .55); box-shadow: 0 0 0 3px rgba(14, 165, 233, .1); }
+.mwm-card-head { display: flex; justify-content: space-between; gap: .75rem; align-items: center; margin-bottom: .7rem; }
+.mwm-card-title { font-weight: 800; color: var(--text-primary); }
+.mwm-card-meta { color: var(--text-muted); font-size: .86rem; line-height: 1.55; }
+.mwm-card-actions { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: .75rem; }
+.compact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+.param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.step-pane { display: none; }
+.step-pane.active { display: block; }
+.range-line { display: flex; justify-content: space-between; font-size: .82rem; color: var(--text-muted); }
+.mwm-note { color: var(--text-muted); font-size: .88rem; line-height: 1.6; margin-top: .7rem; }
+.status-strip { display: flex; gap: .7rem; flex-wrap: wrap; margin-top: .8rem; color: var(--text-muted); font-size: .9rem; }
+.status-pill { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .72rem; border-radius: 999px; background: var(--bg-page); border: 1px solid var(--border-card); }
+.mode-pill { min-width: 120px; }
+.loading-overlay { position: fixed; inset: 0; background: rgba(241,245,249,.78); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+.spinner { width: 48px; height: 48px; border: 3px solid var(--border-card); border-top-color: var(--primary-color); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 1180px) { .mwm-row, .mwm-preview { grid-template-columns: 1fr; } .param-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .compact-grid, .param-grid { grid-template-columns: 1fr; } .mwm-steps { width: 100%; border-radius: var(--radius-card); } .mwm-step { flex: 1; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loading" class="loading-overlay" style="display:none;"><div class="spinner"></div></div>
+
+<div class="mwm-shell" data-calibration-module="water_maze" data-tour-page="calibrate-water-maze">
+    {% if launch_mode == 'workspace' %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <strong data-page-i18n="workspace.title">批量单视频编辑模式</strong>
+            <div class="small mt-1" data-page-i18n="workspace.copy">保存当前视频配置后返回批次页面，再统一启动整批分析。</div>
+        </div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
+            <i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回批次页面</span>
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="mwm-header">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">水迷宫实验配置</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">圆池边界、平台位置、椭圆/畸变校正与探测试次指标设置。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary" href="{{ url_for('manual', module='mwm') }}" target="_blank">
+                <i class="fas fa-book-open me-2"></i><span data-page-i18n="header.manual">MWM 使用手册</span>
+            </a>
+            <div class="mwm-steps">
+                <button type="button" class="mwm-step active" id="stepNav1" onclick="goToStep(1)" data-page-i18n="step.roi">1. 泳池与平台</button>
+                <button type="button" class="mwm-step" id="stepNav2" onclick="goToStep(2)" data-page-i18n="step.preview">2. 调参与启动</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="step1" class="step-pane active">
+        <div class="mwm-row">
+            <div class="mwm-panel" data-tour-id="mwm-canvas">
+                <div class="compact-grid mb-3" data-tour-id="mwm-trial-type">
+                    <div>
+                        <label class="form-label" data-page-i18n="field.trial_type">实验时期</label>
+                        <select class="form-select" id="trialType" onchange="onTrialTypeChange()">
+                            <option value="acquisition_hidden" data-page-i18n="trial.hidden">隐藏平台训练期</option>
+                            <option value="probe" data-page-i18n="trial.probe">探测试次</option>
+                            <option value="visible_platform" data-page-i18n="trial.visible">可见平台期</option>
+                        </select>
+                    </div>
+                </div>
+                {% if is_batch and launch_mode != 'workspace' %}
+                <div class="compact-grid mb-3">
+                    <div>
+                        <label class="form-label" data-page-i18n="field.preview_video">预览视频</label>
+                        <select class="form-select" id="videoSelector" onchange="onVideoChange(this.value)">
+                            {% for video in video_list %}
+                            <option value="{{ video.index }}">{{ loop.index }}. {{ video.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="mwm-hint" data-page-i18n="roi.hint">
+                    先新增泳池，在画面上按住鼠标拖出一个圆/椭圆；如果视角有拉伸，就直接把外框拖成与池壁一致的椭圆。平台同样切到平台模式后拖拽生成圆/椭圆。
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" data-page-i18n="frame.label">选择帧</label>
+                        <span id="frameLabelPool" class="text-muted small">Frame 0 / 0</span>
+                    </div>
+                    <input type="range" class="form-range" id="frameSliderPool" min="0" max="0" value="0" oninput="onPoolFrameChange(this.value)">
+                </div>
+
+                <div class="mwm-canvas-wrap"><canvas id="poolCanvas"></canvas></div>
+
+                <div class="mwm-toolbar mt-3">
+                    <button class="btn btn-primary" type="button" onclick="startNewPool()"><i class="fas fa-plus me-2"></i><span data-page-i18n="btn.add_pool">新增泳池</span></button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="undoPoint()"><i class="fas fa-undo me-2"></i><span data-page-i18n="btn.undo">撤销</span></button>
+                    <button class="btn btn-outline-warning" type="button" id="finishMaskBtn" onclick="finishMaskEdit()" style="display:none;" disabled><i class="fas fa-draw-polygon me-2"></i><span data-page-i18n="btn.finish_mask">完成检测遮罩</span></button>
+                    <button class="btn btn-outline-secondary" type="button" id="cancelMaskBtn" onclick="cancelMaskEdit()" style="display:none;" disabled><i class="fas fa-times me-2"></i><span data-page-i18n="btn.cancel_mask">取消遮罩编辑</span></button>
+                    <button class="btn btn-outline-danger" type="button" onclick="deleteActivePool()"><i class="fas fa-trash me-2"></i><span data-page-i18n="btn.delete">删除当前</span></button>
+                    <button class="btn btn-success ms-auto" type="button" id="toPreviewBtn" onclick="goToStep(2)" disabled><i class="fas fa-arrow-right me-2"></i><span data-page-i18n="btn.to_preview">进入调参</span></button>
+                </div>
+
+                <div class="status-strip">
+                    <div class="status-pill"><strong data-page-i18n="status.trial_type">实验时期</strong> <span id="trialTypeText">隐藏平台训练期</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.pools">泳池</strong> <span id="poolCountText">0</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.boundary">泳池形状</strong> <span id="boundaryCountText">未设置</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.platform">平台</strong> <span id="platformStateText">未设置</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.mask">遮罩点</strong> <span id="maskCountText">0</span></div>
+                    <div class="status-pill"><strong data-page-i18n="status.mode">模式</strong> <span id="drawModeText">边界点</span></div>
+                </div>
+            </div>
+
+            <div class="mwm-panel" data-tour-id="mwm-roi-list">
+                <h5 data-page-i18n="list.title">ROI 列表</h5>
+                <div class="mwm-hint" data-page-i18n="list.hint">每个泳池都可绑定项目小鼠、命名、设置时间窗。多视频模式下配置会按视频保存。</div>
+                <div class="compact-grid mb-3">
+                    <div>
+                        <label class="form-label" data-page-i18n="field.pool_diameter">泳池真实直径 (cm)</label>
+                        <input type="number" class="form-control" id="poolDiameterCm" min="1" step="0.1" value="120" onchange="syncDefaultPoolDiameter(); drawPoolCanvas();">
+                    </div>
+                    <div>
+                        <label class="form-label" data-page-i18n="field.platform_radius">平台半径 (cm)</label>
+                        <input type="number" class="form-control" id="platformRadiusCm" min="0.1" step="0.1" value="5" onchange="syncDefaultPlatformRadius(); drawPoolCanvas();">
+                    </div>
+                </div>
+                {% if project_context and project_context.project_id %}
+                <div class="alert alert-warning py-2 mb-3">
+                    <i class="fas fa-circle-info me-2"></i><span data-page-i18n="project.required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。</span>
+                </div>
+                {% endif %}
+                <div id="poolList" class="mwm-list"><div class="text-muted" data-page-i18n="list.empty">还没有添加泳池。</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="step2" class="step-pane">
+        <div class="mwm-panel">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                <div>
+                    <h5 class="mb-1" data-page-i18n="preview.title">调参与预览</h5>
+                    <div class="text-muted small" id="previewStatus" data-page-i18n="preview.waiting">等待预览。</div>
+                </div>
+                <div class="mwm-toolbar">
+                    <button class="btn btn-outline-secondary" type="button" onclick="goToStep(1)"><i class="fas fa-arrow-left me-2"></i><span data-page-i18n="btn.back">返回 ROI</span></button>
+                    <button class="btn btn-outline-primary" type="button" onclick="updateDebugPreview()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新预览</span></button>
+                    <button class="btn btn-success" type="button" id="primaryActionBtn" onclick="startAnalysis()"><i class="fas fa-play me-2"></i><span id="primaryActionText" data-page-i18n="btn.start">开始 MWM 分析</span></button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0" data-page-i18n="frame.preview">预览帧</label>
+                    <span id="frameLabelDebug" class="text-muted small">Frame 0 / 0</span>
+                </div>
+                <input type="range" class="form-range" id="frameSliderDebug" min="0" max="0" value="0" oninput="onDebugFrameChange(this.value)">
+            </div>
+
+            <div class="mwm-preview mb-4">
+                <div class="mwm-canvas-wrap"><canvas id="previewOriginal"></canvas></div>
+                <div class="mwm-canvas-wrap"><canvas id="previewResult"></canvas></div>
+            </div>
+
+            <div class="param-grid" data-tour-id="mwm-params">
+                <div class="mwm-panel mb-0">
+                    <h6 data-page-i18n="params.experiment_title">统计设置</h6>
+                    <div class="compact-grid">
+                        <div>
+                            <label class="form-label" data-page-i18n="params.thig_band">趋边带宽 (cm)</label>
+                            <input type="number" class="form-control" id="thigmotaxisBandCm" min="0" step="0.1" value="10" onchange="updateDebugPreview()">
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.platform_dwell">平台停留判定 (s)</label>
+                            <input type="number" class="form-control" id="platformDwellS" min="0" step="0.1" value="1" onchange="updateDebugPreview()">
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.movement">运动阈值 (cm/s)</label>
+                            <input type="number" class="form-control" id="movementThreshold" min="0" step="0.1" value="2">
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.bin">分箱时长 (s)</label>
+                            <input type="number" class="form-control" id="binSeconds" min="1" step="1" value="10">
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.max_jump">跳点过滤 (cm)</label>
+                            <input type="number" class="form-control" id="maxJumpCm" min="0" step="0.1" value="25">
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.max_gap">短缺失补偿 (s)</label>
+                            <input type="number" class="form-control" id="maxGapS" min="0" step="0.1" value="0.5">
+                        </div>
+                    </div>
+                    <div class="form-check d-flex align-items-center gap-2 mt-3">
+                        <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                        <label class="form-check-label" for="generateVideo" data-page-i18n="params.video">生成标注视频</label>
+                    </div>
+                    <div class="mwm-note" data-page-i18n="params.experiment_note">实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里调整会直接影响统计结果和质量控制的参数。</div>
+                </div>
+                <div class="mwm-panel mb-0">
+                    <h6 data-page-i18n="params.detect_title">检测参数</h6>
+                    <div class="compact-grid">
+                        <div>
+                            <label class="form-label" data-page-i18n="params.bg_method">检测方式</label>
+                            <select class="form-select" id="bgMethod">
+                                <option value="threshold" data-page-i18n="params.method_threshold">阈值检测</option>
+                                <option value="static" data-page-i18n="params.method_static">静态背景</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.bg_type">背景类型</label>
+                            <select class="form-select" id="bgType">
+                                <option value="light" data-page-i18n="params.bg_light">浅色水面 / 深色小鼠</option>
+                                <option value="dark" data-page-i18n="params.bg_dark">深色水面 / 浅色小鼠</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.gray">灰度阈值</label>
+                            <input class="form-range" id="grayThreshold" type="range" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview();">
+                            <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                        </div>
+                        <div>
+                            <label class="form-label" data-page-i18n="params.min_area">最小目标面积</label>
+                            <input class="form-range" id="minArea" type="range" min="20" max="5000" value="80" oninput="syncRangeLabel('minArea'); updateDebugPreview();">
+                            <div class="range-line"><span>20</span><span id="minAreaLabel">80</span><span>5000</span></div>
+                        </div>
+                        <div class="d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="excludePlatform" onchange="updateDebugPreview()">
+                                <label class="form-check-label" for="excludePlatform" data-page-i18n="params.exclude_platform">检测时排除平台区</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mwm-note" data-page-i18n="params.detect_note">通常先看右侧预览轮廓：小鼠漏检时调灰度阈值，碎点太多时提高最小面积；平台可见且被误检时打开平台排除。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PAGE_I18N = {
+    zh: {
+        'workspace.title':'批量单视频编辑模式','workspace.copy':'保存当前视频配置后返回批次页面，再统一启动整批分析。','workspace.back':'返回批次页面',
+        'header.title':'水迷宫实验配置','header.subtitle':'圆池边界、平台位置、椭圆/畸变校正与探测试次指标设置。','header.manual':'MWM 使用手册',
+        'step.roi':'1. 泳池与平台','step.preview':'2. 调参与启动','field.trial_type':'实验时期','field.pool_diameter':'泳池真实直径 (cm)','field.platform_radius':'平台半径 (cm)','field.preview_video':'预览视频','trial.hidden':'隐藏平台训练期','trial.probe':'探测试次','trial.visible':'可见平台期',
+        'roi.hint':'先新增泳池，在右侧 ROI 卡片选择“绘制泳池”或“绘制平台”。像 PPT 画图形一样拖出椭圆；框定后可拖动椭圆内部移动位置，也可拉动边缘/角点手柄调整大小。',
+        'frame.label':'选择帧','frame.preview':'预览帧','btn.add_pool':'新增泳池','btn.boundary':'泳池椭圆','btn.platform':'平台','btn.mask':'检测遮罩','btn.undo':'撤销','btn.finish_mask':'完成检测遮罩','btn.cancel_mask':'取消遮罩编辑','btn.delete':'删除当前','btn.to_preview':'进入调参','btn.back':'返回 ROI','btn.refresh':'刷新预览','btn.start':'开始 MWM 分析',
+        'status.trial_type':'实验时期','status.pools':'泳池','status.boundary':'泳池形状','status.platform':'平台','status.mask':'遮罩点','status.mode':'模式','list.title':'ROI 列表','list.hint':'每个泳池都可绑定项目小鼠、命名、真实直径、平台半径和时间窗。多视频模式下配置会按视频保存。','list.empty':'还没有添加泳池。','project.required':'项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。',
+        'card.name':'名称','card.pool_diameter':'泳池直径 (cm)','card.platform_radius':'平台半径 (cm)','card.time_mode':'时间模式','card.global':'跟随全局','card.precise':'精确时间窗','card.start':'开始 (s)','card.end':'结束 (s)','card.pool_ready':'泳池已设置','card.pool_missing':'缺少泳池','card.platform_ready':'平台已设置','card.platform_missing':'缺少平台','card.mask_custom':'自定义遮罩','card.mask_default':'遮罩跟随泳池','card.draw_pool':'绘制泳池','card.draw_platform':'绘制平台','card.edit_mask':'编辑遮罩','card.continue_mask':'继续编辑遮罩','card.reset_mask':'重置遮罩','card.delete':'删除',
+        'card.coord_title':'坐标系与象限','card.coord_note':'中心固定为泳池中心；旋转轴线直到 I/II/III/IV 与实验记录一致。','card.axis_rotation':'坐标轴旋转','card.target_quadrant':'目标象限','card.target_auto':'自动按平台','card.release_point':'释放点','quadrant.i':'I（右上）','quadrant.ii':'II（左上）','quadrant.iii':'III（左下）','quadrant.iv':'IV（右下）',
+        'preview.title':'调参与预览','preview.waiting':'等待预览。','params.title':'实验与检测参数','params.experiment_title':'统计设置','params.detect_title':'检测参数','params.trial_type':'实验时期','params.trial_hidden':'隐藏平台训练期','params.trial_probe':'探测试次','params.trial_visible':'可见平台期','params.target':'目标象限','params.target_auto':'自动按平台判断','params.start_pos':'释放点','params.bg_method':'检测方式','params.method_threshold':'阈值检测','params.method_static':'静态背景','params.bg_type':'背景类型','params.bg_light':'浅色水面 / 深色小鼠','params.bg_dark':'深色水面 / 浅色小鼠','params.gray':'灰度阈值','params.min_area':'最小目标面积','params.video':'生成标注视频','params.experiment_note':'实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里只确认是否生成标注视频。','params.detect_note':'通常先看右侧预览轮廓：小鼠漏检时调灰度阈值，碎点太多时提高最小面积。其它形态学参数保持默认即可。','alert.mask_need_points':'检测遮罩至少需要 3 个点。','alert.finish_mask_first':'请先完成或取消当前检测遮罩。',
+        'params.thig_band':'趋边带宽 (cm)','params.platform_dwell':'平台停留判定 (s)','params.movement':'运动阈值 (cm/s)','params.bin':'分箱时长 (s)','params.max_jump':'跳点过滤 (cm)','params.max_gap':'短缺失补偿 (s)','params.exclude_platform':'检测时排除平台区','params.experiment_note':'实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里调整会直接影响统计结果和质量控制的参数。','params.detect_note':'通常先看右侧预览轮廓：小鼠漏检时调灰度阈值，碎点太多时提高最小面积；平台可见且被误检时打开平台排除。'
+    },
+    en: {
+        'workspace.title':'Batch single-video edit mode','workspace.copy':'Save this video, return to the batch page, then start the batch together.','workspace.back':'Back to Batch',
+        'header.title':'Morris Water Maze Setup','header.subtitle':'Pool boundary, platform position, ellipse/distortion correction, and probe-trial metrics.','header.manual':'MWM Manual',
+        'step.roi':'1. Pool & Platform','step.preview':'2. Preview & Start','field.trial_type':'Experiment Period','field.pool_diameter':'Real pool diameter (cm)','field.platform_radius':'Platform radius (cm)','field.preview_video':'Preview video','trial.hidden':'Hidden platform training','trial.probe':'Probe trial','trial.visible':'Visible platform',
+        'roi.hint':'Add a pool, then choose Draw Pool or Draw Platform in the ROI card. Drag out an ellipse like drawing a shape in PowerPoint; after it is created, drag inside to move it or drag edge/corner handles to resize it.',
+        'frame.label':'Frame','frame.preview':'Preview frame','btn.add_pool':'Add Pool','btn.boundary':'Pool Ellipse','btn.platform':'Platform','btn.mask':'Detection Mask','btn.undo':'Undo','btn.finish_mask':'Finish Detection Mask','btn.cancel_mask':'Cancel Mask Editing','btn.delete':'Delete Current','btn.to_preview':'Tune Parameters','btn.back':'Back to ROI','btn.refresh':'Refresh Preview','btn.start':'Start MWM Analysis',
+        'status.trial_type':'Period','status.pools':'Pools','status.boundary':'Pool shape','status.platform':'Platform','status.mask':'Mask pts','status.mode':'Mode','list.title':'ROI List','list.hint':'Each pool can be named, bound to a project animal, assigned a real diameter, platform radius, and time window. Batch sessions save settings per video.','list.empty':'No pool has been added.','project.required':'In project mode, every completed ROI must select an existing animal.',
+        'card.name':'Name','card.pool_diameter':'Pool diameter (cm)','card.platform_radius':'Platform radius (cm)','card.time_mode':'Time Mode','card.global':'Follow Global','card.precise':'Precise Time Range','card.start':'Start (s)','card.end':'End (s)','card.pool_ready':'Pool set','card.pool_missing':'Missing pool','card.platform_ready':'Platform set','card.platform_missing':'Missing platform','card.mask_custom':'Custom detection mask','card.mask_default':'Mask follows pool','card.draw_pool':'Draw Pool','card.draw_platform':'Draw Platform','card.edit_mask':'Edit Mask','card.continue_mask':'Continue Mask','card.reset_mask':'Reset Mask','card.delete':'Delete',
+        'card.coord_title':'Coordinate System & Quadrants','card.coord_note':'The center is the drawn pool center. Rotate the axes until I/II/III/IV match the experiment record.','card.axis_rotation':'Axis rotation','card.target_quadrant':'Target quadrant','card.target_auto':'Auto from platform','card.release_point':'Release point','quadrant.i':'I (upper right)','quadrant.ii':'II (upper left)','quadrant.iii':'III (lower left)','quadrant.iv':'IV (lower right)',
+        'preview.title':'Preview & Tuning','preview.waiting':'Waiting for preview.','params.title':'Experiment and Detection Parameters','params.experiment_title':'Statistics Settings','params.detect_title':'Detection Parameters','params.trial_type':'Experiment Period','params.trial_hidden':'Hidden platform training','params.trial_probe':'Probe trial','params.trial_visible':'Visible platform','params.target':'Target quadrant','params.target_auto':'Auto from platform','params.start_pos':'Release point','params.bg_method':'Detection method','params.method_threshold':'Threshold detection','params.method_static':'Static background','params.bg_type':'Background type','params.bg_light':'Light water / dark mouse','params.bg_dark':'Dark water / light mouse','params.gray':'Gray threshold','params.min_area':'Minimum target area','params.video':'Generate annotated video','params.experiment_note':'Experiment period, target quadrant, release point, and axes are configured per pool on the ROI page; here you only confirm annotated video output.','params.detect_note':'Use the preview contour first: adjust gray threshold when the mouse is missed, and raise minimum area when small speckles appear. Other morphology settings stay on defaults.','alert.mask_need_points':'Detection mask needs at least 3 points.','alert.finish_mask_first':'Finish or cancel the current detection mask first.',
+        'params.thig_band':'Thigmotaxis band (cm)','params.platform_dwell':'Platform dwell (s)','params.movement':'Movement threshold (cm/s)','params.bin':'Bin length (s)','params.max_jump':'Jump filter (cm)','params.max_gap':'Short-gap fill (s)','params.exclude_platform':'Exclude platform during detection','params.experiment_note':'Experiment period, target quadrant, release point, and axes are configured per pool on the ROI page; these controls affect statistics and QC.','params.detect_note':'Use the preview contour first: adjust gray threshold when the mouse is missed, raise minimum area for speckles, and exclude the platform if a visible platform is detected as the animal.'
+    }
+};
+
+const sessionId = {{ session_id | tojson }};
+const videoInfo = {{ video_info | tojson }};
+const videoInfoList = {{ video_info_list | tojson }};
+const isBatch = {{ is_batch | tojson }};
+const launchMode = {{ launch_mode | tojson }};
+const currentVideoIndexFromServer = {{ current_video_index | tojson }};
+const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
+const initialDraftPayload = {{ draft_payload | tojson }};
+const projectContext = {{ (project_context or {}) | tojson }};
+const projectSubjects = {{ (project_subjects or []) | tojson }};
+{% if video_list %}const videoList = {{ video_list | tojson }};{% else %}const videoList = [];{% endif %}
+const isProjectMode = Boolean(projectContext && projectContext.project_id);
+const MIN_BOUNDARY_POINTS = 5;
+const MIN_MASK_POINTS = 3;
+const MIN_SHAPE_RADIUS = 3;
+const HANDLE_SIZE = 8;
+const HANDLE_HIT_RADIUS = 10;
+let baseFrame = null;
+let currentVideoIdx = parseInt(currentVideoIndexFromServer || 0, 10) || 0;
+let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+let totalVideoCount = Math.max(videoInfoList.length || 1, 1);
+let videoConfigs = Array.from({length: totalVideoCount}, () => ({rois: [], tuning_params: {}, pool_diameter_cm: 120, platform_radius_cm: 5}));
+let rois = [];
+let activePoolIndex = null;
+let drawMode = 'boundary';
+let debounceTimers = {};
+let dragStart = null;
+let dragPreview = null;
+let shapeInteraction = null;
+let maskEditPoolIndex = null;
+let currentMaskPoints = [];
+let poolFrameRequestToken = 0;
+let debugPreviewRequestToken = 0;
+
+function pageText(key, fallback) {
+    const lang = (typeof getLang === 'function') ? getLang() : 'zh';
+    return (PAGE_I18N[lang] && PAGE_I18N[lang][key]) || (PAGE_I18N.zh && PAGE_I18N.zh[key]) || fallback || key;
+}
+function currentLang() { return (typeof getLang === 'function') ? getLang() : 'zh'; }
+function biText(zh, en) { return currentLang() === 'en' ? en : zh; }
+function applyMWMLang() { if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N); updatePoolList(); updateStatusLabels(); }
+document.addEventListener('mousescope:langchange', applyMWMLang);
+function cloneState(value) { return JSON.parse(JSON.stringify(value || null)); }
+function num(id, fallback) { const el = document.getElementById(id); const v = parseFloat(el ? el.value : fallback); return Number.isFinite(v) ? v : fallback; }
+function intNum(id, fallback) { const el = document.getElementById(id); const v = parseInt(el ? el.value : fallback, 10); return Number.isFinite(v) ? v : fallback; }
+function strValue(id, fallback = '') { const el = document.getElementById(id); return el ? el.value : fallback; }
+function checkedValue(id, fallback = false) { const el = document.getElementById(id); return el ? Boolean(el.checked) : fallback; }
+function syncRangeLabel(id) { const el = document.getElementById(id); const label = document.getElementById(`${id}Label`); if (el && label) label.textContent = el.value; }
+function frameMax() { return Math.max(0, Number((currentVideoInfo && currentVideoInfo.total_frames) || 1) - 1); }
+function frameLabel(value) { return `Frame ${value} / ${frameMax()}`; }
+function activePool() { return activePoolIndex == null ? null : rois[activePoolIndex]; }
+function trialTypeValue(value = strValue('trialType', 'acquisition_hidden')) {
+    return ['acquisition_hidden', 'probe', 'visible_platform'].includes(value) ? value : 'acquisition_hidden';
+}
+function trialTypeLabel(value = trialTypeValue()) {
+    const key = {
+        acquisition_hidden: 'trial.hidden',
+        probe: 'trial.probe',
+        visible_platform: 'trial.visible'
+    }[trialTypeValue(value)] || 'trial.hidden';
+    return pageText(key, value || 'Hidden platform training');
+}
+function coordinateRotation(roi) {
+    const value = Number(roi && (roi.quadrant_rotation_deg ?? roi.coordinate_rotation_deg));
+    return Number.isFinite(value) ? Math.max(-180, Math.min(180, value)) : 0;
+}
+function normalizedQuadrant(value) {
+    const raw = String(value || '').trim().toUpperCase().replace(/[-_\s]/g, '');
+    const aliases = {I:'NE', QI:'NE', Q1:'NE', '1':'NE', II:'NW', QII:'NW', Q2:'NW', '2':'NW', III:'SW', QIII:'SW', Q3:'SW', '3':'SW', IV:'SE', QIV:'SE', Q4:'SE', '4':'SE'};
+    const mapped = aliases[raw] || raw;
+    return ['NE', 'NW', 'SW', 'SE'].includes(mapped) ? mapped : '';
+}
+function normalizedStartPosition(value) {
+    const raw = String(value || 'N').trim().toUpperCase();
+    return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].includes(raw) ? raw : 'N';
+}
+function quadrantText(value) {
+    const key = normalizedQuadrant(value);
+    return ({
+        NE: pageText('quadrant.i', biText('I（右上）', 'I (upper right)')),
+        NW: pageText('quadrant.ii', biText('II（左上）', 'II (upper left)')),
+        SW: pageText('quadrant.iii', biText('III（左下）', 'III (lower left)')),
+        SE: pageText('quadrant.iv', biText('IV（右下）', 'IV (lower right)'))
+    })[key] || pageText('card.target_auto', biText('自动按平台', 'Auto from platform'));
+}
+function quadrantOptions(selected) {
+    const value = normalizedQuadrant(selected);
+    const options = [
+        ['', pageText('card.target_auto', biText('自动按平台', 'Auto from platform'))],
+        ['NE', quadrantText('NE')],
+        ['NW', quadrantText('NW')],
+        ['SW', quadrantText('SW')],
+        ['SE', quadrantText('SE')]
+    ];
+    return options.map(([key, label]) => `<option value="${key}" ${key === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+}
+function releaseOptions(selected) {
+    const value = normalizedStartPosition(selected);
+    return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+        .map(key => `<option value="${key}" ${key === value ? 'selected' : ''}>${key}</option>`)
+        .join('');
+}
+function validEllipse(shape) {
+    return !!(shape && shape.center && Number(shape.radius_x_px) > 1 && Number(shape.radius_y_px) > 1);
+}
+function poolShape(roi) {
+    return roi && roi.pool ? roi.pool : null;
+}
+function isCompletePool(roi) { return !!(roi && validEllipse(poolShape(roi)) && roi.platform && roi.platform.center); }
+function allPoolsReady(source = rois) { return (source || []).some(isCompletePool) && (!isProjectMode || projectRoiSubjectsReady(source)); }
+function poolName(index) { return `Pool ${index + 1}`; }
+function shapeFromDrag(start, end) {
+    const x0 = Number(start.x);
+    const y0 = Number(start.y);
+    const x1 = Number(end.x);
+    const y1 = Number(end.y);
+    return {
+        center: {x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2)},
+        radius_x_px: Math.max(2, Math.abs(x1 - x0) / 2),
+        radius_y_px: Math.max(2, Math.abs(y1 - y0) / 2),
+        angle_deg: 0
+    };
+}
+function cloneShape(shape) {
+    if (!validEllipse(shape)) return null;
+    return {
+        center: {x: Number(shape.center.x), y: Number(shape.center.y)},
+        radius_x_px: Number(shape.radius_x_px),
+        radius_y_px: Number(shape.radius_y_px),
+        angle_deg: Number(shape.angle_deg || 0)
+    };
+}
+function shapeForMode(pool, mode = drawMode) {
+    if (!pool) return null;
+    if (mode === 'boundary') return pool.pool || null;
+    if (mode === 'platform' && pool.platform && pool.platform.center) {
+        return {
+            center: pool.platform.center,
+            radius_x_px: Number(pool.platform.radius_x_px || 8),
+            radius_y_px: Number(pool.platform.radius_y_px || pool.platform.radius_x_px || 8),
+            angle_deg: Number(pool.platform.angle_deg || 0)
+        };
+    }
+    return null;
+}
+function assignShapeForMode(pool, mode, shape) {
+    if (!pool || !validEllipse(shape)) return;
+    const clean = cloneShape(shape);
+    if (mode === 'boundary') {
+        pool.pool = clean;
+    } else if (mode === 'platform') {
+        pool.platform = {...clean, radius_cm: Number(pool.platform_radius_cm || num('platformRadiusCm', 5))};
+    }
+}
+function ellipseHandlePoints(shape) {
+    if (!validEllipse(shape)) return {};
+    const cx = Number(shape.center.x);
+    const cy = Number(shape.center.y);
+    const rx = Number(shape.radius_x_px);
+    const ry = Number(shape.radius_y_px);
+    return {
+        nw: {x: cx - rx, y: cy - ry}, n: {x: cx, y: cy - ry}, ne: {x: cx + rx, y: cy - ry},
+        e: {x: cx + rx, y: cy}, se: {x: cx + rx, y: cy + ry}, s: {x: cx, y: cy + ry},
+        sw: {x: cx - rx, y: cy + ry}, w: {x: cx - rx, y: cy}
+    };
+}
+function distance(a, b) {
+    const dx = Number(a.x) - Number(b.x);
+    const dy = Number(a.y) - Number(b.y);
+    return Math.sqrt(dx * dx + dy * dy);
+}
+function pointInEllipse(point, shape) {
+    if (!validEllipse(shape)) return false;
+    const angle = -Number(shape.angle_deg || 0) * Math.PI / 180;
+    const dx = Number(point.x) - Number(shape.center.x);
+    const dy = Number(point.y) - Number(shape.center.y);
+    const x = dx * Math.cos(angle) - dy * Math.sin(angle);
+    const y = dx * Math.sin(angle) + dy * Math.cos(angle);
+    const rx = Math.max(MIN_SHAPE_RADIUS, Number(shape.radius_x_px));
+    const ry = Math.max(MIN_SHAPE_RADIUS, Number(shape.radius_y_px));
+    return (x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1;
+}
+function hitTestShape(shape, point) {
+    if (!validEllipse(shape)) return null;
+    const order = ['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w'];
+    const handles = ellipseHandlePoints(shape);
+    for (const handle of order) {
+        if (distance(handles[handle], point) <= HANDLE_HIT_RADIUS) return {kind: 'resize', handle};
+    }
+    if (pointInEllipse(point, shape)) return {kind: 'move'};
+    return null;
+}
+function cursorForHit(hit) {
+    if (!hit) return 'crosshair';
+    if (hit.kind === 'move') return 'move';
+    return {
+        n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+        nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize'
+    }[hit.handle] || 'crosshair';
+}
+function moveShape(shape, dx, dy) {
+    const next = cloneShape(shape);
+    if (!next) return null;
+    next.center = {x: next.center.x + dx, y: next.center.y + dy};
+    return next;
+}
+function resizeShapeFromHandle(shape, handle, point) {
+    if (!validEllipse(shape)) return null;
+    let left = Number(shape.center.x) - Number(shape.radius_x_px);
+    let right = Number(shape.center.x) + Number(shape.radius_x_px);
+    let top = Number(shape.center.y) - Number(shape.radius_y_px);
+    let bottom = Number(shape.center.y) + Number(shape.radius_y_px);
+    if (handle.includes('w')) left = Number(point.x);
+    if (handle.includes('e')) right = Number(point.x);
+    if (handle.includes('n')) top = Number(point.y);
+    if (handle.includes('s')) bottom = Number(point.y);
+    if (right - left < MIN_SHAPE_RADIUS * 2) {
+        if (handle.includes('w')) left = right - MIN_SHAPE_RADIUS * 2;
+        else right = left + MIN_SHAPE_RADIUS * 2;
+    }
+    if (bottom - top < MIN_SHAPE_RADIUS * 2) {
+        if (handle.includes('n')) top = bottom - MIN_SHAPE_RADIUS * 2;
+        else bottom = top + MIN_SHAPE_RADIUS * 2;
+    }
+    return {
+        center: {x: (left + right) / 2, y: (top + bottom) / 2},
+        radius_x_px: Math.max(MIN_SHAPE_RADIUS, Math.abs(right - left) / 2),
+        radius_y_px: Math.max(MIN_SHAPE_RADIUS, Math.abs(bottom - top) / 2),
+        angle_deg: Number(shape.angle_deg || 0)
+    };
+}
+function ellipseBoundaryPoints(shape, count = 64) {
+    if (!validEllipse(shape)) return [];
+    const points = [];
+    const angle = Number(shape.angle_deg || 0) * Math.PI / 180;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const cx = Number(shape.center.x);
+    const cy = Number(shape.center.y);
+    const rx = Number(shape.radius_x_px);
+    const ry = Number(shape.radius_y_px);
+    for (let i = 0; i < count; i += 1) {
+        const t = 2 * Math.PI * i / count;
+        const x = rx * Math.cos(t);
+        const y = ry * Math.sin(t);
+        points.push({x: cx + x * cosA - y * sinA, y: cy + x * sinA + y * cosA});
+    }
+    return points;
+}
+function ensurePoolDefaults(roi) {
+    if (!roi) return roi;
+    roi.quadrant_rotation_deg = coordinateRotation(roi);
+    roi.coordinate_rotation_deg = roi.quadrant_rotation_deg;
+    roi.target_quadrant = normalizedQuadrant(roi.target_quadrant || '');
+    roi.start_position = normalizedStartPosition(roi.start_position || 'N');
+    if (!roi.time_config) roi.time_config = {mode:'global', start:null, end:null};
+    return roi;
+}
+function migrateLegacyPool(roi) {
+    if (!roi) return roi;
+    if (roi.pool || !Array.isArray(roi.pool_boundary_points) || !roi.pool_boundary_points.length) return ensurePoolDefaults(roi);
+    const xs = roi.pool_boundary_points.map(p => Number(p.x));
+    const ys = roi.pool_boundary_points.map(p => Number(p.y));
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    roi.pool = {
+        center: {x: (minX + maxX) / 2, y: (minY + maxY) / 2},
+        radius_x_px: Math.max(2, (maxX - minX) / 2),
+        radius_y_px: Math.max(2, (maxY - minY) / 2),
+        angle_deg: 0
+    };
+    return ensurePoolDefaults(roi);
+}
+
+function readTuningParams() {
+    return {
+        trial_type: trialTypeValue(),
+        day_label: strValue('dayLabel', ''),
+        trial_no: intNum('trialNo', 1),
+        target_quadrant: strValue('targetQuadrant', ''),
+        start_position: strValue('startPosition', 'N'),
+        quadrant_rotation_deg: num('quadrantRotationDeg', 0),
+        correction_mode: strValue('correctionMode', 'ellipse_affine'),
+        distortion_k1: num('distortionK1', 0),
+        distortion_k2: num('distortionK2', 0),
+        thigmotaxis_band_cm: num('thigmotaxisBandCm', 10),
+        platform_dwell_s: num('platformDwellS', 1),
+        track_smoothing_max_jump_cm: num('maxJumpCm', 25),
+        max_gap_s: num('maxGapS', 0.5),
+        movement_threshold_cm_s: num('movementThreshold', 2),
+        bin_seconds: num('binSeconds', 10),
+        bg_method: strValue('bgMethod', 'threshold'),
+        bg_type: strValue('bgType', 'light'),
+        gray_threshold: intNum('grayThreshold', 127),
+        erosion_kernel: intNum('erosionKernel', 3),
+        erosion_iter: intNum('erosionIter', 1),
+        dilation_kernel: intNum('dilationKernel', 5),
+        dilation_iter: intNum('dilationIter', 2),
+        min_area: intNum('minArea', 80),
+        max_area: intNum('maxArea', 50000),
+        exclude_platform_from_detection: checkedValue('excludePlatform', false),
+        generate_video: checkedValue('generateVideo', true),
+    };
+}
+
+function writeTuningParams(params) {
+    params = params || {};
+    const set = (id, value) => { const el = document.getElementById(id); if (el && value !== undefined && value !== null) el.value = value; };
+    set('trialType', trialTypeValue(params.trial_type)); set('dayLabel', params.day_label); set('trialNo', params.trial_no);
+    set('targetQuadrant', params.target_quadrant); set('startPosition', params.start_position); set('quadrantRotationDeg', params.quadrant_rotation_deg);
+    set('correctionMode', params.correction_mode); set('distortionK1', params.distortion_k1); set('distortionK2', params.distortion_k2);
+    set('thigmotaxisBandCm', params.thigmotaxis_band_cm); set('platformDwellS', params.platform_dwell_s); set('maxJumpCm', params.track_smoothing_max_jump_cm || params.max_jump_cm);
+    set('maxGapS', params.max_gap_s); set('movementThreshold', params.movement_threshold_cm_s); set('binSeconds', params.bin_seconds);
+    set('bgMethod', params.bg_method); set('bgType', params.bg_type); set('grayThreshold', params.gray_threshold);
+    set('erosionKernel', params.erosion_kernel); set('erosionIter', params.erosion_iter); set('dilationKernel', params.dilation_kernel); set('dilationIter', params.dilation_iter);
+    set('minArea', params.min_area); set('maxArea', params.max_area);
+    const generateVideo = document.getElementById('generateVideo');
+    const excludePlatform = document.getElementById('excludePlatform');
+    if (generateVideo && typeof params.generate_video === 'boolean') generateVideo.checked = params.generate_video;
+    if (excludePlatform && typeof params.exclude_platform_from_detection === 'boolean') excludePlatform.checked = params.exclude_platform_from_detection;
+    syncRangeLabel('grayThreshold');
+    syncRangeLabel('minArea');
+}
+
+function persistCurrentVideoState() {
+    const cfg = videoConfigs[currentVideoIdx] || {};
+    cfg.rois = cloneState(rois) || [];
+    cfg.pool_diameter_cm = num('poolDiameterCm', 120);
+    cfg.platform_radius_cm = num('platformRadiusCm', 5);
+    cfg.tuning_params = readTuningParams();
+    videoConfigs[currentVideoIdx] = cfg;
+}
+
+function applyCurrentVideoState() {
+    const cfg = videoConfigs[currentVideoIdx] || {};
+    clearMaskDraft();
+    drawMode = 'boundary';
+    rois = (cloneState(cfg.rois || []) || []).map(migrateLegacyPool);
+    document.getElementById('poolDiameterCm').value = Number.isFinite(cfg.pool_diameter_cm) ? cfg.pool_diameter_cm : 120;
+    document.getElementById('platformRadiusCm').value = Number.isFinite(cfg.platform_radius_cm) ? cfg.platform_radius_cm : 5;
+    writeTuningParams(cfg.tuning_params || {});
+    activePoolIndex = rois.length ? 0 : null;
+    updatePoolList();
+    updateStatusLabels();
+    drawPoolCanvas();
+}
+
+function hydrateFromDraftPayload() {
+    if (!initialDraftPayload || typeof initialDraftPayload !== 'object') return;
+    const workspace = Array.isArray(initialDraftPayload.workspace_video_configs) ? initialDraftPayload.workspace_video_configs : [];
+    const saved = Array.isArray(initialDraftPayload.per_video_configs) ? initialDraftPayload.per_video_configs : [];
+    for (let i = 0; i < totalVideoCount; i += 1) {
+        const source = workspace[i] || saved[i] || {};
+        videoConfigs[i] = {
+            rois: (cloneState(source.rois || []) || []).map(migrateLegacyPool),
+            pool_diameter_cm: Number(source.pool_diameter_cm || initialDraftPayload.pool_diameter_cm || 120),
+            platform_radius_cm: Number(source.platform_radius_cm || initialDraftPayload.platform_radius_cm || 5),
+            tuning_params: cloneState(source.tuning_params || source || {}),
+        };
+    }
+}
+
+function projectSubjectById(subjectId) { return (projectSubjects || []).find(subject => subject.subject_id === subjectId) || null; }
+function applyProjectSubjectToROI(roi, subjectId) {
+    const subject = projectSubjectById(subjectId);
+    if (!subject) { delete roi.subject_id; delete roi.animal_code; delete roi.group_id; delete roi.group_name; return; }
+    roi.subject_id = subject.subject_id; roi.animal_code = subject.animal_code; roi.group_id = subject.group_id || ''; roi.group_name = subject.group_name || ''; roi.name = subject.animal_code || roi.name;
+}
+function projectRoiSubjectsReady(source = rois) {
+    if (!isProjectMode) return true;
+    if (!(projectSubjects || []).length) return false;
+    return (source || []).every(roi => !isCompletePool(roi) || !!projectSubjectById(roi.subject_id));
+}
+function validateProjectSubjects(source = rois) {
+    if (projectRoiSubjectsReady(source)) return true;
+    alert((projectSubjects || []).length ? (pageText('project.required')) : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。');
+    return false;
+}
+
+function isEditingMask(index = activePoolIndex) {
+    return drawMode === 'mask' && maskEditPoolIndex != null && maskEditPoolIndex === index;
+}
+function updateMaskToolbar() {
+    const active = drawMode === 'mask' && maskEditPoolIndex != null;
+    const finishBtn = document.getElementById('finishMaskBtn');
+    const cancelBtn = document.getElementById('cancelMaskBtn');
+    if (finishBtn) {
+        finishBtn.style.display = active ? '' : 'none';
+        finishBtn.disabled = !(active && currentMaskPoints.length >= MIN_MASK_POINTS);
+    }
+    if (cancelBtn) {
+        cancelBtn.style.display = active ? '' : 'none';
+        cancelBtn.disabled = !active;
+    }
+}
+function clearMaskDraft() {
+    maskEditPoolIndex = null;
+    currentMaskPoints = [];
+}
+function finishMaskEdit() {
+    if (maskEditPoolIndex == null || !rois[maskEditPoolIndex]) return;
+    if (currentMaskPoints.length < MIN_MASK_POINTS) {
+        alert(pageText('alert.mask_need_points', 'Detection mask needs at least 3 points.'));
+        return;
+    }
+    rois[maskEditPoolIndex].detection_points = cloneState(currentMaskPoints) || [];
+    clearMaskDraft();
+    drawMode = 'boundary';
+    persistCurrentVideoState();
+    updatePoolList();
+    drawPoolCanvas();
+}
+function cancelMaskEdit() {
+    if (maskEditPoolIndex == null) return;
+    clearMaskDraft();
+    drawMode = 'boundary';
+    updatePoolList();
+    drawPoolCanvas();
+}
+function startMaskEdit(index, event) {
+    if (event) event.stopPropagation();
+    if (!(index >= 0 && index < rois.length) || !validEllipse(poolShape(rois[index]))) return;
+    activePoolIndex = index;
+    drawMode = 'mask';
+    maskEditPoolIndex = index;
+    currentMaskPoints = cloneState(rois[index].detection_points || []) || [];
+    updatePoolList();
+    updateStatusLabels();
+    drawPoolCanvas();
+}
+
+function updateStatusLabels() {
+    const pool = activePool();
+    const trialTypeText = document.getElementById('trialTypeText');
+    if (trialTypeText) trialTypeText.textContent = trialTypeLabel();
+    document.getElementById('poolCountText').textContent = String(rois.length);
+    document.getElementById('boundaryCountText').textContent = pool && validEllipse(poolShape(pool)) ? `${Math.round(pool.pool.radius_x_px)} x ${Math.round(pool.pool.radius_y_px)} px` : (getLang() === 'en' ? 'Missing' : '未设置');
+    document.getElementById('platformStateText').textContent = pool && pool.platform && pool.platform.center ? (getLang() === 'en' ? 'Set' : '已设置') : (getLang() === 'en' ? 'Missing' : '未设置');
+    const maskCount = isEditingMask(activePoolIndex) ? currentMaskPoints.length : (pool && pool.detection_points ? pool.detection_points.length : 0);
+    document.getElementById('maskCountText').textContent = String(maskCount);
+    document.getElementById('drawModeText').textContent = {boundary: pageText('btn.boundary'), platform: pageText('btn.platform'), mask: pageText('btn.mask')}[drawMode] || drawMode;
+    const ready = allPoolsReady();
+    document.getElementById('toPreviewBtn').disabled = !ready || maskEditPoolIndex != null;
+    updateMaskToolbar();
+}
+
+function onTrialTypeChange() {
+    persistCurrentVideoState();
+    updateStatusLabels();
+    if (document.getElementById('step2')?.classList.contains('active')) updateDebugPreview();
+}
+
+function updatePoolList() {
+    const list = document.getElementById('poolList');
+    if (!rois.length) { list.innerHTML = `<div class="text-muted">${pageText('list.empty')}</div>`; updateStatusLabels(); return; }
+    list.innerHTML = rois.map((roi, index) => {
+        const shape = poolShape(roi);
+        const poolReady = validEllipse(shape);
+        const boundaryText = poolReady
+            ? `${Math.round(shape.radius_x_px)} x ${Math.round(shape.radius_y_px)} px`
+            : pageText('card.pool_missing', 'Missing pool');
+        const platformOk = !!(roi.platform && roi.platform.center);
+        const maskCount = (roi.detection_points || []).length;
+        const maskReady = maskCount >= MIN_MASK_POINTS;
+        const editingMask = isEditingMask(index);
+        const time = roi.time_config || {mode:'global', start:null, end:null};
+        const poolDiameter = Number(roi.pool_diameter_cm || document.getElementById('poolDiameterCm')?.value || 120);
+        const platformRadius = Number(roi.platform_radius_cm || (roi.platform && roi.platform.radius_cm) || document.getElementById('platformRadiusCm')?.value || 5);
+        const axisRotation = coordinateRotation(roi);
+        const targetQuadrant = normalizedQuadrant(roi.target_quadrant || '');
+        const startPosition = normalizedStartPosition(roi.start_position || 'N');
+        const selectedId = roi.subject_id || '';
+        const subjectMarkup = isProjectMode
+            ? `<label class="form-label">小鼠 / Animal</label><select class="form-select" onchange="updatePoolSubject(${index}, this.value)"><option value="">请选择已有小鼠</option>${(projectSubjects || []).map(subject => `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml((subject.animal_code || '') + (subject.group_name ? ' · ' + subject.group_name : ''))}</option>`).join('')}</select><div class="form-text small">${escapeHtml(roi.group_name || '项目模式下必须选择已登记小鼠')}</div>`
+            : `<label class="form-label">${pageText('card.name', 'Name')}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updatePoolName(${index}, this.value)">`;
+        return `
+            <div class="mwm-card ${index === activePoolIndex || editingMask ? 'active' : ''}" onclick="selectPool(${index})">
+                <div class="mwm-card-head">
+                    <div>
+                        <div class="mwm-card-title">${escapeHtml(roi.name || poolName(index))}</div>
+                        <div class="mwm-card-meta">
+                            ${escapeHtml(boundaryText)} ·
+                            ${platformOk ? pageText('card.platform_ready', 'Platform set') : pageText('card.platform_missing', 'Missing platform')} ·
+                            ${maskReady ? pageText('card.mask_custom', 'Custom detection mask') : pageText('card.mask_default', 'Mask follows pool')}
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deletePool(${index});">${pageText('card.delete', 'Delete')}</button>
+                </div>
+                <div class="compact-grid">
+                    <div>${subjectMarkup}</div>
+                    <div>
+                        <label class="form-label">${pageText('card.pool_diameter', 'Pool diameter (cm)')}</label>
+                        <input class="form-control" type="number" min="1" step="0.1" value="${Number.isFinite(poolDiameter) ? poolDiameter : 120}" onchange="updatePoolDiameter(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${pageText('card.platform_radius', 'Platform radius (cm)')}</label>
+                        <input class="form-control" type="number" min="0.1" step="0.1" value="${Number.isFinite(platformRadius) ? platformRadius : 5}" onchange="updatePoolPlatformRadius(${index}, this.value)">
+                    </div>
+                    <div>
+                        <label class="form-label">${pageText('card.time_mode', 'Time Mode')}</label>
+                        <select class="form-select" onchange="updatePoolTimeMode(${index}, this.value)">
+                            <option value="global" ${time.mode !== 'precise' ? 'selected' : ''}>${pageText('card.global', 'Follow Global')}</option>
+                            <option value="precise" ${time.mode === 'precise' ? 'selected' : ''}>${pageText('card.precise', 'Precise Time Range')}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="compact-grid mt-2" style="${time.mode === 'precise' ? '' : 'display:none'}">
+                    <div><label class="form-label">${pageText('card.start', 'Start (s)')}</label><input class="form-control" type="number" step="0.1" value="${time.start == null ? '' : time.start}" onchange="updatePoolTimeValue(${index}, 'start', this.value)"></div>
+                    <div><label class="form-label">${pageText('card.end', 'End (s)')}</label><input class="form-control" type="number" step="0.1" value="${time.end == null ? '' : time.end}" onchange="updatePoolTimeValue(${index}, 'end', this.value)"></div>
+                </div>
+                <div class="mt-3">
+                    <div class="mwm-card-title">${pageText('card.coord_title', biText('坐标系与象限', 'Coordinate System & Quadrants'))}</div>
+                    <div class="mwm-card-meta">${pageText('card.coord_note', biText('中心固定为泳池中心；旋转轴线直到 I/II/III/IV 与实验记录一致。', 'The center is the drawn pool center. Rotate the axes until I/II/III/IV match the experiment record.'))}</div>
+                    <div class="compact-grid mt-2">
+                        <div>
+                            <label class="form-label">${pageText('card.target_quadrant', biText('目标象限', 'Target quadrant'))}</label>
+                            <select class="form-select" onclick="event.stopPropagation()" onchange="updatePoolTargetQuadrant(${index}, this.value)">${quadrantOptions(targetQuadrant)}</select>
+                        </div>
+                        <div>
+                            <label class="form-label">${pageText('card.release_point', biText('释放点', 'Release point'))}</label>
+                            <select class="form-select" onclick="event.stopPropagation()" onchange="updatePoolStartPosition(${index}, this.value)">${releaseOptions(startPosition)}</select>
+                        </div>
+                    </div>
+                    <div class="mt-2" onclick="event.stopPropagation()">
+                        <label class="form-label">${pageText('card.axis_rotation', biText('坐标轴旋转', 'Axis rotation'))}</label>
+                        <input class="form-range" type="range" min="-180" max="180" step="1" value="${axisRotation}" oninput="updatePoolCoordinateRotation(${index}, this.value, false)" onchange="updatePoolCoordinateRotation(${index}, this.value, true)">
+                        <div class="range-line"><span>-180°</span><span id="axisRotationLabel${index}">${Math.round(axisRotation)}°</span><span>180°</span></div>
+                    </div>
+                </div>
+                <div class="mwm-card-actions">
+                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="setActiveDrawMode(${index}, 'boundary', event)">${pageText('card.draw_pool', 'Draw Pool')}</button>
+                    <button class="btn btn-sm btn-outline-success" type="button" onclick="setActiveDrawMode(${index}, 'platform', event)" ${poolReady ? '' : 'disabled'}>${pageText('card.draw_platform', 'Draw Platform')}</button>
+                    <button class="btn btn-sm ${editingMask ? 'btn-warning' : 'btn-outline-warning'}" type="button" onclick="startMaskEdit(${index}, event)" ${poolReady ? '' : 'disabled'}>${editingMask ? pageText('card.continue_mask', 'Continue Mask') : pageText('card.edit_mask', 'Edit Mask')}</button>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" onclick="resetPoolMask(${index}, event)" ${maskReady ? '' : 'disabled'}>${pageText('card.reset_mask', 'Reset Mask')}</button>
+                </div>
+            </div>`;
+    }).join('');
+    updateStatusLabels();
+}
+
+function startNewPool() {
+    clearMaskDraft();
+    const roi = {
+        name: poolName(rois.length),
+        pool: null,
+        platform: null,
+        detection_points: null,
+        time_config: {mode:'global', start:null, end:null},
+        pool_diameter_cm: num('poolDiameterCm', 120),
+        platform_radius_cm: num('platformRadiusCm', 5),
+        target_quadrant: '',
+        start_position: 'N',
+        coordinate_rotation_deg: 0,
+        quadrant_rotation_deg: 0
+    };
+    rois.push(roi); activePoolIndex = rois.length - 1; drawMode = 'boundary'; persistCurrentVideoState(); updatePoolList(); drawPoolCanvas();
+}
+function selectPool(index) { if (maskEditPoolIndex != null && maskEditPoolIndex !== index) { clearMaskDraft(); drawMode = 'boundary'; } activePoolIndex = index; updatePoolList(); drawPoolCanvas(); }
+function setDrawMode(mode) { if (!activePool()) startNewPool(); if (mode !== 'mask') clearMaskDraft(); drawMode = mode; updateStatusLabels(); drawPoolCanvas(); }
+function setActiveDrawMode(index, mode, event) {
+    if (event) event.stopPropagation();
+    if (mode === 'mask') { startMaskEdit(index, event); return; }
+    clearMaskDraft();
+    activePoolIndex = index;
+    drawMode = mode;
+    updatePoolList();
+    updateStatusLabels();
+    drawPoolCanvas();
+}
+function deletePool(index) {
+    rois.splice(index, 1);
+    if (maskEditPoolIndex === index) clearMaskDraft();
+    else if (maskEditPoolIndex != null && maskEditPoolIndex > index) maskEditPoolIndex -= 1;
+    activePoolIndex = rois.length ? Math.min(index, rois.length - 1) : null;
+    persistCurrentVideoState();
+    updatePoolList();
+    drawPoolCanvas();
+}
+function deleteActivePool() { if (activePoolIndex != null) deletePool(activePoolIndex); }
+function updatePoolName(index, value) { rois[index].name = value || poolName(index); persistCurrentVideoState(); updatePoolList(); drawPoolCanvas(); }
+function updatePoolSubject(index, subjectId) { applyProjectSubjectToROI(rois[index], subjectId); persistCurrentVideoState(); updatePoolList(); drawPoolCanvas(); }
+function updatePoolDiameter(index, value) { const v = parseFloat(value); rois[index].pool_diameter_cm = Number.isFinite(v) && v > 0 ? v : num('poolDiameterCm', 120); persistCurrentVideoState(); updatePoolList(); }
+function updatePoolPlatformRadius(index, value) { const v = parseFloat(value); const radius = Number.isFinite(v) && v > 0 ? v : num('platformRadiusCm', 5); rois[index].platform_radius_cm = radius; if (rois[index].platform) rois[index].platform.radius_cm = radius; persistCurrentVideoState(); updatePoolList(); drawPoolCanvas(); }
+function updatePoolCoordinateRotation(index, value, commit = true) {
+    if (!(index >= 0 && index < rois.length)) return;
+    const v = parseFloat(value);
+    const rotation = Number.isFinite(v) ? Math.max(-180, Math.min(180, v)) : 0;
+    rois[index].quadrant_rotation_deg = rotation;
+    rois[index].coordinate_rotation_deg = rotation;
+    const label = document.getElementById(`axisRotationLabel${index}`);
+    if (label) label.textContent = `${Math.round(rotation)}°`;
+    drawPoolCanvas();
+    if (commit) {
+        persistCurrentVideoState();
+        if (document.getElementById('step2')?.classList.contains('active')) updateDebugPreview();
+    }
+}
+function updatePoolTargetQuadrant(index, value) {
+    if (!(index >= 0 && index < rois.length)) return;
+    rois[index].target_quadrant = normalizedQuadrant(value);
+    persistCurrentVideoState();
+    updatePoolList();
+    drawPoolCanvas();
+    if (document.getElementById('step2')?.classList.contains('active')) updateDebugPreview();
+}
+function updatePoolStartPosition(index, value) {
+    if (!(index >= 0 && index < rois.length)) return;
+    rois[index].start_position = normalizedStartPosition(value);
+    persistCurrentVideoState();
+    updatePoolList();
+    drawPoolCanvas();
+    if (document.getElementById('step2')?.classList.contains('active')) updateDebugPreview();
+}
+function updatePoolTimeMode(index, mode) { rois[index].time_config = rois[index].time_config || {}; rois[index].time_config.mode = mode; if (mode === 'global') { rois[index].time_config.start = null; rois[index].time_config.end = null; } persistCurrentVideoState(); updatePoolList(); }
+function updatePoolTimeValue(index, key, value) { rois[index].time_config = rois[index].time_config || {mode:'precise'}; rois[index].time_config[key] = value === '' ? null : parseFloat(value); persistCurrentVideoState(); }
+function syncDefaultPoolDiameter() { const v = num('poolDiameterCm', 120); rois.forEach(roi => { if (!Number(roi.pool_diameter_cm) || Number(roi.pool_diameter_cm) <= 0) roi.pool_diameter_cm = v; }); persistCurrentVideoState(); updatePoolList(); }
+function syncDefaultPlatformRadius() { const v = num('platformRadiusCm', 5); rois.forEach(roi => { if (!Number(roi.platform_radius_cm) || Number(roi.platform_radius_cm) <= 0) roi.platform_radius_cm = v; if (roi.platform && (!Number(roi.platform.radius_cm) || Number(roi.platform.radius_cm) <= 0)) roi.platform.radius_cm = v; }); persistCurrentVideoState(); updatePoolList(); }
+function resetPoolMask(index, event) {
+    if (event) event.stopPropagation();
+    rois[index].detection_points = null;
+    if (maskEditPoolIndex === index) {
+        clearMaskDraft();
+        drawMode = 'boundary';
+    }
+    persistCurrentVideoState();
+    updatePoolList();
+    drawPoolCanvas();
+}
+function syncPlatformRadius() { syncDefaultPlatformRadius(); }
+function undoPoint() {
+    const pool = activePool(); if (!pool) return;
+    if (drawMode === 'boundary') pool.pool = null;
+    if (drawMode === 'mask' && maskEditPoolIndex != null) {
+        currentMaskPoints.pop();
+        updatePoolList();
+        drawPoolCanvas();
+        return;
+    }
+    if (drawMode === 'platform') pool.platform = null;
+    persistCurrentVideoState(); updatePoolList(); drawPoolCanvas();
+}
+
+function onPoolFrameChange(value) { document.getElementById('frameLabelPool').textContent = frameLabel(value); debounce('poolFrame', () => loadFrame(parseInt(value, 10)), 160); }
+function onDebugFrameChange(value) { document.getElementById('frameLabelDebug').textContent = frameLabel(value); debounce('debugFrame', () => updateDebugPreview(parseInt(value, 10)), 160); }
+function debounce(key, fn, delay) { clearTimeout(debounceTimers[key]); debounceTimers[key] = setTimeout(fn, delay); }
+function onVideoChange(value) {
+    if (maskEditPoolIndex != null) {
+        alert(pageText('alert.finish_mask_first', 'Finish or cancel the current detection mask first.'));
+        const selector = document.getElementById('videoSelector');
+        if (selector) selector.value = String(currentVideoIdx);
+        return;
+    }
+    persistCurrentVideoState();
+    currentVideoIdx = parseInt(value, 10) || 0;
+    currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
+    applyCurrentVideoState();
+    setupFrameSliders(true);
+    loadFrame(0, () => updateDebugPreview(0));
+}
+function clampFrameValue(value) {
+    const parsed = parseInt(value, 10);
+    return Math.max(0, Math.min(Number.isFinite(parsed) ? parsed : 0, frameMax()));
+}
+function setupFrameSliders(reset = false) {
+    [
+        ['frameSliderPool', 'frameLabelPool'],
+        ['frameSliderDebug', 'frameLabelDebug']
+    ].forEach(([sliderId, labelId]) => {
+        const slider = document.getElementById(sliderId);
+        const label = document.getElementById(labelId);
+        if (!slider) return;
+        slider.max = frameMax();
+        const value = reset ? 0 : clampFrameValue(slider.value);
+        slider.value = value;
+        if (label) label.textContent = frameLabel(value);
+    });
+}
+function loadFrame(frameIdx = 0, callback) {
+    setupFrameSliders(false);
+    const requestedFrame = clampFrameValue(frameIdx);
+    const requestToken = ++poolFrameRequestToken;
+    const requestVideoIdx = currentVideoIdx;
+    const poolSlider = document.getElementById('frameSliderPool');
+    const poolLabel = document.getElementById('frameLabelPool');
+    if (poolSlider) poolSlider.value = requestedFrame;
+    if (poolLabel) poolLabel.textContent = frameLabel(requestedFrame);
+    fetch(`/api/get_first_frame/${sessionId}?frame=${requestedFrame}&video=${requestVideoIdx}`)
+        .then(r => r.json()).then(data => {
+            if (requestToken !== poolFrameRequestToken || requestVideoIdx !== currentVideoIdx) return;
+            if (data.error) throw new Error(data.error);
+            if (data.video_info) {
+                currentVideoInfo = data.video_info;
+                videoInfoList[requestVideoIdx] = data.video_info;
+                setupFrameSliders(false);
+            }
+            const actualFrame = clampFrameValue(data.frame_idx ?? requestedFrame);
+            if (poolSlider) poolSlider.value = actualFrame;
+            if (poolLabel) poolLabel.textContent = frameLabel(actualFrame);
+            const img = new Image();
+            img.onload = () => {
+                if (requestToken !== poolFrameRequestToken || requestVideoIdx !== currentVideoIdx) return;
+                baseFrame = img;
+                drawPoolCanvas();
+                if (callback) callback();
+            };
+            img.src = 'data:image/jpeg;base64,' + data.image;
+        }).catch(err => console.error(err));
+}
+
+function drawPoolCanvas() {
+    const canvas = document.getElementById('poolCanvas'); if (!canvas || !baseFrame) return;
+    const ctx = canvas.getContext('2d'); canvas.width = baseFrame.width; canvas.height = baseFrame.height; ctx.drawImage(baseFrame, 0, 0);
+    rois.forEach((roi, index) => {
+        const hue = (index * 57) % 360; const color = `hsl(${hue}, 82%, 58%)`;
+        const shape = poolShape(roi);
+        if (validEllipse(shape)) {
+            drawEllipseShape(ctx, shape, color, index === activePoolIndex ? 3 : 2);
+            drawCoordinateAxes(ctx, roi, shape, color, index === activePoolIndex);
+        }
+        const maskPoints = isEditingMask(index) ? currentMaskPoints : (roi.detection_points || []);
+        if (maskPoints && maskPoints.length) {
+            ctx.strokeStyle = 'rgba(245, 158, 11, .95)'; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.beginPath();
+            maskPoints.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+            if (maskPoints.length >= MIN_MASK_POINTS) ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+            maskPoints.forEach((p, i) => drawDot(ctx, p, i === 0 ? '#fef3c7' : '#f59e0b', i === 0 ? 5 : 4));
+        }
+        if (roi.platform && roi.platform.center) {
+            drawEllipseShape(ctx, shapeForMode(roi, 'platform'), '#22c55e', 3, 'rgba(34, 197, 94, .18)');
+        }
+        if (validEllipse(shape)) { ctx.fillStyle = color; ctx.font = '16px Segoe UI'; ctx.fillText(roi.name || poolName(index), shape.center.x + 8, shape.center.y - shape.radius_y_px - 8); }
+        if (index === activePoolIndex && drawMode === 'boundary' && validEllipse(shape)) {
+            drawShapeHandles(ctx, shape, color);
+        }
+        if (index === activePoolIndex && drawMode === 'platform' && validEllipse(shapeForMode(roi, 'platform'))) {
+            drawShapeHandles(ctx, shapeForMode(roi, 'platform'), '#22c55e');
+        }
+    });
+    if (dragPreview) {
+        drawEllipseShape(ctx, dragPreview, drawMode === 'platform' ? '#22c55e' : '#38bdf8', 2, drawMode === 'platform' ? 'rgba(34,197,94,.12)' : 'rgba(56,189,248,.12)');
+    }
+    updateStatusLabels();
+}
+function drawDot(ctx, point, color, r) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(point.x, point.y, r, 0, Math.PI * 2); ctx.fill(); }
+function rotateVector(point, angleDeg) {
+    const angle = Number(angleDeg || 0) * Math.PI / 180;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    return {
+        x: Number(point.x) * cosA - Number(point.y) * sinA,
+        y: Number(point.x) * sinA + Number(point.y) * cosA
+    };
+}
+function poolUnitToCanvasPoint(shape, unitPoint) {
+    const raw = rotateVector(unitPoint, 0);
+    const local = {x: raw.x * Number(shape.radius_x_px), y: raw.y * Number(shape.radius_y_px)};
+    const imageVec = rotateVector(local, Number(shape.angle_deg || 0));
+    return {
+        x: Number(shape.center.x) + imageVec.x,
+        y: Number(shape.center.y) + imageVec.y
+    };
+}
+function coordinateUnitToCanvasPoint(shape, roi, unitPoint) {
+    return poolUnitToCanvasPoint(shape, rotateVector(unitPoint, coordinateRotation(roi)));
+}
+function drawCoordinateAxes(ctx, roi, shape, color, active) {
+    if (!validEllipse(shape)) return;
+    const x1 = coordinateUnitToCanvasPoint(shape, roi, {x:-1, y:0});
+    const x2 = coordinateUnitToCanvasPoint(shape, roi, {x:1, y:0});
+    const y1 = coordinateUnitToCanvasPoint(shape, roi, {x:0, y:-1});
+    const y2 = coordinateUnitToCanvasPoint(shape, roi, {x:0, y:1});
+    ctx.save();
+    ctx.lineWidth = active ? 2 : 1.35;
+    ctx.strokeStyle = active ? 'rgba(250, 204, 21, .95)' : 'rgba(226, 232, 240, .75)';
+    ctx.setLineDash(active ? [] : [6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(x1.x, x1.y); ctx.lineTo(x2.x, x2.y);
+    ctx.moveTo(y1.x, y1.y); ctx.lineTo(y2.x, y2.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const labels = [
+        ['NE', {x:.52, y:-.52}],
+        ['NW', {x:-.52, y:-.52}],
+        ['SW', {x:-.52, y:.52}],
+        ['SE', {x:.52, y:.52}]
+    ];
+    ctx.font = active ? '700 15px Segoe UI' : '600 13px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    labels.forEach(([key, point]) => {
+        const p = coordinateUnitToCanvasPoint(shape, roi, point);
+        const label = ({NE:'I', NW:'II', SW:'III', SE:'IV'})[key] || key;
+        ctx.fillStyle = 'rgba(15, 23, 42, .68)';
+        ctx.fillRect(p.x - 12, p.y - 10, 24, 20);
+        ctx.fillStyle = active ? '#fef08a' : '#e2e8f0';
+        ctx.fillText(label, p.x, p.y);
+    });
+    const rotationLabel = `${Math.round(coordinateRotation(roi))}°`;
+    ctx.fillStyle = active ? 'rgba(250, 204, 21, .95)' : 'rgba(226, 232, 240, .78)';
+    ctx.font = '12px Segoe UI';
+    ctx.textAlign = 'left';
+    ctx.fillText(rotationLabel, Number(shape.center.x) + 8, Number(shape.center.y) + 18);
+    ctx.restore();
+}
+function drawEllipseShape(ctx, shape, color, lineWidth = 2, fillStyle = null) {
+    if (!validEllipse(shape)) return;
+    ctx.save();
+    ctx.translate(shape.center.x, shape.center.y);
+    ctx.rotate(Number(shape.angle_deg || 0) * Math.PI / 180);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, Number(shape.radius_x_px), Number(shape.radius_y_px), 0, 0, Math.PI * 2);
+    if (fillStyle) { ctx.fillStyle = fillStyle; ctx.fill(); }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+    ctx.restore();
+    drawDot(ctx, shape.center, color, 4);
+}
+function drawShapeHandles(ctx, shape, color) {
+    if (!validEllipse(shape)) return;
+    const handles = ellipseHandlePoints(shape);
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(
+        shape.center.x - shape.radius_x_px,
+        shape.center.y - shape.radius_y_px,
+        shape.radius_x_px * 2,
+        shape.radius_y_px * 2
+    );
+    ctx.setLineDash([]);
+    Object.values(handles).forEach(point => {
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.rect(point.x - HANDLE_SIZE / 2, point.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+        ctx.fill();
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
+function buildRequestBody(frameIdx) {
+    persistCurrentVideoState();
+    const currentParams = readTuningParams();
+    const perVideoConfigs = videoConfigs.map((cfg, index) => ({
+        ...(cfg.tuning_params || currentParams),
+        pool_diameter_cm: Number(cfg.pool_diameter_cm || num('poolDiameterCm', 120)),
+        platform_radius_cm: Number(cfg.platform_radius_cm || num('platformRadiusCm', 5)),
+        rois: normalizeRois(cfg.rois || []),
+    }));
+    return {
+        frame: frameIdx === undefined ? intNum('frameSliderDebug', 0) : frameIdx,
+        video: currentVideoIdx,
+        ...currentParams,
+        pool_diameter_cm: num('poolDiameterCm', 120),
+        platform_radius_cm: num('platformRadiusCm', 5),
+        rois: normalizeRois(rois),
+        per_video_configs: perVideoConfigs,
+        workspace_video_configs: cloneState(videoConfigs),
+        generate_video: checkedValue('generateVideo', true),
+    };
+}
+function normalizeRois(source) {
+    return (source || []).filter(isCompletePool).map(roi => {
+        const out = cloneState(roi);
+        out.pool_diameter_cm = Number(out.pool_diameter_cm || num('poolDiameterCm', 120));
+        out.platform_radius_cm = Number(out.platform_radius_cm || num('platformRadiusCm', 5));
+        const cleanPool = cloneShape(out.pool);
+        out.pool = cleanPool || out.pool || {};
+        out.pool.diameter_cm = out.pool_diameter_cm;
+        if (out.pool.center) {
+            out.pool.ellipse_center = out.pool.center;
+            out.pool.ellipse_axes_px = {
+                radius_x_px: Number(out.pool.radius_x_px),
+                radius_y_px: Number(out.pool.radius_y_px)
+            };
+            out.pool.ellipse_angle_deg = Number(out.pool.angle_deg || 0);
+        }
+        out.pool_boundary_points = ellipseBoundaryPoints(out.pool, 64);
+        out.target_quadrant = normalizedQuadrant(out.target_quadrant || '');
+        out.start_position = normalizedStartPosition(out.start_position || 'N');
+        out.quadrant_rotation_deg = coordinateRotation(out);
+        out.coordinate_rotation_deg = out.quadrant_rotation_deg;
+        if (out.platform) out.platform.radius_cm = Number(out.platform.radius_cm || out.platform_radius_cm || num('platformRadiusCm', 5));
+        if (!out.detection_points || out.detection_points.length < MIN_MASK_POINTS) out.detection_points = null;
+        if (!out.time_config) out.time_config = {mode:'global', start:null, end:null};
+        return out;
+    });
+}
+
+async function saveDraftPayload(redirectToWorkspace = false) {
+    const body = buildRequestBody(); body._selected_video_idx = currentVideoIdx;
+    const response = await fetch(`/api/draft/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || '保存当前设置失败');
+    if (redirectToWorkspace && batchWorkspaceUrl) window.location.href = batchWorkspaceUrl;
+    return data;
+}
+
+function updateDebugPreview(frameIdx) {
+    if (maskEditPoolIndex != null) {
+        document.getElementById('previewStatus').textContent = pageText('alert.finish_mask_first', 'Finish or cancel the current detection mask first.');
+        return;
+    }
+    if (!allPoolsReady()) return;
+    const requestToken = ++debugPreviewRequestToken;
+    const requestVideoIdx = currentVideoIdx;
+    if (frameIdx !== undefined) {
+        const requestedFrame = clampFrameValue(frameIdx);
+        const debugSlider = document.getElementById('frameSliderDebug');
+        const debugLabel = document.getElementById('frameLabelDebug');
+        if (debugSlider) debugSlider.value = requestedFrame;
+        if (debugLabel) debugLabel.textContent = frameLabel(requestedFrame);
+        frameIdx = requestedFrame;
+    } else {
+        setupFrameSliders(false);
+    }
+    const body = buildRequestBody(frameIdx);
+    body.video = requestVideoIdx;
+    fetch(`/api/debug_preview/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+        .then(r => r.json()).then(data => {
+            if (requestToken !== debugPreviewRequestToken || requestVideoIdx !== currentVideoIdx) return;
+            if (data.error) { document.getElementById('previewStatus').textContent = data.error; return; }
+            const stillCurrent = () => requestToken === debugPreviewRequestToken && requestVideoIdx === currentVideoIdx;
+            drawImageOnCanvas('previewOriginal', data.original, stillCurrent);
+            drawImageOnCanvas('previewResult', data.result, stillCurrent);
+            document.getElementById('previewStatus').textContent = `${data.detections || 0} / ${data.roi_count || rois.length} detections`;
+        }).catch(err => {
+            if (requestToken !== debugPreviewRequestToken || requestVideoIdx !== currentVideoIdx) return;
+            console.error(err);
+            document.getElementById('previewStatus').textContent = 'Preview failed';
+        });
+}
+
+function goToStep(step) {
+    if (step === 2 && maskEditPoolIndex != null) { alert(pageText('alert.finish_mask_first', 'Finish or cancel the current detection mask first.')); return; }
+    if (step === 2 && !allPoolsReady()) { alert(getLang() === 'en' ? 'Complete at least one pool boundary and platform first.' : '请先完成至少一个泳池边界和平台点。'); return; }
+    document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active')); document.getElementById(`step${step}`).classList.add('active');
+    [1,2].forEach(i => { const el = document.getElementById(`stepNav${i}`); el.classList.remove('active','done'); if (i < step) el.classList.add('done'); if (i === step) el.classList.add('active'); });
+    if (step === 2) updateDebugPreview();
+}
+
+function startAnalysis() {
+    if (maskEditPoolIndex != null) { alert(pageText('alert.finish_mask_first', 'Finish or cancel the current detection mask first.')); return; }
+    if (!allPoolsReady() || !validateProjectSubjects()) return;
+    if (launchMode === 'workspace') { document.getElementById('loading').style.display = 'flex'; saveDraftPayload(true).catch(err => { document.getElementById('loading').style.display = 'none'; alert(err.message); }); return; }
+    const body = buildRequestBody();
+    if (isBatch) {
+        const issues = [];
+        body.per_video_configs.forEach((cfg, index) => {
+            if (!cfg.rois.length) issues.push(`${index + 1}. ${videoList[index]?.name || 'Video ' + (index + 1)}: missing pool/platform ROI`);
+            if (isProjectMode && cfg.rois.some(roi => !projectSubjectById(roi.subject_id))) issues.push(`${index + 1}. ${videoList[index]?.name || 'Video ' + (index + 1)}: ROI has no project animal selected`);
+        });
+        if (issues.length) { alert((getLang() === 'en' ? 'Complete every batch video before starting:\n' : '启动批量分析前请完成每个视频：\n') + issues.join('\n')); return; }
+    }
+    document.getElementById('loading').style.display = 'flex';
+    fetch(`/api/start_analysis/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+        .then(r => r.json()).then(data => { if (data.success) window.location.href = `/monitor/${sessionId}`; else { document.getElementById('loading').style.display = 'none'; alert(data.error || 'Failed to start analysis'); }})
+        .catch(err => { document.getElementById('loading').style.display = 'none'; alert(err); });
+}
+
+function drawImageOnCanvas(canvasId, base64Data, shouldDraw = null) {
+    const canvas = document.getElementById(canvasId); const ctx = canvas.getContext('2d'); const img = new Image();
+    img.onload = () => {
+        if (shouldDraw && !shouldDraw()) return;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+    };
+    img.src = 'data:image/jpeg;base64,' + base64Data;
+}
+function escapeHtml(text) { return String(text || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+document.addEventListener('DOMContentLoaded', function () {
+    hydrateFromDraftPayload(); applyCurrentVideoState(); applyMWMLang();
+    if (launchMode === 'workspace') document.getElementById('primaryActionText').textContent = getLang() === 'en' ? 'Save and Return' : '保存设置并返回批次页面';
+    document.querySelectorAll('#step2 input, #step2 select').forEach(el => el.addEventListener('change', () => { persistCurrentVideoState(); updateDebugPreview(); }));
+    const canvas = document.getElementById('poolCanvas');
+    function canvasPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: Math.round((event.clientX - rect.left) * canvas.width / rect.width),
+            y: Math.round((event.clientY - rect.top) * canvas.height / rect.height)
+        };
+    }
+    function updateCanvasCursor(event) {
+        if (shapeInteraction) return;
+        if (drawMode === 'mask') { canvas.style.cursor = 'crosshair'; return; }
+        const pool = activePool();
+        const hit = hitTestShape(shapeForMode(pool, drawMode), canvasPoint(event));
+        canvas.style.cursor = cursorForHit(hit);
+    }
+    function updateShapeInteraction(point) {
+        if (!shapeInteraction) return;
+        const pool = rois[shapeInteraction.poolIndex];
+        if (!pool) return;
+        let nextShape = null;
+        if (shapeInteraction.kind === 'draw') {
+            nextShape = shapeFromDrag(shapeInteraction.startPoint, point);
+        } else if (shapeInteraction.kind === 'move') {
+            nextShape = moveShape(
+                shapeInteraction.startShape,
+                Number(point.x) - Number(shapeInteraction.startPoint.x),
+                Number(point.y) - Number(shapeInteraction.startPoint.y)
+            );
+        } else if (shapeInteraction.kind === 'resize') {
+            nextShape = resizeShapeFromHandle(shapeInteraction.startShape, shapeInteraction.handle, point);
+        }
+        if (validEllipse(nextShape)) {
+            assignShapeForMode(pool, shapeInteraction.mode, nextShape);
+            drawPoolCanvas();
+        }
+    }
+    function finishShapeInteraction() {
+        if (!shapeInteraction) return;
+        shapeInteraction = null;
+        dragStart = null;
+        dragPreview = null;
+        persistCurrentVideoState();
+        updatePoolList();
+        drawPoolCanvas();
+    }
+    canvas.addEventListener('mousedown', function (event) {
+        if (event.button !== 0 || drawMode === 'mask') return;
+        if (!activePool()) startNewPool();
+        const pool = activePool();
+        const point = canvasPoint(event);
+        const existingShape = shapeForMode(pool, drawMode);
+        const hit = hitTestShape(existingShape, point);
+        shapeInteraction = {
+            poolIndex: activePoolIndex,
+            mode: drawMode,
+            kind: hit ? hit.kind : 'draw',
+            handle: hit ? hit.handle : null,
+            startPoint: point,
+            startShape: cloneShape(existingShape)
+        };
+        updateShapeInteraction(point);
+        event.preventDefault();
+    });
+    canvas.addEventListener('mousemove', function (event) {
+        if (shapeInteraction) {
+            updateShapeInteraction(canvasPoint(event));
+            event.preventDefault();
+            return;
+        }
+        updateCanvasCursor(event);
+    });
+    window.addEventListener('mouseup', finishShapeInteraction);
+    canvas.addEventListener('mouseleave', function () {
+        if (!shapeInteraction) canvas.style.cursor = 'crosshair';
+    });
+    canvas.addEventListener('click', function (event) {
+        if (drawMode !== 'mask') return;
+        if (maskEditPoolIndex == null) {
+            if (activePoolIndex != null) startMaskEdit(activePoolIndex, event);
+            if (maskEditPoolIndex == null) return;
+        }
+        const point = canvasPoint(event);
+        if (currentMaskPoints.length >= MIN_MASK_POINTS && distance(point, currentMaskPoints[0]) <= HANDLE_HIT_RADIUS * 1.5) {
+            finishMaskEdit();
+            return;
+        }
+        currentMaskPoints.push(point);
+        updatePoolList();
+        drawPoolCanvas();
+    });
+    canvas.addEventListener('contextmenu', event => { event.preventDefault(); undoPoint(); return false; });
+    loadFrame(0);
+    if (window.MouseScopeTour) {
+        document.body.setAttribute('data-tour-page', 'calibrate-water-maze');
+        const tourStep = (target, zhTitle, zhBody, enTitle, enBody) => ({
+            target,
+            title: {zh: zhTitle, en: enTitle},
+            body: {zh: zhBody, en: enBody}
+        });
+        function waterMazeTourSteps() {
+            const inPreview = document.getElementById('step2')?.classList.contains('active');
+            if (inPreview) {
+                return [
+                    tourStep('.mwm-steps', '水迷宫两步流程', '当前是调参与启动页；如果泳池或平台位置不对，先返回 ROI 页修正椭圆。', 'Two-Step MWM Flow', 'This is the tuning/start step. If pool or platform placement is off, return to the ROI step and adjust the ellipses.'),
+                    tourStep('.mwm-preview', '检测预览', '左侧是原始帧，右侧叠加泳池、平台、象限、检测轮廓和轨迹。正式分析前至少检查几个关键时间点。', 'Detection Preview', 'The left canvas is the raw frame; the right overlays pool, platform, quadrants, contour, and trajectory. Check several key frames before analysis.'),
+                    tourStep('[data-tour-id="mwm-params"]', '统计与检测参数', '实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里调整趋边带宽、平台停留、分箱、跳点过滤等统计/QC 参数，以及检测方式、灰度阈值和最小目标面积。', 'Statistics and Detection Parameters', 'Experiment period, target quadrant, release point, and coordinate axes are configured per pool on the ROI page. Here you tune statistics/QC controls such as thigmotaxis band, platform dwell, bins, and jump filtering, plus detection method, gray threshold, and minimum area.'),
+                    tourStep('#primaryActionBtn', '启动或保存', '项目/批次编辑模式下这里会保存当前视频配置；快速分析模式下这里会启动水迷宫分析。', 'Start or Save', 'In project/batch edit mode this saves the current video setup; in quick-analysis mode it starts MWM analysis.')
+                ];
+            }
+            return [
+                tourStep('.mwm-steps', '水迷宫配置流程', '先完成泳池和平台 ROI，再进入调参与预览。每个视频都需要至少一个完整 Pool ROI。', 'MWM Setup Flow', 'Complete pool and platform ROIs first, then tune detection and preview. Each video needs at least one complete Pool ROI.'),
+                tourStep('[data-tour-id="mwm-trial-type"]', '实验时期', '先选择当前视频属于隐藏平台训练期、探测试次或可见平台期。中英文切换时，下拉选项会同步切换。', 'Experiment Period', 'Choose whether this video is hidden-platform training, a probe trial, or a visible-platform trial. The option labels switch with the page language.'),
+                tourStep('[data-tour-id="mwm-roi-list"]', '右侧 ROI 配置卡片', '每个泳池的名称/小鼠绑定、真实泳池直径、平台半径、时间窗、目标象限、释放点和坐标轴旋转都在右侧卡片里设置。', 'Right-Side ROI Cards', 'Each pool card contains the name/animal binding, real pool diameter, platform radius, time window, target quadrant, release point, and axis rotation.'),
+                tourStep('[data-tour-id="mwm-canvas"]', '像 PPT 一样编辑椭圆', '在卡片里点“绘制泳池”或“绘制平台”后，先拖出椭圆；之后拖椭圆内部可移动，拖边缘或角点手柄可调整大小。', 'PowerPoint-Style Ellipse Editing', 'Click Draw Pool or Draw Platform in a card, drag out an ellipse, then drag inside to move it or drag edge/corner handles to resize it.'),
+                tourStep('#poolList', '泳池、平台和遮罩', '平台按钮会在该泳池内绘制平台椭圆；检测遮罩进入编辑后先画草稿，点击“完成检测遮罩”才保存。', 'Pool, Platform, and Mask', 'The platform button draws the platform ellipse for that pool. Detection masks are edited as drafts and saved only after clicking Finish Detection Mask.'),
+                tourStep('#toPreviewBtn', '进入调参', '当至少一个泳池和平台完整，并且右侧坐标轴与实验记录一致后，进入调参页检查检测轮廓、平台和最终输出设置。', 'Go to Tuning', 'After at least one pool and platform are complete and the right-side coordinate axes match the experiment record, go to tuning to check contours, platform placement, and outputs.')
+            ];
+        }
+        MouseScopeTour.register('calibrate-water-maze', {version: 'v2', steps: waterMazeTourSteps});
+    }
+});
+</script>
+{% endblock %}

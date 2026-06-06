@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-PROJECT_SCHEMA_VERSION = "3.1.0"
+PROJECT_SCHEMA_VERSION = "3.3.0"
 GROUP_COLOR_PALETTE = (
     "#c96442",
     "#2f8f65",

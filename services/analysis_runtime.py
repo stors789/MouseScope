@@ -72,6 +72,14 @@ from three_chamber import (
     render_three_chamber_image_grid,
     sanitize_name as sanitize_three_chamber_name,
 )
+from water_maze import (
+    WaterMazeTracker,
+    draw_water_maze_results,
+    render_water_maze_heatmap,
+    render_water_maze_trackmap,
+    render_water_maze_image_grid,
+    sanitize_name as sanitize_water_maze_name,
+)
 from forced_swim import (
     ForcedSwimTracker,
     draw_forced_swim_results,
@@ -119,6 +127,7 @@ _SESSION_MODULE_NAMES = (
     'services.y_maze_session',
     'services.light_dark_session',
     'services.three_chamber_session',
+    'services.water_maze_session',
 )
 
 _RUNTIME_BINDING_NAMES = (
@@ -446,6 +455,12 @@ class AnalysisSessionBase:
 
     @classmethod
     def _scale_geometry_value(cls, value, scale_x, scale_y):
+        def _scale_number(item, factor):
+            try:
+                return float(item) * float(factor)
+            except Exception:
+                return item
+
         if isinstance(value, np.ndarray):
             return np.asarray(value, dtype=np.float32) * np.asarray([scale_x, scale_y], dtype=np.float32)
         if isinstance(value, (list, tuple)):
@@ -456,7 +471,24 @@ class AnalysisSessionBase:
                     pass
             return [cls._scale_geometry_value(item, scale_x, scale_y) for item in value]
         if isinstance(value, dict):
-            return {key: cls._scale_geometry_value(item, scale_x, scale_y) for key, item in value.items()}
+            scaled = {}
+            for key, item in value.items():
+                key_str = str(key)
+                if key_str in {'x', 'cx', 'left', 'right'}:
+                    scaled[key] = _scale_number(item, scale_x)
+                elif key_str in {'y', 'cy', 'top', 'bottom'}:
+                    scaled[key] = _scale_number(item, scale_y)
+                elif key_str in {'radius_x_px', 'rx_px', 'width_px'}:
+                    scaled[key] = _scale_number(item, scale_x)
+                elif key_str in {'radius_y_px', 'ry_px', 'height_px'}:
+                    scaled[key] = _scale_number(item, scale_y)
+                elif key_str in {'radius_px', 'diameter_px'}:
+                    scaled[key] = _scale_number(item, (float(scale_x) + float(scale_y)) * 0.5)
+                elif key_str == 'radius':
+                    scaled[key] = _scale_number(item, (float(scale_x) + float(scale_y)) * 0.5)
+                else:
+                    scaled[key] = cls._scale_geometry_value(item, scale_x, scale_y)
+            return scaled
         return value
 
     def _scale_roi_configs_for_sampling(self, roi_configs, sampling):

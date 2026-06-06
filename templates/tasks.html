@@ -312,6 +312,7 @@
             <option value="" data-i18n="tasks.filter.exp_all">全部实验</option>
             <option value="tst">TST</option>
             <option value="forced_swim">FST</option>
+            <option value="water_maze">MWM</option>
             <option value="open_field">OFT</option>
             <option value="novel_object">NOR</option>
             <option value="elevated_plus">EPM</option>
@@ -414,6 +415,7 @@ function localizeTaskMessage(message) {
         [/^Open field analysis completed\.$/i, 'tasks.message.completed.oft'],
         [/^Novel object recognition analysis completed\.$/i, 'tasks.message.completed.nor'],
         [/^Forced swim analysis completed\.$/i, 'tasks.message.completed.fst'],
+        [/^Water maze analysis completed\.$/i, 'tasks.message.completed.mwm'],
         [/^Y-maze analysis completed\.$/i, 'tasks.message.completed.ymaze'],
         [/^Elevated plus maze analysis completed\.$/i, 'tasks.message.completed.epm'],
         [/^软件关闭时分析未完成。?$/, 'tasks.message.closed_interrupted'],
@@ -437,7 +439,7 @@ function localizeTaskMessage(message) {
             : fillText(t('tasks.message.batch_completed', text), values);
     }
 
-    match = text.match(/^Processing\s+(?:(OFT|NOR|FST|Y-maze|EPM)\s+)?video\s+(\d+)\/(\d+):\s*(.*)$/i);
+    match = text.match(/^Processing\s+(?:(OFT|NOR|FST|MWM|Y-maze|EPM)\s+)?video\s+(\d+)\/(\d+):\s*(.*)$/i);
     if (match) {
         const values = {assay: match[1] || '', index: match[2], total: match[3], name: match[4] || '-'};
         return values.assay

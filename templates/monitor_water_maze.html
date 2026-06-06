@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}水迷宫监控 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.mwm-monitor { max-width: 1480px; margin: 0 auto; }
+.monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+.monitor-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, .85fr); gap: 1rem; align-items: start; }
+.monitor-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-card); padding: 1.15rem; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; }
+.metric-box { background: var(--bg-page); border: 1px solid var(--border-card); border-radius: 16px; padding: .9rem; }
+.metric-label { color: var(--text-muted); font-size: .84rem; }
+.metric-value { color: var(--text-primary); font-size: 1.35rem; font-weight: 800; margin-top: .2rem; }
+.roi-table-wrap { overflow-x: auto; }
+.roi-table { width: 100%; border-collapse: collapse; }
+.roi-table th, .roi-table td { padding: .82rem .7rem; border-bottom: 1px solid var(--border-card); white-space: nowrap; }
+.roi-table th { color: var(--text-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.quadrant-pill { display: inline-flex; justify-content: center; min-width: 54px; padding: .25rem .55rem; border-radius: 999px; font-weight: 800; font-size: .82rem; background: rgba(14,165,233,.12); color: #0369a1; }
+.success-pill { display: inline-flex; justify-content: center; min-width: 62px; padding: .25rem .55rem; border-radius: 999px; font-weight: 800; font-size: .82rem; background: rgba(148,163,184,.15); color: #475569; }
+.success-pill.ok { background: rgba(34,197,94,.14); color: #15803d; }
+.download-grid { display: flex; gap: .65rem; flex-wrap: wrap; }
+.log-box { background: #0f172a; color: #e2e8f0; border-radius: 16px; padding: 1rem; font-family: Consolas, Monaco, monospace; font-size: .85rem; min-height: 240px; max-height: 460px; overflow-y: auto; }
+@media (max-width: 1180px) { .monitor-grid { grid-template-columns: 1fr; } .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .metric-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mwm-monitor" data-tour-page="monitor-water-maze">
+    <div class="monitor-head">
+        <div>
+            <h1 class="display-6 cyber-text mb-1" data-page-i18n="header.title">水迷宫实时监控</h1>
+            <div class="text-secondary" data-page-i18n="header.subtitle">跟踪每个泳池的象限、逃逸潜伏期、平台进入、目标象限、趋边行为和搜索策略。</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAnalysis()"><i class="fas fa-stop me-2"></i><span data-page-i18n="btn.stop">停止分析</span></button>
+            <button class="btn btn-outline-primary" onclick="location.reload()"><i class="fas fa-sync-alt me-2"></i><span data-page-i18n="btn.refresh">刷新</span></button>
+        </div>
+    </div>
+
+    <div class="monitor-grid">
+        <div class="d-grid gap-3">
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+                    <div>
+                        <h5 class="mb-1" data-page-i18n="processing.title">处理状态</h5>
+                        <div class="text-secondary" id="messageText" data-page-i18n="processing.waiting">等待引擎响应...</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="metric-label" data-page-i18n="processing.status">状态</div>
+                        <div class="metric-value" id="statusText">Waiting</div>
+                    </div>
+                </div>
+                <div class="progress mb-2" style="height:14px;"><div class="progress-bar" id="progressBar" role="progressbar" style="width:0%">0%</div></div>
+                <div class="text-secondary small"><span data-page-i18n="processing.progress">完成进度</span> <span id="progressText">0%</span></div>
+            </div>
+
+            <div class="monitor-card">
+                <h5 class="mb-3" data-page-i18n="overview.title">会话概览</h5>
+                <div class="metric-grid">
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.frames">已处理帧</div><div class="metric-value" id="processedFrames">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.elapsed">运行时间</div><div class="metric-value" id="elapsedTime">0s</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.speed">处理速度</div><div class="metric-value" id="processingSpeed">0</div></div>
+                    <div class="metric-box"><div class="metric-label" data-page-i18n="overview.pools">泳池数</div><div class="metric-value" id="roiCount">0</div></div>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h5 class="mb-0" data-page-i18n="table.title">ROI 实时结果</h5>
+                    <span class="text-secondary small" data-page-i18n="table.subtitle">标准圆池坐标下的实时指标</span>
+                </div>
+                <div class="roi-table-wrap">
+                    <table class="roi-table">
+                        <thead>
+                            <tr>
+                                <th>ROI</th>
+                                <th data-page-i18n="table.quadrant">象限</th>
+                                <th data-page-i18n="table.speed">速度</th>
+                                <th data-page-i18n="table.distance">距离</th>
+                                <th data-page-i18n="table.success">成功</th>
+                                <th data-page-i18n="table.latency">潜伏期</th>
+                                <th data-page-i18n="table.entries">平台进入</th>
+                                <th data-page-i18n="table.target">目标象限</th>
+                                <th data-page-i18n="table.thig">趋边</th>
+                                <th data-page-i18n="table.strategy">搜索策略</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roiTableBody"><tr><td colspan="10" class="text-secondary" data-page-i18n="table.waiting">等待结果...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="monitor-card" id="downloadSection" style="display:none;">
+                <h5 class="mb-3" data-page-i18n="download.title">结果下载</h5>
+                <div class="download-grid">
+                    <button type="button" class="btn btn-success" onclick="openResultFolder()"><i class="fas fa-folder-open me-2"></i><span data-page-i18n="download.open">打开结果目录</span></button>
+                    <a href="#" id="downloadAllBtn" class="btn btn-outline-primary"><i class="fas fa-archive me-2"></i><span data-page-i18n="download.all">全部下载</span></a>
+                    <a href="#" id="dlVideo" class="btn btn-outline-primary" data-page-i18n="download.video">标注视频</a>
+                    <a href="#" id="dlTrack" class="btn btn-outline-primary" data-page-i18n="download.track">轨迹 CSV</a>
+                    <a href="#" id="dlSummary" class="btn btn-outline-primary" data-page-i18n="download.summary">汇总 CSV</a>
+                    <a href="#" id="dlBins" class="btn btn-outline-primary" data-page-i18n="download.bins">分箱 CSV</a>
+                    <a href="#" id="dlReport" class="btn btn-outline-primary" data-page-i18n="download.report">TXT 报告</a>
+                    <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-page-i18n="download.heatmap">热图</a>
+                    <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-page-i18n="download.trackmap">标准圆轨迹图</a>
+                </div>
+            </div>
+        </div>
+        <div class="monitor-card">
+            <h5 class="mb-3" data-page-i18n="log.title">日志</h5>
+            <div id="logBox" class="log-box">$ <span data-page-i18n="log.waiting">等待日志输出...</span></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PAGE_I18N = {
+    zh: {
+        'header.title':'水迷宫实时监控','header.subtitle':'跟踪每个泳池的象限、逃逸潜伏期、平台进入、目标象限、趋边行为和搜索策略。','btn.stop':'停止分析','btn.refresh':'刷新',
+        'processing.title':'处理状态','processing.waiting':'等待引擎响应...','processing.status':'状态','processing.progress':'完成进度',
+        'overview.title':'会话概览','overview.frames':'已处理帧','overview.elapsed':'运行时间','overview.speed':'处理速度','overview.pools':'泳池数',
+        'table.title':'ROI 实时结果','table.subtitle':'标准圆池坐标下的实时指标','table.quadrant':'象限','table.speed':'速度','table.distance':'距离','table.success':'成功','table.latency':'潜伏期','table.entries':'平台进入','table.target':'目标象限','table.thig':'趋边','table.strategy':'搜索策略','table.waiting':'等待结果...',
+        'download.title':'结果下载','download.open':'打开结果目录','download.all':'全部下载','download.video':'标注视频','download.track':'轨迹 CSV','download.summary':'汇总 CSV','download.bins':'分箱 CSV','download.report':'TXT 报告','download.heatmap':'热图','download.trackmap':'标准圆轨迹图',
+        'log.title':'日志','log.waiting':'等待日志输出...'
+    },
+    en: {
+        'header.title':'Morris Water Maze Monitor','header.subtitle':'Track quadrant, escape latency, platform entries, target-quadrant occupancy, thigmotaxis, and search strategy for each pool.','btn.stop':'Stop Analysis','btn.refresh':'Refresh',
+        'processing.title':'Processing Status','processing.waiting':'Waiting for engine...','processing.status':'Status','processing.progress':'Progress',
+        'overview.title':'Session Overview','overview.frames':'Processed Frames','overview.elapsed':'Elapsed','overview.speed':'Processing Speed','overview.pools':'Pool Count',
+        'table.title':'Live ROI Results','table.subtitle':'Live metrics in the corrected standard circular pool','table.quadrant':'Quadrant','table.speed':'Speed','table.distance':'Distance','table.success':'Success','table.latency':'Latency','table.entries':'Platform Entries','table.target':'Target Quad.','table.thig':'Thigmotaxis','table.strategy':'Search Strategy','table.waiting':'Waiting for results...',
+        'download.title':'Downloads','download.open':'Open Result Folder','download.all':'Download All','download.video':'Annotated Video','download.track':'Track CSV','download.summary':'Summary CSV','download.bins':'Bins CSV','download.report':'TXT Report','download.heatmap':'Heatmap','download.trackmap':'Standard Track Map',
+        'log.title':'Logs','log.waiting':'Waiting for log output...'
+    }
+};
+const sessionId = {{ session_id | tojson }};
+let updateInterval = null;
+function trPage(key, fallback) { const lang = typeof getLang === 'function' ? getLang() : 'zh'; return (PAGE_I18N[lang] && PAGE_I18N[lang][key]) || fallback || key; }
+function applyMWMMonitorLang() { if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N); }
+document.addEventListener('mousescope:langchange', applyMWMMonitorLang);
+function statusText(status) {
+    const lang = typeof getLang === 'function' ? getLang() : 'zh';
+    const zh = {waiting:'等待中', analyzing:'分析中', completed:'已完成', error:'出错', stopped:'已停止'};
+    const en = {waiting:'Waiting', analyzing:'Analyzing', completed:'Completed', error:'Error', stopped:'Stopped'};
+    return (lang === 'en' ? en : zh)[status] || status || '-';
+}
+function updateStatus() {
+    fetch(`/api/status/${sessionId}`).then(r => { if (!r.ok) throw new Error('session'); return r.json(); }).then(data => {
+        document.getElementById('statusText').textContent = statusText(data.status);
+        document.getElementById('messageText').textContent = data.message || '-';
+        document.getElementById('progressBar').style.width = `${data.progress || 0}%`;
+        document.getElementById('progressBar').textContent = `${data.progress || 0}%`;
+        document.getElementById('progressText').textContent = `${data.progress || 0}%`;
+        const stats = data.stats || {};
+        document.getElementById('processedFrames').textContent = stats.processed_frames || 0;
+        document.getElementById('elapsedTime').textContent = `${Number(stats.elapsed_time || 0).toFixed(1)}s`;
+        document.getElementById('processingSpeed').textContent = Number(stats.fps || 0).toFixed(1);
+        const rows = data.realtime_data || [];
+        document.getElementById('roiCount').textContent = rows.length || ((data.experiment_stats && data.experiment_stats.roi_count) || 0);
+        renderTable(rows); renderLogs(data.logs || []);
+        if (data.status === 'completed') { showDownloads(); clearTimer(); document.getElementById('stopBtn').style.display = 'none'; }
+        if (['error','stopped','interrupted'].includes(data.status)) { clearTimer(); document.getElementById('stopBtn').style.display = 'none'; }
+    }).catch(() => { clearTimer(); document.getElementById('statusText').textContent = 'Invalid'; document.getElementById('stopBtn').style.display = 'none'; });
+}
+function renderTable(rows) {
+    const body = document.getElementById('roiTableBody');
+    if (!rows.length) { body.innerHTML = `<tr><td colspan="10" class="text-secondary">${trPage('table.waiting','Waiting for results...')}</td></tr>`; return; }
+    body.innerHTML = rows.map(row => `
+        <tr>
+            <td><strong>${escapeHtml(row.roi_name || ('ROI ' + row.roi_id))}</strong></td>
+            <td><span class="quadrant-pill">${escapeHtml(row.quadrant_label || row.quadrant || 'Unknown')}</span></td>
+            <td>${Number(row.speed_cm_s || 0).toFixed(2)} cm/s</td>
+            <td>${Number(row.distance_cm || 0).toFixed(1)} cm</td>
+            <td><span class="success-pill ${row.success ? 'ok' : ''}">${row.success ? 'Yes' : 'No'}</span></td>
+            <td>${row.escape_latency_s == null ? '-' : Number(row.escape_latency_s).toFixed(2) + ' s'}</td>
+            <td>${row.platform_entries || 0}</td>
+            <td>${escapeHtml(row.target_quadrant_label || row.target_quadrant || '-')}: ${Number(row.target_quadrant_percent || 0).toFixed(1)}%</td>
+            <td>${Number(row.thigmotaxis_percent || 0).toFixed(1)}%</td>
+            <td>${escapeHtml(strategyLabel(row))}</td>
+        </tr>`).join('');
+}
+function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    box.textContent = logs.length ? logs.join('\n') : `$ ${trPage('log.waiting','Waiting for log output...')}`;
+    box.scrollTop = box.scrollHeight;
+}
+function showDownloads() {
+    document.getElementById('downloadSection').style.display = 'block';
+    document.getElementById('downloadAllBtn').href = `/api/download_all/${sessionId}`;
+    const links = {dlVideo:'video', dlTrack:'track_csv', dlSummary:'summary_csv', dlBins:'bins_csv', dlReport:'report', dlHeatmap:'heatmap', dlTrackmap:'trackmap'};
+    Object.entries(links).forEach(([id, type]) => document.getElementById(id).href = `/api/download/${sessionId}/${type}`);
+}
+function stopAnalysis() { fetch(`/api/stop/${sessionId}`, {method:'POST'}).then(() => updateStatus()); }
+function openResultFolder() { fetch(`/api/open_folder/${sessionId}`, {method:'POST'}).then(r => r.json()).then(data => { if (!data.success) alert(data.error || 'Failed to open folder'); }); }
+function clearTimer() { if (updateInterval) { clearInterval(updateInterval); updateInterval = null; } }
+function strategyLabel(row) {
+    const lang = typeof getLang === 'function' ? getLang() : 'zh';
+    if (lang === 'zh') return row.search_strategy_label_zh || row.search_strategy_label || '-';
+    return row.search_strategy_label || row.search_strategy || '-';
+}
+function escapeHtml(value) { return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+document.addEventListener('DOMContentLoaded', function() {
+    applyMWMMonitorLang();
+    updateStatus();
+    updateInterval = setInterval(updateStatus, 1000);
+});
+</script>
+{% endblock %}

@@ -13,6 +13,9 @@ from services.video_metadata import DEFAULT_VIDEO_FPS, find_ffprobe_exe
 
 
 logger = logging.getLogger(__name__)
+MIN_PTS_FRAME_COVERAGE = 0.5
+MIN_PTS_DURATION_RATIO = 0.5
+MAX_PTS_DURATION_RATIO = 2.0
 
 
 def _subprocess_creationflags() -> int:
@@ -64,47 +67,7 @@ def _parse_pts_lines(output: str | None) -> list[float]:
     return values
 
 
-def _extract_pts_times(video_path: str | os.PathLike, timeout: float = 60.0) -> np.ndarray:
-    ffprobe_exe = find_ffprobe_exe()
-    if not ffprobe_exe:
-        return np.asarray([], dtype=np.float64)
-
-    path = str(video_path)
-    packet_output = _run_text(
-        [
-            ffprobe_exe,
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "packet=pts_time",
-            "-of",
-            "csv=p=0",
-            path,
-        ],
-        timeout=timeout,
-    )
-    values = _parse_pts_lines(packet_output)
-
-    if not values:
-        frame_output = _run_text(
-            [
-                ffprobe_exe,
-                "-v",
-                "error",
-                "-select_streams",
-                "v:0",
-                "-show_entries",
-                "frame=best_effort_timestamp_time",
-                "-of",
-                "csv=p=0",
-                path,
-            ],
-            timeout=timeout,
-        )
-        values = _parse_pts_lines(frame_output)
-
+def _normalise_pts_values(values: list[float]) -> np.ndarray:
     if not values:
         return np.asarray([], dtype=np.float64)
 
@@ -115,6 +78,143 @@ def _extract_pts_times(video_path: str | os.PathLike, timeout: float = 60.0) -> 
         return times
     times = times - float(times[0])
     return times
+
+
+def _ratio_outside(value: float, expected: float) -> bool:
+    if not np.isfinite(value) or not np.isfinite(expected) or expected <= 0.0:
+        return False
+    ratio = float(value) / float(expected)
+    return ratio < MIN_PTS_DURATION_RATIO or ratio > MAX_PTS_DURATION_RATIO
+
+
+def _pts_inconsistency_reason(times: np.ndarray, total_frames: int | None, fps: float | None) -> str | None:
+    frame_count = int(max(0, total_frames or 0))
+    if times.size <= 1:
+        if frame_count > max(int(times.size), 1):
+            return f"only {times.size}/{frame_count} timestamps were available"
+        return None
+
+    fallback_fps = float(fps or DEFAULT_VIDEO_FPS)
+    if fallback_fps <= 0.0:
+        return None
+
+    if frame_count > 1:
+        coverage = float(times.size) / float(frame_count)
+        if coverage < MIN_PTS_FRAME_COVERAGE:
+            return f"only {times.size}/{frame_count} timestamps were available"
+
+    observed_span = float(times[-1])
+    expected_observed_span = float(times.size - 1) / fallback_fps
+    if _ratio_outside(observed_span, expected_observed_span):
+        return (
+            f"timestamp span {observed_span:.3f}s disagrees with "
+            f"{times.size} frames at {fallback_fps:.3f}fps"
+        )
+
+    if frame_count > 1:
+        median_dt = _median_positive_dt(times, fallback_fps)
+        if times.size < frame_count:
+            padded_span = observed_span + float(frame_count - times.size) * median_dt
+        else:
+            padded_span = float(times[frame_count - 1])
+        expected_total_span = float(frame_count - 1) / fallback_fps
+        if _ratio_outside(padded_span, expected_total_span):
+            return (
+                f"padded timestamp span {padded_span:.3f}s disagrees with "
+                f"{frame_count} frames at {fallback_fps:.3f}fps"
+            )
+
+    return None
+
+
+def _log_pts_rejection(logger_func: Callable[[str], None] | None, label: str, reason: str) -> None:
+    if logger_func is None:
+        return
+    try:
+        logger_func(f"Video {label} PTS ignored: {reason}.")
+    except Exception:
+        pass
+
+
+def _extract_pts_candidate(
+    command: list[str],
+    *,
+    label: str,
+    timeout: float,
+    total_frames: int | None,
+    fps: float | None,
+    logger: Callable[[str], None] | None,
+) -> np.ndarray:
+    values = _parse_pts_lines(_run_text(command, timeout=timeout))
+    times = _normalise_pts_values(values)
+    reason = _pts_inconsistency_reason(times, total_frames, fps)
+    if reason:
+        _log_pts_rejection(logger, label, reason)
+        return np.asarray([], dtype=np.float64)
+    return times
+
+
+def _extract_pts_times(
+    video_path: str | os.PathLike,
+    timeout: float = 60.0,
+    *,
+    total_frames: int | None = None,
+    fps: float | None = None,
+    logger: Callable[[str], None] | None = None,
+) -> np.ndarray:
+    ffprobe_exe = find_ffprobe_exe()
+    if not ffprobe_exe:
+        return np.asarray([], dtype=np.float64)
+
+    path = str(video_path)
+    packet_command = [
+        ffprobe_exe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "packet=pts_time",
+        "-of",
+        "csv=p=0",
+        path,
+    ]
+    frame_command = [
+        ffprobe_exe,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "frame=best_effort_timestamp_time",
+        "-of",
+        "csv=p=0",
+        path,
+    ]
+
+    times = _extract_pts_candidate(
+        packet_command,
+        label="packet",
+        timeout=timeout,
+        total_frames=total_frames,
+        fps=fps,
+        logger=logger,
+    )
+    if times.size > 0:
+        return times
+
+    times = _extract_pts_candidate(
+        frame_command,
+        label="frame",
+        timeout=timeout,
+        total_frames=total_frames,
+        fps=fps,
+        logger=logger,
+    )
+    if times.size > 0:
+        return times
+
+    return np.asarray([], dtype=np.float64)
 
 
 def _median_positive_dt(times: np.ndarray, fallback_fps: float) -> float:
@@ -243,11 +343,15 @@ def build_video_timebase(
 ) -> VideoTimebase:
     fallback_fps = float(fps or DEFAULT_VIDEO_FPS)
     total = int(max(0, total_frames or 0))
-    pts = _extract_pts_times(video_path) if prefer_pts else np.asarray([], dtype=np.float64)
+    pts = (
+        _extract_pts_times(video_path, total_frames=total, fps=fallback_fps, logger=logger)
+        if prefer_pts
+        else np.asarray([], dtype=np.float64)
+    )
     source = "pts" if pts.size > 0 else "uniform"
     if logger is not None and prefer_pts and pts.size == 0:
         try:
-            logger("Video PTS timebase unavailable; falling back to uniform fps timing.")
+            logger("Video PTS timebase unavailable or inconsistent; falling back to uniform fps timing.")
         except Exception:
             pass
     times = _repair_and_size_times(pts, total, fallback_fps)

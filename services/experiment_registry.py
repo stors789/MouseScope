@@ -81,6 +81,89 @@ def _fst_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]
     return True, []
 
 
+def _water_maze_boundary_points(roi: dict[str, Any] | None):
+    if not isinstance(roi, dict):
+        return []
+    pool = roi.get("pool") if isinstance(roi.get("pool"), dict) else {}
+    return (
+        roi.get("pool_boundary_points")
+        or roi.get("boundary_points")
+        or roi.get("points")
+        or pool.get("boundary_points")
+        or pool.get("pool_boundary_points")
+        or pool.get("points")
+        or []
+    )
+
+
+def _water_maze_has_circle_pool(roi: dict[str, Any] | None) -> bool:
+    if not isinstance(roi, dict):
+        return False
+    pool = roi.get("pool") if isinstance(roi.get("pool"), dict) else {}
+    center = pool.get("center") or roi.get("pool_center")
+    radius = pool.get("radius_px") or pool.get("radius") or roi.get("pool_radius_px")
+    try:
+        return center is not None and float(radius) > 0
+    except Exception:
+        return False
+
+
+def _water_maze_has_ellipse_pool(roi: dict[str, Any] | None) -> bool:
+    if not isinstance(roi, dict):
+        return False
+    pool = roi.get("pool") if isinstance(roi.get("pool"), dict) else {}
+    center = pool.get("ellipse_center") or pool.get("center") or roi.get("pool_center")
+    rx = pool.get("radius_x_px") or pool.get("rx")
+    ry = pool.get("radius_y_px") or pool.get("ry")
+    axes = pool.get("ellipse_axes_px") or pool.get("axes_px") or pool.get("axes")
+    try:
+        if isinstance(axes, dict):
+            rx = rx or axes.get("radius_x_px") or axes.get("rx") or (float(axes.get("width") or axes.get("w") or 0) * 0.5)
+            ry = ry or axes.get("radius_y_px") or axes.get("ry") or (float(axes.get("height") or axes.get("h") or 0) * 0.5)
+        elif isinstance(axes, (list, tuple)) and len(axes) >= 2:
+            rx = rx or float(axes[0]) * 0.5
+            ry = ry or float(axes[1]) * 0.5
+        return center is not None and float(rx) > 0 and float(ry) > 0
+    except Exception:
+        return False
+
+
+def _water_maze_has_platform(roi: dict[str, Any] | None) -> bool:
+    if not isinstance(roi, dict):
+        return False
+    platform = roi.get("platform") if isinstance(roi.get("platform"), dict) else {}
+    if roi.get("platform_point") is not None:
+        return True
+    if platform.get("point") is not None or platform.get("center") is not None:
+        return True
+    return platform.get("x") is not None and platform.get("y") is not None
+
+
+def _water_maze_video_complete(config: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    config = config or {}
+    rois = config.get("rois") or []
+    if not rois:
+        return False, ["Missing water maze pool ROI"]
+    for idx, roi in enumerate(rois, start=1):
+        if not isinstance(roi, dict):
+            return False, [f"ROI {idx} must be an object"]
+        boundary = _water_maze_boundary_points(roi)
+        if _points_count(boundary) < 5 and not (_water_maze_has_circle_pool(roi) or _water_maze_has_ellipse_pool(roi)):
+            return False, [f"ROI {idx} needs a pool ellipse or at least 5 boundary points"]
+        if not _water_maze_has_platform(roi):
+            return False, [f"ROI {idx} needs a platform point"]
+        pool = roi.get("pool") if isinstance(roi.get("pool"), dict) else {}
+        try:
+            diameter_cm = float(roi.get("pool_diameter_cm") or pool.get("diameter_cm") or config.get("pool_diameter_cm") or 0)
+        except Exception:
+            diameter_cm = 0.0
+        if diameter_cm <= 0:
+            return False, [f"ROI {idx} needs a real pool diameter"]
+        if not _mask_valid(roi):
+            return False, [f"ROI {idx} detection mask needs at least 3 points"]
+    return True, []
+
+
 def _maze_zone_complete(zone_points, expected_points: int = 4) -> bool:
     return isinstance(zone_points, list) and len(zone_points) == int(expected_points)
 
@@ -251,6 +334,15 @@ EXPERIMENT_SPECS: dict[str, ExperimentSpec] = {
         calibrate_template="calibrate_forced_swim.html",
         monitor_template="monitor_forced_swim.html",
         validator=_fst_video_complete,
+    ),
+    "water_maze": ExperimentSpec(
+        key="water_maze",
+        label="水迷宫 Morris Water Maze",
+        short_label="MWM",
+        manual_module="mwm",
+        calibrate_template="calibrate_water_maze.html",
+        monitor_template="monitor_water_maze.html",
+        validator=_water_maze_video_complete,
     ),
     "open_field": ExperimentSpec(
         key="open_field",

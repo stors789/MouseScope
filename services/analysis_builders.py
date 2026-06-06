@@ -735,6 +735,116 @@ def build_forced_swim_config(sess: dict[str, Any], data: dict[str, Any]) -> dict
     }
 
 
+def build_water_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    default_trial_type = data.get("trial_type", "acquisition_hidden")
+    default_day_label = data.get("day_label", "")
+    default_trial_no = int(data.get("trial_no", 1))
+    default_pool_diameter_cm = float(data.get("pool_diameter_cm", 120.0))
+    default_platform_radius_cm = float(data.get("platform_radius_cm", 5.0))
+    default_target_quadrant = data.get("target_quadrant", "")
+    default_start_position = data.get("start_position", "N")
+    default_quadrant_rotation_deg = float(data.get("quadrant_rotation_deg", 0.0))
+    default_correction_mode = data.get("correction_mode", "ellipse_affine")
+    default_distortion_k1 = float(data.get("distortion_k1", 0.0))
+    default_distortion_k2 = float(data.get("distortion_k2", 0.0))
+    default_thigmotaxis_band_cm = float(data.get("thigmotaxis_band_cm", 10.0))
+    default_platform_dwell_s = float(data.get("platform_dwell_s", 1.0))
+    default_max_jump_cm = float(data.get("track_smoothing_max_jump_cm", data.get("max_jump_cm", 25.0)))
+    default_max_gap_s = float(data.get("max_gap_s", 0.5))
+    default_movement_threshold_cm_s = float(data.get("movement_threshold_cm_s", 2.0))
+    default_whishaw_corridor_width_cm = data.get("whishaw_corridor_width_cm")
+    default_exclude_platform = _coerce_bool(data.get("exclude_platform_from_detection"), False)
+    default_bin_seconds = float(data.get("bin_seconds", 10.0))
+    default_bg_method = data.get("bg_method", "threshold")
+    default_bg_type = data.get("bg_type", "light")
+    default_gray_threshold = int(data.get("gray_threshold", 127))
+    default_erosion_kernel = int(data.get("erosion_kernel", 3))
+    default_erosion_iter = int(data.get("erosion_iter", 1))
+    default_dilation_kernel = int(data.get("dilation_kernel", 5))
+    default_dilation_iter = int(data.get("dilation_iter", 2))
+    default_min_area = int(data.get("min_area", 80))
+    default_max_area = int(data.get("max_area", 50000))
+
+    def _float_or_none(value):
+        if value in ("", None):
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    per_video_configs = _iter_video_configs(
+        sess,
+        data,
+        lambda raw_cfg: {
+            "trial_type": raw_cfg.get("trial_type", default_trial_type),
+            "day_label": raw_cfg.get("day_label", default_day_label),
+            "trial_no": int(raw_cfg.get("trial_no", default_trial_no)),
+            "pool_diameter_cm": float(raw_cfg.get("pool_diameter_cm", default_pool_diameter_cm)),
+            "platform_radius_cm": float(raw_cfg.get("platform_radius_cm", default_platform_radius_cm)),
+            "target_quadrant": raw_cfg.get("target_quadrant", default_target_quadrant),
+            "start_position": raw_cfg.get("start_position", default_start_position),
+            "quadrant_rotation_deg": float(raw_cfg.get("quadrant_rotation_deg", default_quadrant_rotation_deg)),
+            "correction_mode": raw_cfg.get("correction_mode", default_correction_mode),
+            "distortion_k1": float(raw_cfg.get("distortion_k1", default_distortion_k1)),
+            "distortion_k2": float(raw_cfg.get("distortion_k2", default_distortion_k2)),
+            "thigmotaxis_band_cm": float(raw_cfg.get("thigmotaxis_band_cm", default_thigmotaxis_band_cm)),
+            "platform_dwell_s": float(raw_cfg.get("platform_dwell_s", default_platform_dwell_s)),
+            "track_smoothing_max_jump_cm": float(raw_cfg.get("track_smoothing_max_jump_cm", raw_cfg.get("max_jump_cm", default_max_jump_cm))),
+            "max_gap_s": float(raw_cfg.get("max_gap_s", default_max_gap_s)),
+            "movement_threshold_cm_s": float(raw_cfg.get("movement_threshold_cm_s", default_movement_threshold_cm_s)),
+            "whishaw_corridor_width_cm": _float_or_none(raw_cfg.get("whishaw_corridor_width_cm", default_whishaw_corridor_width_cm)),
+            "exclude_platform_from_detection": _coerce_bool(raw_cfg.get("exclude_platform_from_detection"), default_exclude_platform),
+            "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
+            "bg_method": raw_cfg.get("bg_method", default_bg_method),
+            "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
+            "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
+            "erosion_kernel": int(raw_cfg.get("erosion_kernel", default_erosion_kernel)),
+            "erosion_iter": int(raw_cfg.get("erosion_iter", default_erosion_iter)),
+            "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
+            "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
+            "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "max_area": int(raw_cfg.get("max_area", default_max_area)),
+            "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
+        },
+    )
+
+    return {
+        "trial_type": default_trial_type,
+        "day_label": default_day_label,
+        "trial_no": default_trial_no,
+        "pool_diameter_cm": default_pool_diameter_cm,
+        "platform_radius_cm": default_platform_radius_cm,
+        "target_quadrant": default_target_quadrant,
+        "start_position": default_start_position,
+        "quadrant_rotation_deg": default_quadrant_rotation_deg,
+        "correction_mode": default_correction_mode,
+        "distortion_k1": default_distortion_k1,
+        "distortion_k2": default_distortion_k2,
+        "thigmotaxis_band_cm": default_thigmotaxis_band_cm,
+        "platform_dwell_s": default_platform_dwell_s,
+        "track_smoothing_max_jump_cm": default_max_jump_cm,
+        "max_gap_s": default_max_gap_s,
+        "movement_threshold_cm_s": default_movement_threshold_cm_s,
+        "whishaw_corridor_width_cm": _float_or_none(default_whishaw_corridor_width_cm),
+        "exclude_platform_from_detection": default_exclude_platform,
+        "bin_seconds": default_bin_seconds,
+        "bg_method": default_bg_method,
+        "gray_threshold": default_gray_threshold,
+        "invert": str(default_bg_type).lower() == "dark",
+        "erosion_kernel": default_erosion_kernel,
+        "erosion_iter": default_erosion_iter,
+        "dilation_kernel": default_dilation_kernel,
+        "dilation_iter": default_dilation_iter,
+        "min_area": default_min_area,
+        "max_area": default_max_area,
+        "rois": data.get("rois", []),
+        "per_video_configs": per_video_configs,
+        "generate_video": data.get("generate_video", True),
+        **_base_session_fields(sess),
+    }
+
+
 def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     exp = str(experiment_type or "").strip().lower()
     if exp == "open_field":
@@ -751,4 +861,6 @@ def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], dat
         return build_three_chamber_config(sess, data)
     if exp == "forced_swim":
         return build_forced_swim_config(sess, data)
+    if exp == "water_maze":
+        return build_water_maze_config(sess, data)
     return build_tst_config(sess, data)

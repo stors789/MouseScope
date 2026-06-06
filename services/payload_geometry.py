@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -15,6 +16,83 @@ def coerce_point_list(points: Any, min_points: int = 4) -> list[list[float]]:
         else:
             parsed.append([float(point[0]), float(point[1])])
     return parsed
+
+
+def coerce_point_xy(point: Any) -> list[float]:
+    if isinstance(point, dict):
+        if isinstance(point.get("point"), dict):
+            return coerce_point_xy(point.get("point"))
+        if isinstance(point.get("center"), dict):
+            return coerce_point_xy(point.get("center"))
+        return [float(point["x"]), float(point["y"])]
+    return [float(point[0]), float(point[1])]
+
+
+def circle_boundary_points(center: Any, radius: Any, count: int = 48) -> list[list[float]]:
+    cx, cy = coerce_point_xy(center)
+    radius = max(1.0, float(radius))
+    return [
+        [
+            cx + radius * math.cos(2.0 * math.pi * idx / int(count)),
+            cy + radius * math.sin(2.0 * math.pi * idx / int(count)),
+        ]
+        for idx in range(int(count))
+    ]
+
+
+def ellipse_boundary_points(pool: dict[str, Any] | None, count: int = 64) -> list[list[float]]:
+    pool = dict(pool or {})
+    center = pool.get("ellipse_center") or pool.get("center")
+    if center is None:
+        return []
+    cx, cy = coerce_point_xy(center)
+    axes = pool.get("ellipse_axes_px") or pool.get("axes_px") or pool.get("axes")
+    if isinstance(axes, dict):
+        if axes.get("radius_x_px") is not None and axes.get("radius_y_px") is not None:
+            rx = float(axes.get("radius_x_px"))
+            ry = float(axes.get("radius_y_px"))
+        else:
+            rx = float(axes.get("width") or axes.get("w") or 0.0) * 0.5
+            ry = float(axes.get("height") or axes.get("h") or 0.0) * 0.5
+    elif axes is not None:
+        rx = float(axes[0]) * 0.5
+        ry = float(axes[1]) * 0.5
+    else:
+        rx = float(pool.get("radius_x_px") or pool.get("rx") or 0.0)
+        ry = float(pool.get("radius_y_px") or pool.get("ry") or 0.0)
+    if rx <= 0 or ry <= 0:
+        radius = pool.get("radius_px") or pool.get("radius")
+        if radius is None:
+            return []
+        rx = ry = float(radius)
+    angle = float(pool.get("angle_deg") or pool.get("ellipse_angle_deg") or 0.0) * math.pi / 180.0
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    return [
+        [
+            cx + rx * math.cos(2.0 * math.pi * idx / int(count)) * cos_a - ry * math.sin(2.0 * math.pi * idx / int(count)) * sin_a,
+            cy + rx * math.cos(2.0 * math.pi * idx / int(count)) * sin_a + ry * math.sin(2.0 * math.pi * idx / int(count)) * cos_a,
+        ]
+        for idx in range(int(count))
+    ]
+
+
+def normalize_water_maze_pool_payload(pool: dict[str, Any] | None, diameter_cm: Any = None) -> dict[str, Any]:
+    payload = dict(pool or {})
+    if not payload:
+        return payload
+    if diameter_cm is not None:
+        payload["diameter_cm"] = float(diameter_cm)
+    if payload.get("ellipse_center") is None and payload.get("center") is not None:
+        payload["ellipse_center"] = payload.get("center")
+    if payload.get("ellipse_axes_px") is None and payload.get("radius_x_px") is not None and payload.get("radius_y_px") is not None:
+        payload["ellipse_axes_px"] = {
+            "radius_x_px": payload.get("radius_x_px"),
+            "radius_y_px": payload.get("radius_y_px"),
+        }
+    if payload.get("ellipse_angle_deg") is None and payload.get("angle_deg") is not None:
+        payload["ellipse_angle_deg"] = payload.get("angle_deg")
+    return payload
 
 
 def sort_polygon_points(points: Any) -> list[list[float]]:

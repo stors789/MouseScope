@@ -24,6 +24,7 @@ from services.analysis_sessions import (
     OpenFieldMultiArenaAnalysisSession,
     ThreeChamberSocialAnalysisSession,
     VisionAnalysisSession,
+    WaterMazeMultiPoolAnalysisSession,
     YMazeMultiArenaAnalysisSession,
 )
 from services.debug_preview import build_debug_preview_response
@@ -917,6 +918,7 @@ def register_api_routes(app, ctx) -> None:
             'forced_swim': ForcedSwimMultiCylinderAnalysisSession,
             'light_dark_box': LightDarkBoxMultiArenaAnalysisSession,
             'three_chamber': ThreeChamberSocialAnalysisSession,
+            'water_maze': WaterMazeMultiPoolAnalysisSession,
         }
         analysis_class = analysis_class_map.get(experiment_type, VisionAnalysisSession)
         analysis = analysis_class(

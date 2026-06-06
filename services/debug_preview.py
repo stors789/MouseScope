@@ -16,11 +16,16 @@ from elevated_plus import ElevatedPlusTracker, draw_elevated_plus_results
 from y_maze import YMazeTracker, draw_y_maze_results
 from light_dark_box import LightDarkBoxTracker, draw_light_dark_box_results
 from three_chamber import ThreeChamberTracker, draw_three_chamber_results
+from water_maze import WaterMazeTracker, draw_water_maze_results
 from forced_swim import ForcedSwimTracker, draw_forced_swim_results
 from services.payload_geometry import (
+    circle_boundary_points as _circle_boundary_points,
     coerce_point_list as _coerce_point_list,
+    coerce_point_xy as _point_xy,
     coerce_zone_polygons as _coerce_zone_polygons,
     coerce_zone_polygons_with_schema as _coerce_zone_polygons_with_schema,
+    ellipse_boundary_points as _ellipse_boundary_points,
+    normalize_water_maze_pool_payload as _normalize_pool_payload,
 )
 from services.video_frame_reader import read_video_frame
 
@@ -103,6 +108,13 @@ def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert):
         bg_rgb = cv2.cvtColor(static_bg, cv2.COLOR_GRAY2BGR) if len(static_bg.shape) == 2 else static_bg
         return BackgroundSubtractor(method='static', static_bg=bg_rgb)
     return BackgroundSubtractor(method=bg_method)
+
+
+def _debug_first_value(*values):
+    for value in values:
+        if value not in (None, ''):
+            return value
+    return None
 
 def _open_field_debug_preview(frame, data, video_path):
     bg_method = data.get('bg_method', 'threshold')
@@ -641,6 +653,142 @@ def _forced_swim_debug_preview(frame, data, video_path):
         'roi_count': len(tracker_results),
     })
 
+
+def _water_maze_debug_preview(frame, data, video_path):
+    bg_method = data.get('bg_method', 'threshold')
+    gray_threshold = int(data.get('gray_threshold', 127))
+    bg_type = data.get('bg_type', 'light')
+    invert = (bg_type == 'dark')
+    erosion_kernel = int(data.get('erosion_kernel', 3))
+    erosion_iter = int(data.get('erosion_iter', 1))
+    dilation_kernel = int(data.get('dilation_kernel', 5))
+    dilation_iter = int(data.get('dilation_iter', 2))
+    min_area = int(data.get('min_area', 80))
+    max_area = int(data.get('max_area', 50000))
+    rois = data.get('rois') or []
+    if not rois:
+        return jsonify({'error': 'MWM preview requires at least one pool ROI.'}), 400
+
+    try:
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+    except Exception as e:
+        return jsonify({'error': f'Failed to build MWM background model: {e}'}), 400
+
+    morph = MorphologyProcessor(
+        erosion_kernel=erosion_kernel,
+        erosion_iterations=erosion_iter,
+        dilation_kernel=dilation_kernel,
+        dilation_iterations=dilation_iter,
+    )
+    det = MouseDetector(min_area=min_area, max_area=max_area)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    tracker_results = []
+    detected_count = 0
+    for idx, roi in enumerate(rois):
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'MWM ROI {idx + 1} must be an object.'}), 400
+        pool = roi.get('pool') if isinstance(roi.get('pool'), dict) else {}
+        boundary = (
+            roi.get('pool_boundary_points')
+            or roi.get('boundary_points')
+            or roi.get('points')
+            or pool.get('boundary_points')
+            or pool.get('pool_boundary_points')
+            or pool.get('points')
+        )
+        if not boundary:
+            center = pool.get('center') or roi.get('pool_center')
+            radius_px = pool.get('radius_px') or pool.get('radius') or roi.get('pool_radius_px')
+            if center is not None and radius_px is not None:
+                boundary = _circle_boundary_points(center, radius_px)
+        if not boundary:
+            boundary = _ellipse_boundary_points(pool)
+        if not boundary or len(boundary) < 5:
+            return jsonify({'error': f'MWM ROI {idx + 1} needs a pool ellipse or at least 5 pool boundary points.'}), 400
+
+        platform = roi.get('platform') if isinstance(roi.get('platform'), dict) else {}
+        platform_point = roi.get('platform_point') or platform.get('point') or platform.get('center')
+        if platform_point is None and platform.get('x') is not None and platform.get('y') is not None:
+            platform_point = platform
+        if platform_point is None:
+            return jsonify({'error': f'MWM ROI {idx + 1} needs a platform point.'}), 400
+
+        detection_points = None
+        if roi.get('detection_points'):
+            try:
+                detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'MWM ROI {idx + 1}: detection mask {exc}'}), 400
+        platform_exclusion_points = None
+        if roi.get('platform_exclusion_points'):
+            try:
+                platform_exclusion_points = _coerce_point_list(roi.get('platform_exclusion_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            except Exception as exc:
+                return jsonify({'error': f'MWM ROI {idx + 1}: platform exclusion mask {exc}'}), 400
+
+        try:
+            pool_diameter_cm = float(roi.get('pool_diameter_cm') or pool.get('diameter_cm') or data.get('pool_diameter_cm', 120.0))
+            quadrant_rotation_deg = float(
+                _debug_first_value(
+                    roi.get('quadrant_rotation_deg'),
+                    roi.get('coordinate_rotation_deg'),
+                    data.get('quadrant_rotation_deg'),
+                    data.get('coordinate_rotation_deg'),
+                    0.0,
+                )
+            )
+            platform_radius_cm = float(platform.get('radius_cm') or roi.get('platform_radius_cm') or data.get('platform_radius_cm', 5.0))
+            tracker = WaterMazeTracker(
+                pool_boundary_points=[_point_xy(point) for point in boundary],
+                pool=_normalize_pool_payload(pool, pool_diameter_cm),
+                platform={
+                    'center': _point_xy(platform_point),
+                    'radius_cm': platform_radius_cm,
+                },
+                detection_points=detection_points,
+                platform_exclusion_points=platform_exclusion_points,
+                pool_diameter_cm=pool_diameter_cm,
+                platform_radius_cm=platform_radius_cm,
+                trial_type=data.get('trial_type', 'acquisition_hidden'),
+                target_quadrant=_debug_first_value(roi.get('target_quadrant'), data.get('target_quadrant')),
+                start_position=_debug_first_value(roi.get('start_position'), data.get('start_position'), 'N'),
+                day_label=data.get('day_label', ''),
+                trial_no=int(data.get('trial_no', 1)),
+                fps=30.0,
+                movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
+                thigmotaxis_band_cm=float(data.get('thigmotaxis_band_cm', 10.0)),
+                platform_dwell_s=float(data.get('platform_dwell_s', 1.0)),
+                track_smoothing_max_jump_cm=float(data.get('track_smoothing_max_jump_cm', data.get('max_jump_cm', 25.0))),
+                max_gap_s=float(data.get('max_gap_s', 0.5)),
+                quadrant_rotation_deg=quadrant_rotation_deg,
+                exclude_platform_from_detection=bool(data.get('exclude_platform_from_detection', False)),
+                correction_mode=data.get('correction_mode', 'ellipse_affine'),
+                distortion_k1=float(data.get('distortion_k1', 0.0)),
+                distortion_k2=float(data.get('distortion_k2', 0.0)),
+                roi_id=idx + 1,
+                roi_name=roi.get('name') or f'Pool {idx + 1}',
+                time_config=roi.get('time_config'),
+            )
+        except Exception as exc:
+            return jsonify({'error': f'MWM ROI {idx + 1}: {exc}'}), 400
+        result = tracker.update(frame, 0.0, gray, bg_sub, morph, det)
+        tracker_results.append((tracker, result))
+        detected_count += int(bool(result.get('detected')))
+
+    result_frame = draw_water_maze_results(frame, tracker_results)
+
+    _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    return jsonify({
+        'original': base64.b64encode(buf_orig).decode('utf-8'),
+        'result': base64.b64encode(buf_result).decode('utf-8'),
+        'detected': detected_count > 0,
+        'detections': detected_count,
+        'roi_count': len(tracker_results),
+    })
+
 def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: dict[str, Any]):
     try:
         frame_idx = _nonnegative_int(data.get('frame', 0), 'frame')
@@ -678,6 +826,8 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         return _three_chamber_debug_preview(frame, data, video_path)
     if experiment_type == 'forced_swim':
         return _forced_swim_debug_preview(frame, data, video_path)
+    if experiment_type == 'water_maze':
+        return _water_maze_debug_preview(frame, data, video_path)
 
     bg_method = data.get('bg_method', 'threshold')
     gray_threshold = int(data.get('gray_threshold', 127))

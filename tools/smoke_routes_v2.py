@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Route and inline-script smoke test for the v3.2.0 workbench flow."""
+"""Route and inline-script smoke test for the v3.3.0 workbench flow."""
 
 from __future__ import annotations
 
@@ -88,6 +88,7 @@ def main() -> int:
         "/upload",
         "/manual?module=tst",
         "/manual?module=fst",
+        "/manual?module=mwm",
         "/manual?module=oft",
         "/manual?module=nor",
         "/manual?module=epm",
@@ -130,7 +131,7 @@ def main() -> int:
                 if expected_status == 200 and response.content_type.startswith("text/html"):
                     _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
 
-    print("v3.2.0 route smoke test passed")
+    print("v3.3.0 route smoke test passed")
     return 0
 
 

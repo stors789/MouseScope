@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Short end-to-end analysis smoke test for MouseScope v3.2.0."""
+"""Short end-to-end analysis smoke test for MouseScope v3.3.0."""
 
 from __future__ import annotations
 
@@ -159,6 +159,27 @@ def _three_chamber_roi() -> dict:
     }
 
 
+def _water_maze_roi() -> dict:
+    return {
+        "name": "MWM 1",
+        "pool": {
+            "center": {"x": 220, "y": 240},
+            "radius_x_px": 140,
+            "radius_y_px": 110,
+            "angle_deg": 0,
+            "diameter_cm": 120.0,
+        },
+        "platform": {
+            "center": {"x": 260, "y": 205},
+            "radius_x_px": 8,
+            "radius_y_px": 7,
+            "radius_cm": 5.0,
+        },
+        "pool_diameter_cm": 120.0,
+        "time_config": {"mode": "global", "start": 0, "end": 0},
+    }
+
+
 def _payload_for(experiment_type: str) -> dict:
     if experiment_type == "tst":
         return {
@@ -221,6 +242,33 @@ def _payload_for(experiment_type: str) -> dict:
                     "diameter_points": [{"x": 100, "y": 250}, {"x": 300, "y": 250}],
                     "time_config": {"mode": "global", "start": 0, "end": 0},
                 }],
+            }],
+        }
+    if experiment_type == "water_maze":
+        return {
+            "generate_video": False,
+            "per_video_configs": [{
+                "trial_type": "acquisition_hidden",
+                "pool_diameter_cm": 120.0,
+                "platform_radius_cm": 5.0,
+                "target_quadrant": "NE",
+                "start_position": "S",
+                "bg_method": "threshold",
+                "bg_type": "light",
+                "gray_threshold": 127,
+                "erosion_kernel": 3,
+                "erosion_iter": 1,
+                "dilation_kernel": 5,
+                "dilation_iter": 2,
+                "min_area": 80,
+                "max_area": 50000,
+                "thigmotaxis_band_cm": 10.0,
+                "platform_dwell_s": 0.1,
+                "track_smoothing_max_jump_cm": 25.0,
+                "max_gap_s": 0.1,
+                "movement_threshold_cm_s": 2.0,
+                "bin_seconds": 10,
+                "rois": [_water_maze_roi()],
             }],
         }
     if experiment_type == "novel_object":
@@ -339,7 +387,7 @@ def main() -> int:
 
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    print("v3.2.0 short analysis smoke test passed")
+    print("v3.3.0 short analysis smoke test passed")
     return 0
 
 
