@@ -1,0 +1,677 @@
+{% extends "base.html" %}
+{% block title %}图像样式 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.visual-style-shell { max-width: 1480px; margin: 0 auto; }
+.style-actions { display:flex; gap:.55rem; flex-wrap:wrap; }
+.style-layout { display:grid; grid-template-columns:minmax(360px, 500px) minmax(0, 1fr); gap:1rem; align-items:start; }
+.settings-panel,
+.preview-panel {
+    background:var(--bg-card);
+    border:1px solid var(--border-card);
+    border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);
+}
+.settings-panel { padding:1.1rem; }
+.preview-panel { padding:1.1rem; position:sticky; top:1rem; }
+.style-section { padding:0 0 1rem; margin-bottom:1rem; border-bottom:1px solid var(--border-card); }
+.style-section:last-child { padding-bottom:0; margin-bottom:0; border-bottom:0; }
+.section-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.75rem; }
+.section-title { display:flex; align-items:center; gap:.5rem; color:var(--text-primary); font-weight:800; }
+.section-title i { color:var(--primary-color); }
+.control-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.6rem; }
+.color-field {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:.7rem;
+    min-height:42px;
+    padding:.5rem .6rem;
+    border:1px solid var(--border-card);
+    border-radius:var(--radius-btn);
+    background:rgba(255,255,255,.42);
+}
+.color-field label {
+    color:var(--text-secondary);
+    font-size:.88rem;
+    margin:0;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.color-field input[type="color"] {
+    width:44px;
+    height:30px;
+    flex:0 0 auto;
+    padding:2px;
+    border:1px solid #d5d2c7;
+    border-radius:9px;
+    background:var(--bg-card-hover);
+    cursor:pointer;
+}
+.option-line { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:.75rem; align-items:end; margin-bottom:.75rem; }
+.legend-text-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.6rem; margin-top:.6rem; }
+.text-field {
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr);
+    gap:.6rem;
+    align-items:center;
+    min-height:42px;
+    padding:.5rem .6rem;
+    border:1px solid var(--border-card);
+    border-radius:var(--radius-btn);
+    background:rgba(255,255,255,.42);
+}
+.text-field label { color:var(--text-secondary); font-size:.88rem; margin:0; white-space:nowrap; }
+.text-field input { min-width:0; }
+.experiment-switcher { display:flex; flex-wrap:wrap; gap:.45rem; min-height:34px; }
+.experiment-switcher .btn { border-radius:999px !important; font-weight:700 !important; padding:.38rem .72rem !important; }
+.experiment-switcher .btn.active {
+    background:var(--primary-color) !important;
+    border-color:var(--primary-color) !important;
+    color:#faf9f5 !important;
+    box-shadow:0 8px 18px rgba(201,100,66,.16);
+}
+.preview-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:.9rem; }
+.preview-head h2 { margin:0; font-size:1.16rem; color:var(--text-primary); font-weight:800; }
+.preview-hint { margin:.22rem 0 0; color:var(--text-muted); font-size:.86rem; line-height:1.5; }
+.preview-state { min-height:1.5rem; color:var(--text-muted); font-size:.86rem; text-align:right; }
+.preview-state.error { color:var(--danger-color); }
+.preview-state.ok { color:var(--success-color); }
+.render-preview-grid { display:grid; grid-template-columns:1fr; gap:.85rem; }
+.render-box {
+    border:1px solid var(--border-card);
+    border-radius:18px;
+    background:rgba(255,255,255,.44);
+    overflow:hidden;
+}
+.render-box-head {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:.75rem;
+    padding:.68rem .8rem;
+    border-bottom:1px solid var(--border-card);
+    color:var(--text-primary);
+    font-weight:800;
+}
+.render-box-head span:last-child { font-size:.78rem; color:var(--text-muted); font-weight:700; }
+.render-stage {
+    min-height:300px;
+    display:grid;
+    place-items:center;
+    padding:.85rem;
+    background:#fff;
+    position:relative;
+}
+.render-stage img { display:block; max-width:100%; height:auto; max-height:420px; object-fit:contain; }
+.preview-loading {
+    position:absolute;
+    inset:0;
+    display:none;
+    place-items:center;
+    background:rgba(250,249,245,.78);
+    color:var(--text-primary);
+    font-weight:800;
+    backdrop-filter:blur(1px);
+}
+.preview-panel.loading .preview-loading { display:grid; }
+#styleStatus { display:none; margin-bottom:1rem; }
+@media (min-width: 1320px) {
+    .render-preview-grid { grid-template-columns:minmax(0, .9fr) minmax(0, 1.1fr); align-items:start; }
+    .render-stage { min-height:360px; }
+}
+@media (max-width: 1100px) {
+    .style-layout { grid-template-columns:1fr; }
+    .preview-panel { position:static; }
+}
+@media (max-width: 640px) {
+    .style-actions { width:100%; }
+    .style-actions .btn { flex:1 1 auto; }
+    .control-grid, .legend-text-grid, .option-line { grid-template-columns:1fr; }
+    .preview-head { flex-direction:column; }
+    .preview-state { text-align:left; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="visual-style-shell" data-tour-page="visual-style">
+    <section class="app-page-hero" data-tour-id="visual-style-overview">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-palette"></i></span>
+            <div>
+                <h1 class="app-page-title" data-i18n="visual_style.title">图像样式</h1>
+                <p class="app-page-subtitle" data-i18n="visual_style.subtitle">统一设置后续实验导出的轨迹图、热力图和图例颜色。</p>
+            </div>
+        </div>
+        <div class="app-page-actions style-actions">
+            <button class="btn btn-primary" type="button" id="saveStyleBtn" data-tour-id="visual-style-save">
+                <i class="fas fa-floppy-disk me-2"></i><span data-i18n="visual_style.action.save">保存为全局样式</span>
+            </button>
+            <button class="btn btn-outline-secondary" type="button" id="resetStyleBtn">
+                <i class="fas fa-rotate-left me-2"></i><span data-i18n="visual_style.action.reset">恢复默认</span>
+            </button>
+        </div>
+    </section>
+
+    <div id="styleStatus" class="alert" role="status"></div>
+
+    <div class="style-layout">
+        <div class="settings-panel" data-tour-id="visual-style-controls">
+            <section class="style-section" data-tour-id="visual-style-track">
+                <div class="section-head">
+                    <div class="section-title"><i class="fas fa-route"></i><span data-i18n="visual_style.section.track">轨迹图</span></div>
+                </div>
+                <div id="trackControls" class="control-grid"></div>
+            </section>
+
+            <section class="style-section" data-tour-id="visual-style-grid">
+                <div class="section-head">
+                    <div class="section-title"><i class="fas fa-border-all"></i><span data-i18n="visual_style.section.grid">结果拼图</span></div>
+                </div>
+                <div id="gridControls" class="control-grid"></div>
+            </section>
+
+            <section class="style-section" data-tour-id="visual-style-heatmap">
+                <div class="section-head">
+                    <div class="section-title"><i class="fas fa-fire"></i><span data-i18n="visual_style.section.heatmap">热力图</span></div>
+                </div>
+                <div class="option-line">
+                    <div>
+                        <label class="form-label" for="heatmapColormap" data-i18n="visual_style.colormap.label">常用色图模板</label>
+                        <select class="form-select" id="heatmapColormap"></select>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="heatmapShowLegend">
+                        <label class="form-check-label" for="heatmapShowLegend" data-i18n="visual_style.legend.show">显示图例</label>
+                    </div>
+                </div>
+                <div id="heatmapControls" class="control-grid"></div>
+            </section>
+
+            <section class="style-section" data-tour-id="visual-style-legend">
+                <div class="section-head">
+                    <div class="section-title"><i class="fas fa-ruler-vertical"></i><span data-i18n="visual_style.section.legend">热力图图例</span></div>
+                </div>
+                <div id="legendControls" class="control-grid"></div>
+                <div class="legend-text-grid">
+                    <div class="text-field">
+                        <label for="legendHighLabel" data-i18n="visual_style.legend.high_label">高值标签</label>
+                        <input class="form-control form-control-sm" type="text" id="legendHighLabel" maxlength="16">
+                    </div>
+                    <div class="text-field">
+                        <label for="legendLowLabel" data-i18n="visual_style.legend.low_label">低值标签</label>
+                        <input class="form-control form-control-sm" type="text" id="legendLowLabel" maxlength="16">
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <aside class="preview-panel" id="previewPanel" data-tour-id="visual-style-preview">
+            <div class="preview-head">
+                <div>
+                    <h2 data-i18n="visual_style.preview.title">真实渲染预览</h2>
+                    <p class="preview-hint" data-i18n="visual_style.preview.hint">选择实验类型后，右侧图片由实际导出函数生成。</p>
+                    <div class="experiment-switcher mt-2" id="experimentSwitcher" data-tour-id="visual-style-experiment"></div>
+                </div>
+                <div class="preview-state" id="previewState"></div>
+            </div>
+
+            <div class="render-preview-grid">
+                <div class="render-box">
+                    <div class="render-box-head">
+                        <span data-i18n="visual_style.preview.track">轨迹图</span>
+                        <span id="trackExperimentLabel">Track map</span>
+                    </div>
+                    <div class="render-stage">
+                        <img id="trackPreviewImg" alt="轨迹图预览" data-i18n="visual_style.preview.track_alt" data-i18n-attr="alt">
+                        <div class="preview-loading" data-i18n="visual_style.preview.loading">正在生成预览...</div>
+                    </div>
+                </div>
+                <div class="render-box">
+                    <div class="render-box-head">
+                        <span data-i18n="visual_style.preview.heat">热力图</span>
+                        <span id="heatExperimentLabel">Heatmap</span>
+                    </div>
+                    <div class="render-stage">
+                        <img id="heatPreviewImg" alt="热力图预览" data-i18n="visual_style.preview.heat_alt" data-i18n-attr="alt">
+                        <div class="preview-loading" data-i18n="visual_style.preview.loading">正在生成预览...</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const trackFields = [
+        ['background', 'visual_style.field.track.background', '背景/外部'],
+        ['border', 'visual_style.field.track.border', '外围边框'],
+        ['region_fill', 'visual_style.field.track.region_fill', '普通区域内部'],
+        ['region_outline', 'visual_style.field.track.region_outline', '普通区域轮廓'],
+        ['special_fill', 'visual_style.field.track.special_fill', '中心/目标区域内部'],
+        ['special_outline', 'visual_style.field.track.special_outline', '中心/目标区域轮廓'],
+        ['dark_region_fill', 'visual_style.field.track.dark_region_fill', '暗箱内部'],
+        ['track', 'visual_style.field.track.track', '轨迹线'],
+        ['start', 'visual_style.field.track.start', '起点'],
+        ['end', 'visual_style.field.track.end', '终点'],
+        ['text', 'visual_style.field.track.text', 'ABC/区域文字'],
+        ['text_soft', 'visual_style.field.track.text_soft', '辅助文字'],
+        ['object_familiar', 'visual_style.field.track.object_familiar', '熟悉物体'],
+        ['object_novel', 'visual_style.field.track.object_novel', '新奇物体'],
+        ['object_neutral', 'visual_style.field.track.object_neutral', '普通物体'],
+        ['platform', 'visual_style.field.track.platform', '平台'],
+        ['thigmotaxis', 'visual_style.field.track.thigmotaxis', '贴边内圈']
+    ];
+    const gridFields = [
+        ['grid_background', 'visual_style.field.grid.background', '拼图背景'],
+        ['grid_title', 'visual_style.field.grid.title', '拼图标题'],
+        ['grid_border', 'visual_style.field.grid.border', '拼图边框']
+    ];
+    const heatmapFields = [
+        ['custom_low', 'visual_style.field.heat.custom_low', '自定义低值端'],
+        ['custom_high', 'visual_style.field.heat.custom_high', '自定义高值端'],
+        ['zero_color', 'visual_style.field.heat.zero_color', '零值/无停留'],
+        ['outside', 'visual_style.field.heat.outside', '实验区域外'],
+        ['outline', 'visual_style.field.heat.outline', '区域轮廓'],
+        ['border', 'visual_style.field.heat.border', '外围边框']
+    ];
+    const legendFields = [
+        ['legend_background', 'visual_style.field.legend.background', '图例背景'],
+        ['legend_border', 'visual_style.field.legend.border', '图例边框'],
+        ['legend_text', 'visual_style.field.legend.text', '图例文字']
+    ];
+    const fieldUsageByExperiment = {
+        open_field: {
+            trackmap: ['background', 'border', 'special_fill', 'special_outline', 'track', 'start', 'end'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outline', 'border']
+        },
+        novel_object: {
+            trackmap: ['background', 'border', 'special_fill', 'special_outline', 'track', 'start', 'end', 'object_familiar', 'object_novel', 'object_neutral'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outline', 'border']
+        },
+        y_maze: {
+            trackmap: ['background', 'border', 'region_fill', 'region_outline', 'special_fill', 'special_outline', 'track', 'start', 'end', 'text'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outside', 'outline', 'border']
+        },
+        elevated_plus: {
+            trackmap: ['background', 'border', 'region_fill', 'region_outline', 'special_fill', 'special_outline', 'track', 'start', 'end'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outside', 'outline', 'border']
+        },
+        light_dark: {
+            trackmap: ['background', 'border', 'region_fill', 'region_outline', 'dark_region_fill', 'track', 'start', 'end'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outline', 'border']
+        },
+        water_maze: {
+            trackmap: ['background', 'border', 'region_fill', 'region_outline', 'track', 'start', 'end', 'text', 'platform', 'thigmotaxis'],
+            heatmap: ['custom_low', 'custom_high', 'zero_color', 'outside']
+        }
+    };
+
+    const state = {
+        style: null,
+        defaults: null,
+        colormaps: [],
+        experiments: [],
+        experiment: localStorage.getItem('mousescope_visual_preview_experiment') || 'open_field',
+        previewTimer: null,
+        previewToken: 0,
+        previewStatusKey: '',
+        previewStatusType: '',
+        statusKey: '',
+        statusType: ''
+    };
+
+    const statusEl = document.getElementById('styleStatus');
+    const saveBtn = document.getElementById('saveStyleBtn');
+    const resetBtn = document.getElementById('resetStyleBtn');
+    const colormapSelect = document.getElementById('heatmapColormap');
+    const showLegendInput = document.getElementById('heatmapShowLegend');
+    const highLabelInput = document.getElementById('legendHighLabel');
+    const lowLabelInput = document.getElementById('legendLowLabel');
+    const previewPanel = document.getElementById('previewPanel');
+    const previewState = document.getElementById('previewState');
+    const trackImg = document.getElementById('trackPreviewImg');
+    const heatImg = document.getElementById('heatPreviewImg');
+    const trackExperimentLabel = document.getElementById('trackExperimentLabel');
+    const heatExperimentLabel = document.getElementById('heatExperimentLabel');
+
+    function lang() {
+        return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh');
+    }
+
+    function tr(key, fallback = '') {
+        const dict = (typeof I18N !== 'undefined' && I18N[lang()]) || {};
+        return dict[key] ?? fallback;
+    }
+
+    function setStatus(messageOrKey, type, fallback = '') {
+        state.statusKey = messageOrKey || '';
+        state.statusType = type || 'info';
+        const message = messageOrKey ? tr(messageOrKey, fallback || messageOrKey) : '';
+        statusEl.textContent = message;
+        statusEl.className = `alert alert-${state.statusType}`;
+        statusEl.style.display = message ? 'block' : 'none';
+    }
+
+    function setStatusText(message, type) {
+        state.statusKey = '';
+        state.statusType = type || 'info';
+        statusEl.textContent = message || '';
+        statusEl.className = `alert alert-${state.statusType}`;
+        statusEl.style.display = message ? 'block' : 'none';
+    }
+
+    function setPreviewState(messageOrKey, type, fallback = '') {
+        state.previewStatusKey = messageOrKey || '';
+        state.previewStatusType = type || '';
+        previewState.textContent = messageOrKey ? tr(messageOrKey, fallback || messageOrKey) : '';
+        previewState.className = `preview-state ${state.previewStatusType}`;
+    }
+
+    function setPreviewStateText(message, type) {
+        state.previewStatusKey = '';
+        state.previewStatusType = type || '';
+        previewState.textContent = message || '';
+        previewState.className = `preview-state ${state.previewStatusType}`;
+    }
+
+    function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    function color(section, key) {
+        return (state.style && state.style[section] && state.style[section][key]) || '#000000';
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+
+    function experimentLabel(item) {
+        return tr(`visual_style.exp.${item.key}`, item.label || item.key);
+    }
+
+    function activeExperiment() {
+        return state.experiments.find(item => item.key === state.experiment) || state.experiments[0] || {key: 'open_field', label: '旷场', short_label: 'OFT'};
+    }
+
+    function colormapLabel(item) {
+        if (item.key === 'custom') {
+            return tr('visual_style.colormap.custom', item.label || 'Custom Low-High');
+        }
+        return item.label || item.key;
+    }
+
+    function currentFieldUsage() {
+        return fieldUsageByExperiment[state.experiment] || fieldUsageByExperiment.open_field;
+    }
+
+    function filterFields(fields, keys) {
+        const wanted = new Set(keys || []);
+        return fields.filter(([key]) => wanted.has(key));
+    }
+
+    function renderColorControls(targetId, section, fields) {
+        const target = document.getElementById(targetId);
+        target.innerHTML = fields.map(([key, labelKey, fallback]) => `
+            <div class="color-field">
+                <label for="${section}_${key}" data-style-label-key="${escapeHtml(labelKey)}" data-style-label-fallback="${escapeHtml(fallback)}">${escapeHtml(tr(labelKey, fallback))}</label>
+                <input type="color" id="${section}_${key}" data-style-section="${section}" data-style-key="${key}">
+            </div>
+        `).join('');
+    }
+
+    function renderAllColorControls() {
+        const usage = currentFieldUsage();
+        renderColorControls('trackControls', 'trackmap', filterFields(trackFields, usage.trackmap));
+        renderColorControls('gridControls', 'trackmap', gridFields);
+        renderColorControls('heatmapControls', 'heatmap', filterFields(heatmapFields, usage.heatmap));
+        renderColorControls('legendControls', 'heatmap', legendFields);
+    }
+
+    function refreshColorControls() {
+        renderAllColorControls();
+        bindColorInputs();
+        if (state.style) {
+            syncControls();
+        }
+    }
+
+    function bindColorInputs() {
+        document.querySelectorAll('[data-style-section]').forEach(input => {
+            input.addEventListener('input', () => {
+                if (!state.style) return;
+                const section = input.dataset.styleSection;
+                const key = input.dataset.styleKey;
+                state.style[section][key] = input.value;
+                if (section === 'heatmap' && (key === 'custom_low' || key === 'custom_high')) {
+                    state.style.heatmap.colormap = 'custom';
+                    colormapSelect.value = 'custom';
+                }
+                requestPreview(false);
+            });
+        });
+    }
+
+    function renderColormapOptions() {
+        const current = colormapSelect.value || (state.style && state.style.heatmap.colormap) || 'jet';
+        colormapSelect.innerHTML = state.colormaps.map(item => (
+            `<option value="${escapeHtml(item.key)}">${escapeHtml(colormapLabel(item))}</option>`
+        )).join('');
+        colormapSelect.value = current;
+    }
+
+    function renderExperiments() {
+        const target = document.getElementById('experimentSwitcher');
+        if (!state.experiments.some(item => item.key === state.experiment)) {
+            state.experiment = (state.experiments[0] && state.experiments[0].key) || 'open_field';
+        }
+        target.innerHTML = state.experiments.map(item => `
+            <button type="button" class="btn btn-sm btn-outline-primary ${item.key === state.experiment ? 'active' : ''}" data-experiment="${escapeHtml(item.key)}">
+                ${escapeHtml(experimentLabel(item))}
+            </button>
+        `).join('');
+        target.querySelectorAll('[data-experiment]').forEach(button => {
+            button.addEventListener('click', () => {
+                state.experiment = button.dataset.experiment;
+                localStorage.setItem('mousescope_visual_preview_experiment', state.experiment);
+                renderExperiments();
+                refreshColorControls();
+                requestPreview(true);
+            });
+        });
+        const exp = activeExperiment();
+        const label = experimentLabel(exp);
+        trackExperimentLabel.textContent = label;
+        heatExperimentLabel.textContent = label;
+    }
+
+    function bindStaticControls() {
+        colormapSelect.addEventListener('change', () => {
+            state.style.heatmap.colormap = colormapSelect.value;
+            requestPreview(false);
+        });
+        showLegendInput.addEventListener('change', () => {
+            state.style.heatmap.show_legend = showLegendInput.checked;
+            requestPreview(false);
+        });
+        highLabelInput.addEventListener('input', () => {
+            state.style.heatmap.legend_high_label = highLabelInput.value.slice(0, 16) || 'High';
+            requestPreview(false);
+        });
+        lowLabelInput.addEventListener('input', () => {
+            state.style.heatmap.legend_low_label = lowLabelInput.value.slice(0, 16) || 'Low';
+            requestPreview(false);
+        });
+    }
+
+    function syncControls() {
+        document.querySelectorAll('[data-style-section]').forEach(input => {
+            input.value = color(input.dataset.styleSection, input.dataset.styleKey);
+        });
+        colormapSelect.value = state.style.heatmap.colormap || 'jet';
+        showLegendInput.checked = !!state.style.heatmap.show_legend;
+        highLabelInput.value = state.style.heatmap.legend_high_label || 'High';
+        lowLabelInput.value = state.style.heatmap.legend_low_label || 'Low';
+    }
+
+    function requestPreview(immediate) {
+        if (!state.style) return;
+        if (state.previewTimer) {
+            clearTimeout(state.previewTimer);
+            state.previewTimer = null;
+        }
+        const run = () => {
+            const token = ++state.previewToken;
+            previewPanel.classList.add('loading');
+            setPreviewState('visual_style.preview.loading', '', '正在生成预览...');
+            const exp = activeExperiment();
+            const label = experimentLabel(exp);
+            trackExperimentLabel.textContent = label;
+            heatExperimentLabel.textContent = label;
+            fetch('/api/visual_style/preview', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({style: state.style, experiment: state.experiment})
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (token !== state.previewToken) return;
+                    if (!data.success) throw new Error(data.error || tr('visual_style.preview.failed', '预览生成失败'));
+                    trackImg.src = data.trackmap;
+                    heatImg.src = data.heatmap;
+                    setPreviewState('visual_style.preview.updated', 'ok', '预览已更新');
+                })
+                .catch(error => {
+                    if (token !== state.previewToken) return;
+                    setPreviewStateText(error.message || String(error), 'error');
+                })
+                .finally(() => {
+                    if (token === state.previewToken) {
+                        previewPanel.classList.remove('loading');
+                    }
+                });
+        };
+        if (immediate) {
+            run();
+        } else {
+            state.previewTimer = setTimeout(run, 250);
+        }
+    }
+
+    function loadStyle() {
+        setStatus('visual_style.status.loading', 'info', '正在读取图像样式...');
+        setPreviewState('', '');
+        fetch('/api/visual_style')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.error || tr('visual_style.status.load_failed', '读取失败'));
+                state.style = clone(data.style);
+                state.defaults = clone(data.defaults);
+                state.colormaps = data.colormaps || [];
+                state.experiments = data.preview_experiments || [
+                    {key: 'open_field', label: '旷场', short_label: 'OFT'},
+                    {key: 'y_maze', label: 'Y 迷宫', short_label: 'Y-maze'},
+                    {key: 'elevated_plus', label: '高架十字迷宫', short_label: 'EPM'},
+                    {key: 'light_dark', label: '明暗箱', short_label: 'LDB'}
+                ];
+                renderColormapOptions();
+                renderExperiments();
+                refreshColorControls();
+                setStatus('', 'info');
+                requestPreview(true);
+                window.setTimeout(() => {
+                    if (window.MouseScopeTour) {
+                        MouseScopeTour.start('visual-style');
+                    }
+                }, 250);
+            })
+            .catch(error => setStatusText(error.message || String(error), 'danger'));
+    }
+
+    function saveStyle() {
+        saveBtn.disabled = true;
+        setStatus('visual_style.status.saving', 'info', '正在保存...');
+        fetch('/api/visual_style', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({style: state.style})
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.error || tr('visual_style.status.save_failed', '保存失败'));
+                state.style = clone(data.style);
+                syncControls();
+                requestPreview(true);
+                setStatus('visual_style.status.saved', 'success', '已保存。后续新启动的实验会使用这套轨迹图和热力图样式。');
+            })
+            .catch(error => setStatusText(error.message || String(error), 'danger'))
+            .finally(() => { saveBtn.disabled = false; });
+    }
+
+    function resetStyle() {
+        if (!confirm(tr('visual_style.confirm.reset', '恢复默认图像样式？'))) return;
+        resetBtn.disabled = true;
+        setStatus('visual_style.status.resetting', 'info', '正在恢复默认...');
+        fetch('/api/visual_style/reset', {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.error || tr('visual_style.status.reset_failed', '恢复失败'));
+                state.style = clone(data.style);
+                syncControls();
+                requestPreview(true);
+                setStatus('visual_style.status.reset_done', 'success', '已恢复默认样式。');
+            })
+            .catch(error => setStatusText(error.message || String(error), 'danger'))
+            .finally(() => { resetBtn.disabled = false; });
+    }
+
+    function refreshLanguage() {
+        document.title = tr('visual_style.title_doc', '图像样式 - MouseScope');
+        document.querySelectorAll('[data-style-label-key]').forEach(label => {
+            label.textContent = tr(label.dataset.styleLabelKey, label.dataset.styleLabelFallback || '');
+        });
+        renderColormapOptions();
+        renderExperiments();
+        refreshColorControls();
+        if (state.previewStatusKey) {
+            setPreviewState(state.previewStatusKey, state.previewStatusType, previewState.textContent);
+        }
+        if (state.statusKey) {
+            setStatus(state.statusKey, state.statusType, statusEl.textContent);
+        }
+    }
+
+    refreshColorControls();
+    bindStaticControls();
+    saveBtn.addEventListener('click', saveStyle);
+    resetBtn.addEventListener('click', resetStyle);
+    document.addEventListener('mousescope:langchange', refreshLanguage);
+    document.addEventListener('DOMContentLoaded', loadStyle);
+
+    MouseScopeTour.register('visual-style', {
+        version: 'v1',
+        autoStart: false,
+        steps: [
+            {target: '[data-tour-id="visual-style-overview"]', titleKey: 'tour.visual_style.overview.title', bodyKey: 'tour.visual_style.overview.body'},
+            {target: '[data-tour-id="visual-style-experiment"]', titleKey: 'tour.visual_style.experiment.title', bodyKey: 'tour.visual_style.experiment.body'},
+            {target: '[data-tour-id="visual-style-track"]', titleKey: 'tour.visual_style.track.title', bodyKey: 'tour.visual_style.track.body'},
+            {target: '[data-tour-id="visual-style-grid"]', titleKey: 'tour.visual_style.grid.title', bodyKey: 'tour.visual_style.grid.body'},
+            {target: '[data-tour-id="visual-style-heatmap"]', titleKey: 'tour.visual_style.heatmap.title', bodyKey: 'tour.visual_style.heatmap.body'},
+            {target: '[data-tour-id="visual-style-legend"]', titleKey: 'tour.visual_style.legend.title', bodyKey: 'tour.visual_style.legend.body'},
+            {target: '[data-tour-id="visual-style-preview"]', titleKey: 'tour.visual_style.preview.title', bodyKey: 'tour.visual_style.preview.body'},
+            {target: '[data-tour-id="visual-style-save"]', titleKey: 'tour.visual_style.save.title', bodyKey: 'tour.visual_style.save.body'}
+        ]
+    });
+})();
+</script>
+{% endblock %}

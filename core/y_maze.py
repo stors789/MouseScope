@@ -31,18 +31,13 @@ from maze_zone_utils import (
     sort_polygon_points,
 )
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TEXT,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_heatmap,
     classic_marker_radius,
     classic_path_thickness,
     draw_start_end_markers,
     fill_poly_alpha,
+    style_color,
 )
 
 
@@ -50,8 +45,8 @@ def sanitize_name(text: str, fallback: str = "ymaze") -> str:
     return ascii_slug(text, fallback=fallback, max_length=80)
 
 
-def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
-    return classic_heatmap(norm)
+def _paper_blend_heatmap(norm: np.ndarray, style: Any | None = None) -> np.ndarray:
+    return classic_heatmap(norm, style)
 
 
 def _zone_color(zone_group: str, detected: bool) -> Tuple[int, int, int]:
@@ -69,6 +64,101 @@ def _draw_poly_outline(
     thickness: int,
 ) -> None:
     cv2.polylines(image, [poly.astype(np.int32)], True, color, thickness, cv2.LINE_AA)
+
+
+def _arm_head_label_anchor(
+    arm_poly: Sequence[Sequence[float]],
+    center_poly: Sequence[Sequence[float]],
+    outward_px: float = 12.0,
+) -> np.ndarray:
+    pts = np.asarray(arm_poly, dtype=np.float32).reshape(-1, 2)
+    if len(pts) < 2:
+        return polygon_centroid(pts)
+
+    center = polygon_centroid(center_poly)
+    arm_center = polygon_centroid(pts)
+    outward = arm_center - center
+    norm = float(np.linalg.norm(outward))
+    if norm <= 1e-6:
+        return arm_center
+
+    outward_unit = outward / norm
+    best_midpoint = None
+    best_projection = -float("inf")
+    for idx in range(len(pts)):
+        p0 = pts[idx]
+        p1 = pts[(idx + 1) % len(pts)]
+        midpoint = (p0 + p1) * 0.5
+        projection = float(np.dot(midpoint - center, outward_unit))
+        if projection > best_projection:
+            best_projection = projection
+            best_midpoint = midpoint
+
+    if best_midpoint is None:
+        return arm_center
+    return (best_midpoint + outward_unit * float(outward_px)).astype(np.float32)
+
+
+def _centered_text_origin(
+    image_shape: Tuple[int, ...],
+    text: str,
+    anchor: Sequence[float],
+    font_face: int,
+    font_scale: float,
+    thickness: int,
+    margin: int = 4,
+) -> Tuple[int, int]:
+    (text_w, text_h), baseline = cv2.getTextSize(text, font_face, font_scale, thickness)
+    x = int(round(float(anchor[0]) - text_w * 0.5))
+    y = int(round(float(anchor[1]) + text_h * 0.5))
+    width = int(image_shape[1])
+    height = int(image_shape[0])
+
+    max_x = width - text_w - margin
+    if max_x >= margin:
+        x = int(np.clip(x, margin, max_x))
+    else:
+        x = max(0, min(x, max(width - text_w, 0)))
+
+    min_y = text_h + margin
+    max_y = height - baseline - margin
+    if max_y >= min_y:
+        y = int(np.clip(y, min_y, max_y))
+    else:
+        y = max(text_h, min(y, max(height - baseline, text_h)))
+    return x, y
+
+
+def _draw_y_maze_arm_label(
+    image: np.ndarray,
+    label: str,
+    arm_poly: Sequence[Sequence[float]],
+    center_poly: Sequence[Sequence[float]],
+    color: Tuple[int, int, int],
+    font_scale: float = 0.6,
+    thickness: int = 2,
+) -> None:
+    pts = np.asarray(arm_poly, dtype=np.float32).reshape(-1, 2)
+    if len(pts) >= 2:
+        edge_lengths = [
+            float(np.linalg.norm(pts[(idx + 1) % len(pts)] - pts[idx]))
+            for idx in range(len(pts))
+        ]
+        offset = float(np.clip(min(edge_lengths) * 0.18, 8.0, 28.0))
+    else:
+        offset = 12.0
+    anchor = _arm_head_label_anchor(arm_poly, center_poly, outward_px=offset)
+    origin = _centered_text_origin(image.shape, label, anchor, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    cv2.putText(
+        image,
+        label,
+        origin,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        font_scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
 
 
 def _render_canvas_from_image_polygons(
@@ -786,17 +876,12 @@ def draw_y_maze_results(
             _draw_poly_outline(output, entry_poly, (0, 191, 255), 2)
 
         for arm_name in tracker.ARM_NAMES:
-            poly = tracker.zone_polygons_img[arm_name]
-            anchor = polygon_centroid(poly)
-            cv2.putText(
+            _draw_y_maze_arm_label(
                 output,
                 tracker.ARM_LABELS[arm_name],
-                (int(anchor[0]) - 8, int(anchor[1]) - 8),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
+                tracker.zone_polygons_img[arm_name],
+                tracker.zone_polygons_img["center"],
                 (15, 23, 42),
-                2,
-                cv2.LINE_AA,
             )
 
         contour = result.get("contour")
@@ -835,6 +920,7 @@ def render_y_maze_heatmap(
     tracker: YMazeTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_template_cm_stats:
         return None
@@ -851,12 +937,13 @@ def render_y_maze_heatmap(
         return None
 
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    image = _paper_blend_heatmap(norm)
-    image[mask == 0] = CLASSIC_BG
+    image = _paper_blend_heatmap(norm, style)
+    image[mask == 0] = style_color(style, "heatmap", "outside")
 
     for zone_name, poly in translated.items():
-        _draw_poly_outline(image, poly, CLASSIC_HEAT_OUTLINE, 2)
-    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        _draw_poly_outline(image, poly, style_color(style, "heatmap", "outline"), 2)
+    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), style_color(style, "heatmap", "border"), 1, cv2.LINE_AA)
+    image = append_heatmap_legend(image, style)
 
     if write_image_unicode(output_path, image):
         return output_path
@@ -867,32 +954,29 @@ def render_y_maze_trackmap(
     tracker: YMazeTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_template_cm_stats:
         return None
 
     mask, translated, offset_cm = render_canvas_from_cm_polygons(tracker.template_polygons_cm, pixels_per_cm, padding_cm=2.2)
-    canvas = np.full((mask.shape[0], mask.shape[1], 3), CLASSIC_BG, dtype=np.uint8)
-    canvas[mask == 0] = CLASSIC_BG
+    canvas = np.full((mask.shape[0], mask.shape[1], 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
+    canvas[mask == 0] = style_color(style, "trackmap", "background")
 
     for zone_name, poly in translated.items():
         group = "center" if zone_name == "center" else "arm"
-        fill_color = (226, 242, 227) if group == "center" else CLASSIC_GUIDE_FILL
-        outline_color = (94, 170, 106) if group == "center" else CLASSIC_GUIDE_OUTLINE
+        fill_color = style_color(style, "trackmap", "special_fill") if group == "center" else style_color(style, "trackmap", "region_fill")
+        outline_color = style_color(style, "trackmap", "special_outline") if group == "center" else style_color(style, "trackmap", "region_outline")
         fill_poly_alpha(canvas, poly, fill_color, alpha=0.82)
         _draw_poly_outline(canvas, poly, outline_color, 2)
 
     for arm_name in tracker.ARM_NAMES:
-        anchor = polygon_centroid(translated[arm_name])
-        cv2.putText(
+        _draw_y_maze_arm_label(
             canvas,
             tracker.ARM_LABELS[arm_name],
-            (int(anchor[0]) - 8, int(anchor[1]) - 8),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            CLASSIC_TEXT,
-            2,
-            cv2.LINE_AA,
+            translated[arm_name],
+            translated["center"],
+            style_color(style, "trackmap", "text"),
         )
 
     points = []
@@ -901,9 +985,9 @@ def render_y_maze_trackmap(
     path_thickness = classic_path_thickness(pixels_per_cm)
     marker_radius = classic_marker_radius(pixels_per_cm)
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, marker_radius)
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius, style)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "border"), 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path
@@ -916,6 +1000,7 @@ def render_y_maze_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     valid_paths = [path for path in image_paths if path]
     if not valid_paths:
@@ -937,10 +1022,10 @@ def render_y_maze_image_grid(
 
     canvas_h = title_h + rows * max_h + (rows + 1) * padding
     canvas_w = cols * max_w + (cols + 1) * padding
-    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+    canvas = np.full((canvas_h, canvas_w, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
 
     if title:
-        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (30, 41, 59), 2, cv2.LINE_AA)
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
 
     for idx, img in enumerate(images):
         row = idx // cols
@@ -949,7 +1034,7 @@ def render_y_maze_image_grid(
         x = padding + col * (max_w + padding)
         h, w = img.shape[:2]
         canvas[y : y + h, x : x + w] = img
-        cv2.rectangle(canvas, (x, y), (x + w - 1, y + h - 1), (226, 232, 240), 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + w - 1, y + h - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path

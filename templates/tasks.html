@@ -4,33 +4,6 @@
 {% block extra_css %}
 <style>
 .tasks-shell { max-width: 1440px; margin: 0 auto; }
-.tasks-hero {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    margin-bottom: 1.25rem;
-    padding: 2rem;
-    border: 1px solid rgba(201, 100, 66, 0.16);
-    border-radius: 28px;
-    background: linear-gradient(135deg, rgba(250, 249, 245, 0.98), rgba(246, 238, 228, 0.94));
-    box-shadow: 0 18px 42px rgba(52, 34, 20, 0.07);
-}
-.tasks-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.72rem;
-    border-radius: 999px;
-    background: rgba(201, 100, 66, 0.1);
-    color: #8d5738;
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-.tasks-hero h1 { margin: 0.75rem 0 0.45rem; font-size: clamp(2.4rem, 4vw, 4rem); line-height: 1.05; }
-.tasks-hero p { max-width: 760px; margin: 0; color: var(--text-secondary); line-height: 1.75; }
 .tasks-actions { display: flex; gap: 0.65rem; flex-wrap: wrap; }
 .tasks-summary {
     display: grid;
@@ -253,7 +226,6 @@
     .task-buttons { grid-column: 2; }
 }
 @media (max-width: 640px) {
-    .tasks-hero { padding: 1.35rem; border-radius: 22px; }
     .tasks-summary,
     .tasks-toolbar { grid-template-columns: 1fr; }
     .tasks-bulkbar { align-items: stretch; }
@@ -266,13 +238,15 @@
 
 {% block content %}
 <div class="tasks-shell" data-tour-page="tasks">
-    <section class="tasks-hero">
-        <div>
-            <div class="tasks-kicker"><i class="fas fa-list-check"></i><span data-i18n="tasks.kicker">Analysis Workspace</span></div>
-            <h1 data-i18n="tasks.title">任务中心</h1>
-            <p data-i18n="tasks.subtitle">集中查看正在运行的分析和本地历史记录；软件重启后，已完成、出错或中断的任务仍可搜索。</p>
+    <section class="app-page-hero">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-list-check"></i></span>
+            <div>
+                <h1 class="app-page-title" data-i18n="tasks.title">任务中心</h1>
+                <p class="app-page-subtitle" data-i18n="tasks.subtitle">集中查看正在运行的分析和本地历史记录；软件重启后，已完成、出错或中断的任务仍可搜索。</p>
+            </div>
         </div>
-        <div class="tasks-actions" data-tour-id="tasks-actions">
+        <div class="app-page-actions tasks-actions" data-tour-id="tasks-actions">
             <a href="{{ url_for('projects_page') }}" class="btn btn-outline-primary" data-tour-id="tasks-new-project">
                 <i class="fas fa-folder-plus me-2"></i><span data-i18n="tasks.action.new_project">新增项目</span>
             </a>

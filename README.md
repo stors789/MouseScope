@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v3.3.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v3.4.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
   <img src="https://img.shields.io/badge/Modules-8%20Assays-16a34a" alt="Modules"/>
@@ -23,9 +23,9 @@
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v3.3.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v3.4.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope Desktop v3.3.0 首页 · Project Workspace and Quick Analysis entry points</sub>
+  <sub>MouseScope Desktop v3.4.0 首页 · Project Workspace and Quick Analysis entry points</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
@@ -381,13 +381,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {3.3.0}
+  version = {3.4.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.3.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.4.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 

@@ -3,38 +3,6 @@
 {% block extra_css %}
 <style>
 .upload-shell { max-width: 1120px; margin: 0 auto; }
-.upload-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-}
-.upload-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.42rem 0.78rem;
-    border-radius: 999px;
-    background: rgba(201, 100, 66, 0.1);
-    color: #8b5a3c;
-    font-size: 0.85rem;
-    font-weight: 700;
-}
-.upload-title {
-    margin: 0.55rem 0 0.35rem;
-    color: var(--text-primary);
-    font-size: clamp(2rem, 2.8vw, 2.7rem);
-    line-height: 1.08;
-    font-family: "Georgia", "Times New Roman", serif;
-}
-.upload-copy {
-    margin: 0;
-    max-width: 780px;
-    color: var(--text-secondary);
-    line-height: 1.65;
-}
 .upload-panel .card-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -112,16 +80,15 @@
 {% endblock %}
 {% block content %}
 <div class="upload-shell" data-tour-page="upload">
-    <section class="upload-header">
-        <div>
-            <div class="upload-kicker">
-                <i class="fas fa-clapperboard"></i>
-                <span>MouseScope v3.3.0</span>
+    <section class="app-page-hero">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-bolt"></i></span>
+            <div>
+                <h1 class="app-page-title" data-page-i18n="hero.title">快速分析</h1>
+                <p class="app-page-subtitle" data-page-i18n="hero.copy">
+                    选择实验模块，拖拽视频或粘贴本机路径，然后进入对应设置页。
+                </p>
             </div>
-            <h1 class="upload-title" data-page-i18n="hero.title">快速分析</h1>
-            <p class="upload-copy" data-page-i18n="hero.copy">
-                选择实验模块，拖拽视频或粘贴本机路径，然后进入对应设置页。
-            </p>
         </div>
     </section>
 

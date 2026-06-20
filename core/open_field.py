@@ -18,13 +18,7 @@ import numpy as np
 
 from file_utils import ascii_slug, read_image_unicode, write_image_unicode
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_END,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_border_thickness,
     classic_guide_thickness,
     classic_heatmap,
@@ -32,6 +26,7 @@ from spatial_render import (
     classic_path_thickness,
     draw_start_end_markers,
     fill_rect_alpha,
+    style_color,
 )
 
 
@@ -719,8 +714,8 @@ def draw_open_field_results(
     return output
 
 
-def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
-    return classic_heatmap(norm)
+def _paper_blend_heatmap(norm: np.ndarray, style: Any | None = None) -> np.ndarray:
+    return classic_heatmap(norm, style)
 
 
 def _paper_border_thickness(pixels_per_cm: int) -> int:
@@ -796,6 +791,7 @@ def render_open_field_heatmap(
     tracker: OpenFieldTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     points = tracker.trajectory_cm_stats
     if not points:
@@ -815,20 +811,23 @@ def render_open_field_heatmap(
         return None
 
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    color = _paper_blend_heatmap(norm)
+    color = _paper_blend_heatmap(norm, style)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
+    heat_outline = style_color(style, "heatmap", "outline")
+    heat_border = style_color(style, "heatmap", "border")
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
     cv2.rectangle(
         color,
         (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
         (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        CLASSIC_HEAT_OUTLINE,
+        heat_outline,
         guide_thickness,
         cv2.LINE_AA,
     )
-    cv2.rectangle(color, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
+    cv2.rectangle(color, (0, 0), (width - 1, height - 1), heat_border, border_thickness, cv2.LINE_AA)
+    color = append_heatmap_legend(color, style)
 
     if write_image_unicode(output_path, color):
         return output_path
@@ -839,6 +838,7 @@ def render_open_field_trackmap(
     tracker: OpenFieldTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     points_cm = tracker.trajectory_cm_stats
     if not points_cm:
@@ -846,7 +846,7 @@ def render_open_field_trackmap(
 
     width = max(160, int(round(tracker.arena_width_cm * pixels_per_cm)))
     height = max(160, int(round(tracker.arena_height_cm * pixels_per_cm)))
-    canvas = np.full((height, width, 3), CLASSIC_BG, dtype=np.uint8)
+    canvas = np.full((height, width, 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
     path_thickness = _paper_path_thickness(pixels_per_cm)
@@ -855,9 +855,9 @@ def render_open_field_trackmap(
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
     center_top_left = (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm))
     center_bottom_right = (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm))
-    fill_rect_alpha(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_FILL, alpha=0.92)
-    cv2.rectangle(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_OUTLINE, guide_thickness, cv2.LINE_AA)
-    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
+    fill_rect_alpha(canvas, center_top_left, center_bottom_right, style_color(style, "trackmap", "special_fill"), alpha=0.92)
+    cv2.rectangle(canvas, center_top_left, center_bottom_right, style_color(style, "trackmap", "special_outline"), guide_thickness, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), style_color(style, "trackmap", "border"), border_thickness, cv2.LINE_AA)
 
     points = []
     for x_cm, y_cm in points_cm:
@@ -866,8 +866,8 @@ def render_open_field_trackmap(
         points.append((px, py))
 
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, marker_radius)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius, style)
 
     if write_image_unicode(output_path, canvas):
         return output_path
@@ -880,6 +880,7 @@ def render_open_field_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     valid_paths = [path for path in image_paths if path]
     if not valid_paths:
@@ -897,11 +898,14 @@ def render_open_field_image_grid(
     max_w = max(img.shape[1] for img in images)
     cols = max(1, min(int(columns), len(images)))
     rows = int(math.ceil(len(images) / cols))
-    title_h = 0
+    title_h = 46 if title else 0
 
     canvas_h = title_h + rows * max_h + (rows + 1) * padding
     canvas_w = cols * max_w + (cols + 1) * padding
-    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+    canvas = np.full((canvas_h, canvas_w, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
+
+    if title:
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
 
     for idx, img in enumerate(images):
         row = idx // cols
@@ -909,9 +913,9 @@ def render_open_field_image_grid(
         y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
-        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
 
-    cv2.rectangle(canvas, (0, 0), (canvas_w - 1, canvas_h - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (canvas_w - 1, canvas_h - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path

@@ -19,13 +19,7 @@ import cv2
 import numpy as np
 from file_utils import ascii_slug, write_image_unicode
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TEXT,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_border_thickness,
     classic_guide_thickness,
     classic_heatmap,
@@ -33,6 +27,7 @@ from spatial_render import (
     classic_path_thickness,
     draw_start_end_markers,
     fill_rect_alpha,
+    style_color,
 )
 
 try:
@@ -1750,17 +1745,17 @@ def _object_color(role: str) -> Tuple[int, int, int]:
     return (148, 163, 184)
 
 
-def _paper_role_color(role: str) -> Tuple[int, int, int]:
+def _paper_role_color(role: str, style: Any | None = None) -> Tuple[int, int, int]:
     value = str(role or "").strip().lower()
     if value == "novel":
-        return (43, 142, 242)
+        return style_color(style, "trackmap", "object_novel")
     if value == "familiar":
-        return (167, 121, 78)
-    return (148, 163, 184)
+        return style_color(style, "trackmap", "object_familiar")
+    return style_color(style, "trackmap", "object_neutral")
 
 
-def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
-    return classic_heatmap(norm)
+def _paper_blend_heatmap(norm: np.ndarray, style: Any | None = None) -> np.ndarray:
+    return classic_heatmap(norm, style)
 
 
 def _paper_border_thickness(pixels_per_cm: int) -> int:
@@ -1916,6 +1911,7 @@ def render_novel_object_heatmap(
     tracker: NovelObjectTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     points = tracker.trajectory_cm_stats
     if not points:
@@ -1935,17 +1931,17 @@ def render_novel_object_heatmap(
         return None
 
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    color = _paper_blend_heatmap(norm)
+    color = _paper_blend_heatmap(norm, style)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
-    cv2.rectangle(color, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
+    cv2.rectangle(color, (0, 0), (width - 1, height - 1), style_color(style, "heatmap", "border"), border_thickness, cv2.LINE_AA)
 
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
     cv2.rectangle(
         color,
         (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm)),
         (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm)),
-        CLASSIC_HEAT_OUTLINE,
+        style_color(style, "heatmap", "outline"),
         guide_thickness,
         cv2.LINE_AA,
     )
@@ -1954,10 +1950,11 @@ def render_novel_object_heatmap(
         ox = int(np.clip(round(obj["point_cm"][0] * pixels_per_cm), 0, width - 1))
         oy = int(np.clip(round(obj["point_cm"][1] * pixels_per_cm), 0, height - 1))
         radius = int(round(tracker.interaction_radius_cm * pixels_per_cm))
-        color_bgr = _paper_role_color(obj["role"])
+        color_bgr = _paper_role_color(obj["role"], style)
         cv2.circle(color, (ox, oy), radius, color_bgr, border_thickness, cv2.LINE_AA)
         cv2.circle(color, (ox, oy), max(2, border_thickness), color_bgr, -1, cv2.LINE_AA)
 
+    color = append_heatmap_legend(color, style)
     if write_image_unicode(output_path, color):
         return output_path
     return None
@@ -1967,6 +1964,7 @@ def render_novel_object_trackmap(
     tracker: NovelObjectTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     points_cm = tracker.trajectory_cm_stats
     if not points_cm:
@@ -1974,7 +1972,7 @@ def render_novel_object_trackmap(
 
     width = max(160, int(round(tracker.arena_width_cm * pixels_per_cm)))
     height = max(160, int(round(tracker.arena_height_cm * pixels_per_cm)))
-    canvas = np.full((height, width, 3), CLASSIC_BG, dtype=np.uint8)
+    canvas = np.full((height, width, 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
     border_thickness = _paper_border_thickness(pixels_per_cm)
     guide_thickness = _paper_guide_thickness(pixels_per_cm)
     path_thickness = _paper_path_thickness(pixels_per_cm)
@@ -1983,9 +1981,9 @@ def render_novel_object_trackmap(
     cx0, cy0, cx1, cy1 = tracker.get_center_rect_cm()
     center_top_left = (int(cx0 * pixels_per_cm), int(cy0 * pixels_per_cm))
     center_bottom_right = (int(cx1 * pixels_per_cm), int(cy1 * pixels_per_cm))
-    fill_rect_alpha(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_FILL, alpha=0.92)
-    cv2.rectangle(canvas, center_top_left, center_bottom_right, CLASSIC_GUIDE_OUTLINE, guide_thickness, cv2.LINE_AA)
-    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), CLASSIC_BORDER, border_thickness, cv2.LINE_AA)
+    fill_rect_alpha(canvas, center_top_left, center_bottom_right, style_color(style, "trackmap", "special_fill"), alpha=0.92)
+    cv2.rectangle(canvas, center_top_left, center_bottom_right, style_color(style, "trackmap", "special_outline"), guide_thickness, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (width - 1, height - 1), style_color(style, "trackmap", "border"), border_thickness, cv2.LINE_AA)
 
     points = []
     for x_cm, y_cm in points_cm:
@@ -1994,14 +1992,14 @@ def render_novel_object_trackmap(
         points.append((px, py))
 
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, marker_radius)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius, style)
 
     for obj in tracker.objects:
         ox = int(np.clip(round(obj["point_cm"][0] * pixels_per_cm), 0, width - 1))
         oy = int(np.clip(round(obj["point_cm"][1] * pixels_per_cm), 0, height - 1))
         radius = int(round(tracker.interaction_radius_cm * pixels_per_cm))
-        color = _paper_role_color(obj["role"])
+        color = _paper_role_color(obj["role"], style)
         cv2.circle(canvas, (ox, oy), radius, color, border_thickness, cv2.LINE_AA)
         cv2.circle(canvas, (ox, oy), max(2, border_thickness), color, -1, cv2.LINE_AA)
 

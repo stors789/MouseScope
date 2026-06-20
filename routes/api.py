@@ -30,6 +30,7 @@ from services.analysis_sessions import (
 from services.debug_preview import build_debug_preview_response
 from services.experiment_registry import get_experiment_spec, is_experiment_release_hidden, summarize_batch_state
 from services.video_frame_reader import read_video_frame
+from services.visual_style_preview import preview_experiment_payload, render_visual_style_preview
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ def register_api_routes(app, ctx) -> None:
     analysis_sessions = ctx.analysis_sessions
     analysis_history = ctx.analysis_history
     project_store = getattr(ctx, "project_store", None)
+    visual_style_store = getattr(ctx, "visual_style_store", None)
     RESULT_DIR = ctx.RESULT_DIR
     _resolve_result_dir = ctx._resolve_result_dir
     _result_zip_arcname = ctx._result_zip_arcname
@@ -876,6 +878,54 @@ def register_api_routes(app, ctx) -> None:
         return build_debug_preview_response(session_id, sess, data)
 
 
+    @app.route('/api/visual_style', methods=['GET'])
+    def get_visual_style():
+        if visual_style_store is None:
+            return jsonify({'error': 'Visual style store is not configured.'}), 500
+        payload = visual_style_store.get_payload()
+        payload['preview_experiments'] = preview_experiment_payload()
+        payload['success'] = True
+        return jsonify(payload)
+
+
+    @app.route('/api/visual_style', methods=['POST'])
+    def save_visual_style():
+        if visual_style_store is None:
+            return jsonify({'error': 'Visual style store is not configured.'}), 500
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        style = data.get('style', data)
+        saved = visual_style_store.save_style(style)
+        return jsonify({'success': True, 'style': saved})
+
+
+    @app.route('/api/visual_style/reset', methods=['POST'])
+    def reset_visual_style():
+        if visual_style_store is None:
+            return jsonify({'error': 'Visual style store is not configured.'}), 500
+        saved = visual_style_store.reset()
+        return jsonify({'success': True, 'style': saved})
+
+
+    @app.route('/api/visual_style/preview', methods=['POST'])
+    def preview_visual_style():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
+        style = data.get('style')
+        if style is None and visual_style_store is not None:
+            style = visual_style_store.get_style()
+        experiment = data.get('experiment') or data.get('experiment_type') or 'open_field'
+        try:
+            payload = render_visual_style_preview(style, experiment)
+        except Exception as exc:
+            logger.exception("Failed to render visual style preview.")
+            return jsonify({'success': False, 'error': str(exc)}), 500
+        payload['success'] = True
+        return jsonify(payload)
+
+
     @app.route('/api/start_analysis/<session_id>', methods=['POST'])
     def start_analysis(session_id):
         """启动分析"""
@@ -909,6 +959,8 @@ def register_api_routes(app, ctx) -> None:
         if is_experiment_release_hidden(experiment_type):
             return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         vision_config = build_analysis_config(experiment_type, sess, data)
+        if visual_style_store is not None:
+            vision_config['visual_style'] = visual_style_store.get_style()
         analysis_class_map = {
             'tst': VisionAnalysisSession,
             'open_field': OpenFieldMultiArenaAnalysisSession,

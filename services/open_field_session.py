@@ -329,6 +329,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         heatmap_final_paths = []
         trackmap_work_paths = []
         trackmap_final_paths = []
+        visual_style = vision_config.get('visual_style')
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"arena_{tracker.roi_id:02d}")
             heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
@@ -336,7 +337,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
             trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_open_field_heatmap(tracker, heatmap_work_path):
+            if render_open_field_heatmap(tracker, heatmap_work_path, style=visual_style):
                 exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
                 heatmap_work_paths.append(heatmap_work_path)
                 heatmap_final_paths.append(exported_heatmap)
@@ -344,7 +345,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 self._log(f"Failed to save OFT heatmap: {heatmap_final_path}")
 
-            if render_open_field_trackmap(tracker, trackmap_work_path):
+            if render_open_field_trackmap(tracker, trackmap_work_path, style=visual_style):
                 exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
                 trackmap_work_paths.append(trackmap_work_path)
                 trackmap_final_paths.append(exported_trackmap)
@@ -358,7 +359,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 heatmap_grid_work_path = f"{output_base}_heatmaps.png"
                 heatmap_grid_final_path = f"{final_base}_heatmaps.png"
-                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Heatmaps"):
+                if render_open_field_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Heatmaps", style=visual_style):
                     self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
                 else:
                     self._log(f"Failed to save OFT heatmap grid: {heatmap_grid_final_path}")
@@ -369,7 +370,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 trackmap_grid_work_path = f"{output_base}_trackmaps.png"
                 trackmap_grid_final_path = f"{final_base}_trackmaps.png"
-                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Trajectory Maps"):
+                if render_open_field_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Trajectory Maps", style=visual_style):
                     self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
                 else:
                     self._log(f"Failed to save OFT trackmap grid: {trackmap_grid_final_path}")

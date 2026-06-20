@@ -312,6 +312,83 @@ small.text-muted,
     padding-bottom: 2rem;
 }
 
+.app-shell {
+    max-width: 1440px;
+    margin: 0 auto;
+}
+
+.app-page-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+    padding: 1.35rem 1.45rem;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    background: linear-gradient(135deg, rgba(250, 249, 245, 0.98), rgba(247, 241, 234, 0.96));
+    box-shadow: var(--shadow-card);
+}
+
+.app-page-title-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: min(100%, 280px);
+}
+
+.app-page-icon {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: rgba(201, 100, 66, 0.11);
+    color: var(--primary-color);
+    border: 1px solid rgba(201, 100, 66, 0.18);
+    font-size: 1.18rem;
+}
+
+.app-page-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: clamp(2rem, 3vw, 2.85rem);
+    line-height: 1.05;
+    letter-spacing: 0;
+}
+
+.app-page-subtitle {
+    max-width: 820px;
+    margin: 0.42rem 0 0;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.app-page-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.app-surface {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+}
+
+.navbar-nav .nav-link.active,
+.navbar-nav .nav-link[aria-current="page"] {
+    color: var(--primary-color) !important;
+    background: rgba(201, 100, 66, 0.1) !important;
+    font-weight: 700;
+}
+
 .tech-panel {
     background: var(--bg-page) !important;
     border: 1px solid var(--border-card) !important;
@@ -660,6 +737,23 @@ body .status-pill {
 @media (max-width: 768px) {
     .card {
         border-radius: 10px !important;
+    }
+    .app-page-hero {
+        padding: 1.05rem;
+        align-items: flex-start;
+    }
+    .app-page-title-group {
+        align-items: flex-start;
+    }
+    .app-page-icon {
+        width: 42px;
+        height: 42px;
+        flex-basis: 42px;
+        border-radius: 14px;
+    }
+    .app-page-actions {
+        width: 100%;
+        justify-content: flex-start;
     }
     .stat-value {
         font-size: 1.25rem !important;

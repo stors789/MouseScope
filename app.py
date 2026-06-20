@@ -92,6 +92,7 @@ from services.experiment_registry import (
 )
 from services.analysis_sessions import configure_analysis_runtime
 from services.debug_preview import cleanup_debug_preview_cache
+from services.visual_style_store import VisualStyleStore
 
 try:
     import pandas as pd
@@ -651,6 +652,7 @@ analysis_history = AnalysisHistoryStore(
     default_result_dir=RESULT_DIR,
 )
 analysis_history.mark_interrupted_running()
+visual_style_store = VisualStyleStore(DATA_DIR / 'visual_style.json')
 
 project_store = ProjectStore(
     projects_root=PROJECTS_DIR,
@@ -895,6 +897,7 @@ route_context = SimpleNamespace(
     analysis_sessions=analysis_sessions,
     analysis_history=analysis_history,
     project_store=project_store,
+    visual_style_store=visual_style_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
     _cleanup_session_artifacts=_cleanup_session_artifacts,

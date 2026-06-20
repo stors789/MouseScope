@@ -302,18 +302,19 @@ class LightDarkBoxMultiArenaAnalysisSession(AnalysisSessionBase):
         heatmap_final_paths = []
         trackmap_work_paths = []
         trackmap_final_paths = []
+        visual_style = vision_config.get('visual_style')
         for tracker in trackers:
             roi_slug = sanitize_light_dark_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"ldb_{tracker.roi_id:02d}")
             heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
             trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
             heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
             trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
-            if render_light_dark_box_heatmap(tracker, heatmap_work_path):
+            if render_light_dark_box_heatmap(tracker, heatmap_work_path, style=visual_style):
                 exported = _export_result_file(heatmap_work_path, heatmap_final_path)
                 heatmap_work_paths.append(heatmap_work_path)
                 heatmap_final_paths.append(exported)
                 self._append_result_file(exported)
-            if render_light_dark_box_trackmap(tracker, trackmap_work_path):
+            if render_light_dark_box_trackmap(tracker, trackmap_work_path, style=visual_style):
                 exported = _export_result_file(trackmap_work_path, trackmap_final_path)
                 trackmap_work_paths.append(trackmap_work_path)
                 trackmap_final_paths.append(exported)
@@ -323,14 +324,14 @@ class LightDarkBoxMultiArenaAnalysisSession(AnalysisSessionBase):
                 self._append_result_file(heatmap_final_paths[0], 'heatmap')
             else:
                 grid_work = f"{output_base}_heatmaps.png"
-                if render_light_dark_box_image_grid(heatmap_work_paths, grid_work, title=f"{video_name} | LDB Heatmaps"):
+                if render_light_dark_box_image_grid(heatmap_work_paths, grid_work, title=f"{video_name} | LDB Heatmaps", style=visual_style):
                     self._append_result_file(_export_result_file(grid_work, f"{final_base}_heatmaps.png"), 'heatmap')
         if trackmap_work_paths:
             if len(trackmap_final_paths) == 1:
                 self._append_result_file(trackmap_final_paths[0], 'trackmap')
             else:
                 grid_work = f"{output_base}_trackmaps.png"
-                if render_light_dark_box_image_grid(trackmap_work_paths, grid_work, title=f"{video_name} | LDB Trajectory Maps"):
+                if render_light_dark_box_image_grid(trackmap_work_paths, grid_work, title=f"{video_name} | LDB Trajectory Maps", style=visual_style):
                     self._append_result_file(_export_result_file(grid_work, f"{final_base}_trackmaps.png"), 'trackmap')
 
         if generate_video and self.is_running:

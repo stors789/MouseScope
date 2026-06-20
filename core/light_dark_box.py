@@ -14,18 +14,13 @@ import numpy as np
 from file_utils import ascii_slug, read_image_unicode, write_image_unicode
 from maze_zone_utils import order_quad_by_axes, project_point_homography, render_canvas_from_cm_polygons
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_END,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_heatmap,
     classic_marker_radius,
     classic_path_thickness,
     draw_start_end_markers,
     fill_poly_alpha,
+    style_color,
 )
 
 
@@ -1218,7 +1213,11 @@ def draw_light_dark_box_results(
     return output
 
 
-def _render_tracker_canvas(tracker: LightDarkBoxTracker, padding: int = 24) -> Tuple[np.ndarray, Dict[str, np.ndarray], Tuple[float, float]]:
+def _render_tracker_canvas(
+    tracker: LightDarkBoxTracker,
+    padding: int = 24,
+    style: Any | None = None,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray], Tuple[float, float]]:
     polys = list(tracker.zone_polygons_img.values())
     if tracker.doorway_polygon_img is not None:
         polys.append(tracker.doorway_polygon_img)
@@ -1229,13 +1228,14 @@ def _render_tracker_canvas(tracker: LightDarkBoxTracker, padding: int = 24) -> T
     translated = {name: (poly + offset).astype(np.int32) for name, poly in tracker.zone_polygons_img.items()}
     if tracker.doorway_polygon_img is not None:
         translated["doorway"] = (tracker.doorway_polygon_img + offset).astype(np.int32)
-    canvas = np.full((height, width, 3), CLASSIC_BG, dtype=np.uint8)
+    canvas = np.full((height, width, 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
     return canvas, translated, (float(offset[0]), float(offset[1]))
 
 
 def _render_tracker_template_canvas(
     tracker: LightDarkBoxTracker,
     pixels_per_cm: int,
+    style: Any | None = None,
 ) -> Tuple[np.ndarray, Dict[str, np.ndarray], Tuple[float, float]]:
     drawable_polygons = {
         name: tracker.template_polygons_cm[name]
@@ -1248,7 +1248,7 @@ def _render_tracker_template_canvas(
         padding_cm=2.0,
         min_size_px=200,
     )
-    canvas = np.full((mask.shape[0], mask.shape[1], 3), CLASSIC_BG, dtype=np.uint8)
+    canvas = np.full((mask.shape[0], mask.shape[1], 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
     return canvas, translated, offset_cm
 
 
@@ -1256,10 +1256,11 @@ def render_light_dark_box_heatmap(
     tracker: LightDarkBoxTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.locomotion_reliable or not tracker.trajectory_template_cm_stats or not tracker.template_polygons_cm:
         return None
-    canvas, translated, offset_cm = _render_tracker_template_canvas(tracker, pixels_per_cm)
+    canvas, translated, offset_cm = _render_tracker_template_canvas(tracker, pixels_per_cm, style)
     heat = np.zeros(canvas.shape[:2], dtype=np.float32)
     for point_cm in tracker.trajectory_template_cm_stats:
         px, py = _cm_point_to_canvas_px(point_cm, offset_cm, pixels_per_cm, heat.shape)
@@ -1267,10 +1268,11 @@ def render_light_dark_box_heatmap(
     heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=max(3, pixels_per_cm), sigmaY=max(3, pixels_per_cm))
     if float(heat.max()) <= 0.0:
         return None
-    color = classic_heatmap(np.clip(heat / heat.max(), 0.0, 1.0))
+    color = classic_heatmap(np.clip(heat / heat.max(), 0.0, 1.0), style)
     for poly in translated.values():
-        cv2.polylines(color, [poly], True, CLASSIC_HEAT_OUTLINE, 2, cv2.LINE_AA)
-    cv2.rectangle(color, (0, 0), (color.shape[1] - 1, color.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.polylines(color, [poly], True, style_color(style, "heatmap", "outline"), 2, cv2.LINE_AA)
+    cv2.rectangle(color, (0, 0), (color.shape[1] - 1, color.shape[0] - 1), style_color(style, "heatmap", "border"), 1, cv2.LINE_AA)
+    color = append_heatmap_legend(color, style)
     if write_image_unicode(output_path, color):
         return output_path
     return None
@@ -1280,21 +1282,23 @@ def render_light_dark_box_trackmap(
     tracker: LightDarkBoxTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.locomotion_reliable or not tracker.trajectory_template_cm_stats or not tracker.template_polygons_cm:
         return None
-    canvas, translated, offset_cm = _render_tracker_template_canvas(tracker, pixels_per_cm)
+    canvas, translated, offset_cm = _render_tracker_template_canvas(tracker, pixels_per_cm, style)
     for name, poly in translated.items():
-        fill_poly_alpha(canvas, poly, CLASSIC_GUIDE_FILL if name != "dark" else (216, 220, 225), alpha=0.88)
-        cv2.polylines(canvas, [poly], True, CLASSIC_GUIDE_OUTLINE, 2, cv2.LINE_AA)
+        fill_color = style_color(style, "trackmap", "region_fill") if name != "dark" else style_color(style, "trackmap", "dark_region_fill")
+        fill_poly_alpha(canvas, poly, fill_color, alpha=0.88)
+        cv2.polylines(canvas, [poly], True, style_color(style, "trackmap", "region_outline"), 2, cv2.LINE_AA)
     points = []
     for point_cm in tracker.trajectory_template_cm_stats:
         points.append(_cm_point_to_canvas_px(point_cm, offset_cm, pixels_per_cm, canvas.shape[:2]))
     thickness = classic_path_thickness(pixels_per_cm)
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, classic_marker_radius(pixels_per_cm))
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, classic_marker_radius(pixels_per_cm), style)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "border"), 1, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None
@@ -1306,6 +1310,7 @@ def render_light_dark_box_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     images = [read_image_unicode(path) for path in image_paths if path]
     images = [img for img in images if img is not None]
@@ -1315,15 +1320,18 @@ def render_light_dark_box_image_grid(
     max_w = max(img.shape[1] for img in images)
     cols = max(1, min(int(columns), len(images)))
     rows = int(math.ceil(len(images) / cols))
-    canvas = np.full((rows * max_h + (rows + 1) * padding, cols * max_w + (cols + 1) * padding, 3), 255, dtype=np.uint8)
+    title_h = 46 if title else 0
+    canvas = np.full((title_h + rows * max_h + (rows + 1) * padding, cols * max_w + (cols + 1) * padding, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
+    if title:
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
     for idx, img in enumerate(images):
         row = idx // cols
         col = idx % cols
-        y = padding + row * (max_h + padding)
+        y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
-        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), CLASSIC_BORDER, 1, cv2.LINE_AA)
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None

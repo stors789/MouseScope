@@ -13,17 +13,13 @@ import numpy as np
 
 from file_utils import ascii_slug, read_image_unicode, write_image_unicode
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_heatmap,
     classic_marker_radius,
     classic_path_thickness,
     draw_start_end_markers,
     fill_poly_alpha,
+    style_color,
 )
 
 
@@ -1094,7 +1090,11 @@ def draw_three_chamber_results(
     return output
 
 
-def _render_tracker_canvas(tracker: ThreeChamberTracker, padding: int = 24) -> Tuple[np.ndarray, Dict[str, np.ndarray], Tuple[float, float]]:
+def _render_tracker_canvas(
+    tracker: ThreeChamberTracker,
+    padding: int = 24,
+    style: Any | None = None,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray], Tuple[float, float]]:
     polys = list(tracker.zone_polygons_img.values()) + list(tracker.door_polygons_img.values())
     min_x, min_y, max_x, max_y = _polygons_bbox(polys)
     width = max(220, int(max_x - min_x + padding * 2))
@@ -1103,17 +1103,18 @@ def _render_tracker_canvas(tracker: ThreeChamberTracker, padding: int = 24) -> T
     translated = {name: (poly + offset).astype(np.int32) for name, poly in tracker.zone_polygons_img.items()}
     for name, poly in tracker.door_polygons_img.items():
         translated[name] = (poly + offset).astype(np.int32)
-    return np.full((height, width, 3), CLASSIC_BG, dtype=np.uint8), translated, (float(offset[0]), float(offset[1]))
+    return np.full((height, width, 3), style_color(style, "trackmap", "background"), dtype=np.uint8), translated, (float(offset[0]), float(offset[1]))
 
 
 def render_three_chamber_heatmap(
     tracker: ThreeChamberTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_px_stats:
         return None
-    canvas, translated, offset = _render_tracker_canvas(tracker)
+    canvas, translated, offset = _render_tracker_canvas(tracker, style=style)
     heat = np.zeros(canvas.shape[:2], dtype=np.float32)
     for x, y in tracker.trajectory_px_stats:
         px = int(np.clip(round(x + offset[0]), 0, heat.shape[1] - 1))
@@ -1122,10 +1123,11 @@ def render_three_chamber_heatmap(
     heat = cv2.GaussianBlur(heat, (0, 0), sigmaX=max(3, pixels_per_cm), sigmaY=max(3, pixels_per_cm))
     if float(heat.max()) <= 0.0:
         return None
-    image = classic_heatmap(np.clip(heat / heat.max(), 0.0, 1.0))
+    image = classic_heatmap(np.clip(heat / heat.max(), 0.0, 1.0), style)
     for poly in translated.values():
-        cv2.polylines(image, [poly], True, CLASSIC_HEAT_OUTLINE, 2, cv2.LINE_AA)
-    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.polylines(image, [poly], True, style_color(style, "heatmap", "outline"), 2, cv2.LINE_AA)
+    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), style_color(style, "heatmap", "border"), 1, cv2.LINE_AA)
+    image = append_heatmap_legend(image, style)
     if write_image_unicode(output_path, image):
         return output_path
     return None
@@ -1135,23 +1137,24 @@ def render_three_chamber_trackmap(
     tracker: ThreeChamberTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_px_stats:
         return None
-    canvas, translated, offset = _render_tracker_canvas(tracker)
+    canvas, translated, offset = _render_tracker_canvas(tracker, style=style)
     for name, poly in translated.items():
         if name in DOORS:
             continue
-        fill_poly_alpha(canvas, poly, CLASSIC_GUIDE_FILL, alpha=0.86)
-        cv2.polylines(canvas, [poly], True, CLASSIC_GUIDE_OUTLINE, 2, cv2.LINE_AA)
+        fill_poly_alpha(canvas, poly, style_color(style, "trackmap", "region_fill"), alpha=0.86)
+        cv2.polylines(canvas, [poly], True, style_color(style, "trackmap", "region_outline"), 2, cv2.LINE_AA)
     points = []
     for x, y in tracker.trajectory_px_stats:
         points.append((int(np.clip(round(x + offset[0]), 0, canvas.shape[1] - 1)), int(np.clip(round(y + offset[1]), 0, canvas.shape[0] - 1))))
     thickness = classic_path_thickness(pixels_per_cm)
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, classic_marker_radius(pixels_per_cm))
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, classic_marker_radius(pixels_per_cm), style)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "border"), 1, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None
@@ -1163,6 +1166,7 @@ def render_three_chamber_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     images = [read_image_unicode(path) for path in image_paths if path]
     images = [img for img in images if img is not None]
@@ -1172,15 +1176,18 @@ def render_three_chamber_image_grid(
     max_w = max(img.shape[1] for img in images)
     cols = max(1, min(int(columns), len(images)))
     rows = int(math.ceil(len(images) / cols))
-    canvas = np.full((rows * max_h + (rows + 1) * padding, cols * max_w + (cols + 1) * padding, 3), 255, dtype=np.uint8)
+    title_h = 46 if title else 0
+    canvas = np.full((title_h + rows * max_h + (rows + 1) * padding, cols * max_w + (cols + 1) * padding, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
+    if title:
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
     for idx, img in enumerate(images):
         row = idx // cols
         col = idx % cols
-        y = padding + row * (max_h + padding)
+        y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + img.shape[0], x : x + img.shape[1]] = img
-        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), CLASSIC_BORDER, 1, cv2.LINE_AA)
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + img.shape[1], y + img.shape[0]), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None

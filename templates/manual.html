@@ -5,29 +5,15 @@
 {% block extra_css %}
 <style>
 .manual-page {
-    max-width: 1680px;
+    max-width: 1440px;
+    margin: 0 auto;
 }
 .manual-shell {
-    background: linear-gradient(180deg, rgba(255, 250, 245, 0.92), rgba(255, 255, 255, 0.98));
-    border: 1px solid var(--border-card);
-    border-radius: calc(var(--radius-card) + 6px);
-    padding: 1.25rem;
-    box-shadow: var(--shadow-card);
-}
-.manual-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1.25rem;
-    margin-bottom: 1.25rem;
-    flex-wrap: wrap;
-}
-.manual-header-copy h1 {
-    margin-bottom: 0.35rem;
-}
-.manual-header-copy p {
-    margin: 0;
-    color: var(--text-secondary);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
 }
 .manual-switch {
     display: flex;
@@ -386,16 +372,17 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-2 manual-page">
+<div class="manual-page">
     <div class="manual-shell">
-        <div class="manual-header">
-            <div class="manual-header-copy">
-                <h1 class="display-6 cyber-text mb-0">
-                    <i class="fas fa-book-open me-3" style="color:var(--primary-color);"></i><span data-i18n="manual.h1">操作手册</span>
-                </h1>
-                <p data-i18n="manual.subtitle">从视频采集到拿到结果，每一步该怎么做</p>
+        <section class="app-page-hero">
+            <div class="app-page-title-group">
+                <span class="app-page-icon" aria-hidden="true"><i class="fas fa-book-open"></i></span>
+                <div>
+                    <h1 class="app-page-title" data-i18n="manual.h1">操作手册</h1>
+                    <p class="app-page-subtitle" data-i18n="manual.subtitle">从视频采集到拿到结果，每一步该怎么做</p>
+                </div>
             </div>
-        </div>
+        </section>
 
         <div class="manual-switch">
             <div class="manual-switch-label" data-i18n="manual.switch.label">实验手册</div>

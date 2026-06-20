@@ -4,8 +4,6 @@
 {% block extra_css %}
 <style>
 .projects-shell { max-width: 1440px; margin: 0 auto; }
-.projects-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; }
-.projects-subtitle { color:var(--text-secondary); line-height:1.7; max-width:760px; }
 .project-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:1rem; }
 .project-card { background:var(--bg-card); border:1px solid var(--border-card); border-radius:var(--radius-card); padding:1rem; box-shadow:var(--shadow-card); }
 .project-card-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; margin-bottom:.75rem; }
@@ -24,12 +22,15 @@
 
 {% block content %}
 <div class="projects-shell" data-tour-page="projects">
-    <div class="projects-header">
-        <div>
-            <h1 class="display-6 cyber-text mb-1" data-i18n="projects.title">项目工作台</h1>
-            <div class="projects-subtitle" data-i18n="projects.subtitle">按课题组织组别、小鼠、视频和分析结果。快速分析入口仍然保留，项目模式用于正式实验和长期数据整理。</div>
+    <section class="app-page-hero">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-layer-group"></i></span>
+            <div>
+                <h1 class="app-page-title" data-i18n="projects.title">项目工作台</h1>
+                <p class="app-page-subtitle" data-i18n="projects.subtitle">按课题组织组别、小鼠、视频和分析结果。快速分析入口仍然保留，项目模式用于正式实验和长期数据整理。</p>
+            </div>
         </div>
-    </div>
+    </section>
 
     <div class="create-panel" data-tour-id="projects-create">
         <form id="createProjectForm" class="row g-3 align-items-end">

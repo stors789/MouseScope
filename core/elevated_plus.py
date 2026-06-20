@@ -31,19 +31,13 @@ from maze_zone_utils import (
     sort_polygon_points,
 )
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TEXT,
-    CLASSIC_TEXT_SOFT,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_heatmap,
     classic_marker_radius,
     classic_path_thickness,
     draw_start_end_markers,
     fill_poly_alpha,
+    style_color,
 )
 
 
@@ -63,8 +57,8 @@ def _zone_color(zone_group: str, detected: bool) -> Tuple[int, int, int]:
     return (148, 163, 184)
 
 
-def _paper_blend_heatmap(norm: np.ndarray) -> np.ndarray:
-    return classic_heatmap(norm)
+def _paper_blend_heatmap(norm: np.ndarray, style: Any | None = None) -> np.ndarray:
+    return classic_heatmap(norm, style)
 
 
 def _draw_poly_outline(
@@ -832,6 +826,7 @@ def render_elevated_plus_heatmap(
     tracker: ElevatedPlusTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_template_cm_stats:
         return None
@@ -848,12 +843,13 @@ def render_elevated_plus_heatmap(
         return None
 
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    image = _paper_blend_heatmap(norm)
-    image[mask == 0] = CLASSIC_BG
+    image = _paper_blend_heatmap(norm, style)
+    image[mask == 0] = style_color(style, "heatmap", "outside")
 
     for zone_name, poly in translated.items():
-        _draw_poly_outline(image, poly, CLASSIC_HEAT_OUTLINE, 2)
-    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        _draw_poly_outline(image, poly, style_color(style, "heatmap", "outline"), 2)
+    cv2.rectangle(image, (0, 0), (image.shape[1] - 1, image.shape[0] - 1), style_color(style, "heatmap", "border"), 1, cv2.LINE_AA)
+    image = append_heatmap_legend(image, style)
 
     if write_image_unicode(output_path, image):
         return output_path
@@ -864,18 +860,19 @@ def render_elevated_plus_trackmap(
     tracker: ElevatedPlusTracker,
     output_path: str,
     pixels_per_cm: int = 12,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_template_cm_stats:
         return None
 
     mask, translated, offset_cm = render_canvas_from_cm_polygons(tracker.template_polygons_cm, pixels_per_cm, padding_cm=2.0)
-    canvas = np.full((mask.shape[0], mask.shape[1], 3), CLASSIC_BG, dtype=np.uint8)
-    canvas[mask == 0] = CLASSIC_BG
+    canvas = np.full((mask.shape[0], mask.shape[1], 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
+    canvas[mask == 0] = style_color(style, "trackmap", "background")
 
     for zone_name, poly in translated.items():
         group = tracker.ZONE_GROUPS.get(zone_name, "unknown")
-        fill_color = CLASSIC_GUIDE_FILL if group != "center" else (226, 242, 227)
-        outline_color = CLASSIC_GUIDE_OUTLINE if group != "center" else (94, 170, 106)
+        fill_color = style_color(style, "trackmap", "region_fill") if group != "center" else style_color(style, "trackmap", "special_fill")
+        outline_color = style_color(style, "trackmap", "region_outline") if group != "center" else style_color(style, "trackmap", "special_outline")
         fill_poly_alpha(canvas, poly, fill_color, alpha=0.82)
         _draw_poly_outline(canvas, poly, outline_color, 2)
 
@@ -885,9 +882,9 @@ def render_elevated_plus_trackmap(
     path_thickness = classic_path_thickness(pixels_per_cm)
     marker_radius = classic_marker_radius(pixels_per_cm)
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, marker_radius)
-    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), CLASSIC_BORDER, 1, cv2.LINE_AA)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius, style)
+    cv2.rectangle(canvas, (0, 0), (canvas.shape[1] - 1, canvas.shape[0] - 1), style_color(style, "trackmap", "border"), 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path
@@ -900,6 +897,7 @@ def render_elevated_plus_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     valid_paths = [path for path in image_paths if path]
     if not valid_paths:
@@ -921,10 +919,10 @@ def render_elevated_plus_image_grid(
 
     canvas_h = title_h + rows * max_h + (rows + 1) * padding
     canvas_w = cols * max_w + (cols + 1) * padding
-    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+    canvas = np.full((canvas_h, canvas_w, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
 
     if title:
-        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (30, 41, 59), 2, cv2.LINE_AA)
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
 
     for idx, img in enumerate(images):
         row = idx // cols
@@ -933,7 +931,7 @@ def render_elevated_plus_image_grid(
         x = padding + col * (max_w + padding)
         h, w = img.shape[:2]
         canvas[y : y + h, x : x + w] = img
-        cv2.rectangle(canvas, (x, y), (x + w - 1, y + h - 1), (226, 232, 240), 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + w - 1, y + h - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
         return output_path

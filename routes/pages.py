@@ -112,6 +112,12 @@ def register_page_routes(app, ctx) -> None:
         return render_template('tasks.html', enable_three_chamber=is_three_chamber_enabled())
 
 
+    @app.route('/visual-style')
+    def visual_style_page():
+        """Global visualization style settings."""
+        return render_template('visual_style.html')
+
+
     @app.route('/manual')
     def manual():
         """使用手册"""

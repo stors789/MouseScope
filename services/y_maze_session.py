@@ -307,6 +307,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         heatmap_final_paths = []
         trackmap_work_paths = []
         trackmap_final_paths = []
+        visual_style = vision_config.get('visual_style')
         for tracker in trackers:
             roi_slug = sanitize_y_maze_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"ymaze_{tracker.roi_id:02d}")
             heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
@@ -314,7 +315,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
             trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
 
-            if render_y_maze_heatmap(tracker, heatmap_work_path):
+            if render_y_maze_heatmap(tracker, heatmap_work_path, style=visual_style):
                 exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
                 heatmap_work_paths.append(heatmap_work_path)
                 heatmap_final_paths.append(exported_heatmap)
@@ -324,7 +325,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 self._log(f"Failed to save Y-maze heatmap: {heatmap_final_path}")
 
-            if render_y_maze_trackmap(tracker, trackmap_work_path):
+            if render_y_maze_trackmap(tracker, trackmap_work_path, style=visual_style):
                 exported_trackmap = _export_result_file(trackmap_work_path, trackmap_final_path)
                 trackmap_work_paths.append(trackmap_work_path)
                 trackmap_final_paths.append(exported_trackmap)
@@ -340,7 +341,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 heatmap_grid_work_path = f"{output_base}_heatmaps.png"
                 heatmap_grid_final_path = f"{final_base}_heatmaps.png"
-                if render_y_maze_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Y-maze Heatmaps"):
+                if render_y_maze_image_grid(heatmap_work_paths, heatmap_grid_work_path, title=f"{video_name} | Y-maze Heatmaps", style=visual_style):
                     self._append_result_file(_export_result_file(heatmap_grid_work_path, heatmap_grid_final_path), 'heatmap')
                 else:
                     self._log(f"Failed to save Y-maze heatmap grid: {heatmap_grid_final_path}")
@@ -351,7 +352,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             else:
                 trackmap_grid_work_path = f"{output_base}_trackmaps.png"
                 trackmap_grid_final_path = f"{final_base}_trackmaps.png"
-                if render_y_maze_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Y-maze Trajectory Maps"):
+                if render_y_maze_image_grid(trackmap_work_paths, trackmap_grid_work_path, title=f"{video_name} | Y-maze Trajectory Maps", style=visual_style):
                     self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
                 else:
                     self._log(f"Failed to save Y-maze trackmap grid: {trackmap_grid_final_path}")

@@ -207,7 +207,7 @@
                     面向小鼠行为学视频分析的桌面软件平台<br>
                     当前支持悬尾、强迫游泳、水迷宫、旷场、新奇物体、高架十字迷宫、Y 迷宫与明暗箱
                 </p>
-                <div class="hero-version"><span data-i18n="home.version">Desktop Edition v3.3.0 · 学术研究专用</span></div>
+                <div class="hero-version"><span data-i18n="home.version">Desktop Edition v3.4.0 · 学术研究专用</span></div>
                 <div class="hero-note" data-i18n="home.note">正式实验可进入项目工作台管理组别、小鼠、视频和结果；临时或单次任务可使用快速分析入口，仍保留原有配置流程。</div>
             </div>
             <div class="hero-visual" aria-hidden="true">
@@ -253,11 +253,12 @@
 {% block scripts %}
 <script>
 MouseScopeTour.register('home', {
-    version: 'v1',
+    version: 'v2',
     steps: [
         {target: '[data-tour-id="nav-projects"]', titleKey: 'tour.home.projects.title', bodyKey: 'tour.home.projects.body'},
         {target: '[data-tour-id="nav-quick"]', titleKey: 'tour.home.quick.title', bodyKey: 'tour.home.quick.body'},
         {target: '[data-tour-id="nav-tasks"]', titleKey: 'tour.home.tasks.title', bodyKey: 'tour.home.tasks.body'},
+        {target: '[data-tour-id="nav-visual-style"]', titleKey: 'tour.home.visual_style.title', bodyKey: 'tour.home.visual_style.body'},
         {target: '[data-tour-id="nav-manual"]', titleKey: 'tour.home.manual.title', bodyKey: 'tour.home.manual.body'},
         {target: '[data-tour-id="nav-lang"]', titleKey: 'tour.home.lang.title', bodyKey: 'tour.home.lang.body'}
     ]

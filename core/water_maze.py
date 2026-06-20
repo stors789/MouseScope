@@ -13,18 +13,12 @@ import numpy as np
 
 from file_utils import ascii_slug, read_image_unicode, write_image_unicode
 from spatial_render import (
-    CLASSIC_BG,
-    CLASSIC_BORDER,
-    CLASSIC_END,
-    CLASSIC_GUIDE_FILL,
-    CLASSIC_GUIDE_OUTLINE,
-    CLASSIC_HEAT_OUTLINE,
-    CLASSIC_TEXT,
-    CLASSIC_TRACK,
+    append_heatmap_legend,
     classic_heatmap,
     classic_marker_radius,
     classic_path_thickness,
     draw_start_end_markers,
+    style_color,
 )
 
 
@@ -1392,14 +1386,19 @@ def draw_water_maze_results(
     return output
 
 
-def _pool_canvas(tracker: WaterMazeTracker, pixels_per_cm: int = 6, padding_cm: float = 6.0) -> tuple[np.ndarray, np.ndarray, Point]:
+def _pool_canvas(
+    tracker: WaterMazeTracker,
+    pixels_per_cm: int = 6,
+    padding_cm: float = 6.0,
+    style: Any | None = None,
+) -> tuple[np.ndarray, np.ndarray, Point]:
     radius = float(tracker.pool_radius_cm)
     pad = float(padding_cm)
     size = max(240, int(round((radius * 2.0 + pad * 2.0) * pixels_per_cm)))
     center = (size * 0.5, size * 0.5)
     mask = np.zeros((size, size), dtype=np.uint8)
     cv2.circle(mask, (int(center[0]), int(center[1])), int(round(radius * pixels_per_cm)), 255, -1, cv2.LINE_AA)
-    canvas = np.full((size, size, 3), CLASSIC_BG, dtype=np.uint8)
+    canvas = np.full((size, size, 3), style_color(style, "trackmap", "background"), dtype=np.uint8)
     return canvas, mask, center
 
 
@@ -1414,15 +1413,21 @@ def _display_cm_to_canvas(tracker: WaterMazeTracker, point_cm: Point, center: Po
     return _pool_cm_to_canvas(display_point, center, pixels_per_cm, shape)
 
 
-def _draw_standard_pool_guides(canvas: np.ndarray, tracker: WaterMazeTracker, center: Point, pixels_per_cm: int) -> None:
+def _draw_standard_pool_guides(
+    canvas: np.ndarray,
+    tracker: WaterMazeTracker,
+    center: Point,
+    pixels_per_cm: int,
+    style: Any | None = None,
+) -> None:
     radius_px = int(round(tracker.pool_radius_cm * pixels_per_cm))
     center_i = (int(round(center[0])), int(round(center[1])))
-    cv2.circle(canvas, center_i, radius_px, CLASSIC_BORDER, 2, cv2.LINE_AA)
-    cv2.line(canvas, (center_i[0] - radius_px, center_i[1]), (center_i[0] + radius_px, center_i[1]), CLASSIC_GUIDE_OUTLINE, 1, cv2.LINE_AA)
-    cv2.line(canvas, (center_i[0], center_i[1] - radius_px), (center_i[0], center_i[1] + radius_px), CLASSIC_GUIDE_OUTLINE, 1, cv2.LINE_AA)
+    cv2.circle(canvas, center_i, radius_px, style_color(style, "trackmap", "border"), 2, cv2.LINE_AA)
+    cv2.line(canvas, (center_i[0] - radius_px, center_i[1]), (center_i[0] + radius_px, center_i[1]), style_color(style, "trackmap", "region_outline"), 1, cv2.LINE_AA)
+    cv2.line(canvas, (center_i[0], center_i[1] - radius_px), (center_i[0], center_i[1] + radius_px), style_color(style, "trackmap", "region_outline"), 1, cv2.LINE_AA)
     inner = max(0, int(round((tracker.pool_radius_cm - tracker.thigmotaxis_band_cm) * pixels_per_cm)))
     if inner:
-        cv2.circle(canvas, center_i, inner, (218, 170, 88), 1, cv2.LINE_AA)
+        cv2.circle(canvas, center_i, inner, style_color(style, "trackmap", "thigmotaxis"), 1, cv2.LINE_AA)
     label_points = {
         "NE": (tracker.pool_radius_cm * 0.5, -tracker.pool_radius_cm * 0.5),
         "NW": (-tracker.pool_radius_cm * 0.5, -tracker.pool_radius_cm * 0.5),
@@ -1431,22 +1436,23 @@ def _draw_standard_pool_guides(canvas: np.ndarray, tracker: WaterMazeTracker, ce
     }
     for key, label_point in label_points.items():
         label_px = _pool_cm_to_canvas(label_point, center, pixels_per_cm, canvas.shape[:2])
-        cv2.putText(canvas, tracker.quadrant_label(key), (label_px[0] - 8, label_px[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.48, CLASSIC_TEXT, 1, cv2.LINE_AA)
+        cv2.putText(canvas, tracker.quadrant_label(key), (label_px[0] - 8, label_px[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.48, style_color(style, "trackmap", "text"), 1, cv2.LINE_AA)
     platform_px = _display_cm_to_canvas(tracker, tracker.platform_center_cm, center, pixels_per_cm, canvas.shape[:2])
-    cv2.circle(canvas, platform_px, max(2, int(round(tracker.platform_radius_cm * pixels_per_cm))), (94, 170, 106), 2, cv2.LINE_AA)
+    cv2.circle(canvas, platform_px, max(2, int(round(tracker.platform_radius_cm * pixels_per_cm))), style_color(style, "trackmap", "platform"), 2, cv2.LINE_AA)
     release_px = _display_cm_to_canvas(tracker, tracker.release_point_cm, center, pixels_per_cm, canvas.shape[:2])
-    cv2.circle(canvas, release_px, max(3, int(round(0.8 * pixels_per_cm))), CLASSIC_END, -1, cv2.LINE_AA)
-    cv2.putText(canvas, tracker.quadrant_label(), (platform_px[0] + 6, platform_px[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, CLASSIC_TEXT, 1, cv2.LINE_AA)
+    cv2.circle(canvas, release_px, max(3, int(round(0.8 * pixels_per_cm))), style_color(style, "trackmap", "end"), -1, cv2.LINE_AA)
+    cv2.putText(canvas, tracker.quadrant_label(), (platform_px[0] + 6, platform_px[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, style_color(style, "trackmap", "text"), 1, cv2.LINE_AA)
 
 
 def render_water_maze_heatmap(
     tracker: WaterMazeTracker,
     output_path: str,
     pixels_per_cm: int = 6,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_pool_cm_stats:
         return None
-    canvas, mask, center = _pool_canvas(tracker, pixels_per_cm=pixels_per_cm)
+    canvas, mask, center = _pool_canvas(tracker, pixels_per_cm=pixels_per_cm, style=style)
     heat = np.zeros(mask.shape, dtype=np.float32)
     for point in tracker.trajectory_pool_cm_stats:
         px = _display_cm_to_canvas(tracker, point, center, pixels_per_cm, heat.shape)
@@ -1455,9 +1461,10 @@ def render_water_maze_heatmap(
     if float(heat.max()) <= 0.0:
         return None
     norm = np.clip(heat / heat.max(), 0.0, 1.0)
-    image = classic_heatmap(norm)
-    image[mask == 0] = CLASSIC_BG
-    _draw_standard_pool_guides(image, tracker, center, pixels_per_cm)
+    image = classic_heatmap(norm, style)
+    image[mask == 0] = style_color(style, "heatmap", "outside")
+    _draw_standard_pool_guides(image, tracker, center, pixels_per_cm, style)
+    image = append_heatmap_legend(image, style)
     if write_image_unicode(output_path, image):
         return output_path
     return None
@@ -1467,19 +1474,20 @@ def render_water_maze_trackmap(
     tracker: WaterMazeTracker,
     output_path: str,
     pixels_per_cm: int = 6,
+    style: Any | None = None,
 ) -> Optional[str]:
     if not tracker.trajectory_pool_cm_stats:
         return None
-    canvas, mask, center = _pool_canvas(tracker, pixels_per_cm=pixels_per_cm)
-    canvas[mask == 0] = CLASSIC_BG
-    cv2.circle(canvas, (int(center[0]), int(center[1])), int(round(tracker.pool_radius_cm * pixels_per_cm)), CLASSIC_GUIDE_FILL, -1, cv2.LINE_AA)
+    canvas, mask, center = _pool_canvas(tracker, pixels_per_cm=pixels_per_cm, style=style)
+    canvas[mask == 0] = style_color(style, "trackmap", "background")
+    cv2.circle(canvas, (int(center[0]), int(center[1])), int(round(tracker.pool_radius_cm * pixels_per_cm)), style_color(style, "trackmap", "region_fill"), -1, cv2.LINE_AA)
     points = [_display_cm_to_canvas(tracker, point, center, pixels_per_cm, canvas.shape[:2]) for point in tracker.trajectory_pool_cm_stats]
-    _draw_standard_pool_guides(canvas, tracker, center, pixels_per_cm)
+    _draw_standard_pool_guides(canvas, tracker, center, pixels_per_cm, style)
     path_thickness = classic_path_thickness(pixels_per_cm)
     marker_radius = classic_marker_radius(pixels_per_cm)
     for idx in range(1, len(points)):
-        cv2.line(canvas, points[idx - 1], points[idx], CLASSIC_TRACK, path_thickness, cv2.LINE_AA)
-    draw_start_end_markers(canvas, points, marker_radius)
+        cv2.line(canvas, points[idx - 1], points[idx], style_color(style, "trackmap", "track"), path_thickness, cv2.LINE_AA)
+    draw_start_end_markers(canvas, points, marker_radius, style)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None
@@ -1491,6 +1499,7 @@ def render_water_maze_image_grid(
     title: str = "",
     columns: int = 2,
     padding: int = 18,
+    style: Any | None = None,
 ) -> Optional[str]:
     valid_paths = [path for path in image_paths if path]
     if not valid_paths:
@@ -1509,16 +1518,16 @@ def render_water_maze_image_grid(
     title_h = 46 if title else 0
     canvas_h = title_h + rows * max_h + (rows + 1) * padding
     canvas_w = cols * max_w + (cols + 1) * padding
-    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+    canvas = np.full((canvas_h, canvas_w, 3), style_color(style, "trackmap", "grid_background"), dtype=np.uint8)
     if title:
-        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (30, 41, 59), 2, cv2.LINE_AA)
+        cv2.putText(canvas, title, (padding, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, style_color(style, "trackmap", "grid_title"), 2, cv2.LINE_AA)
     for idx, image in enumerate(images):
         row = idx // cols
         col = idx % cols
         y = title_h + padding + row * (max_h + padding)
         x = padding + col * (max_w + padding)
         canvas[y : y + image.shape[0], x : x + image.shape[1]] = image
-        cv2.rectangle(canvas, (x, y), (x + image.shape[1] - 1, y + image.shape[0] - 1), (226, 232, 240), 1, cv2.LINE_AA)
+        cv2.rectangle(canvas, (x, y), (x + image.shape[1] - 1, y + image.shape[0] - 1), style_color(style, "trackmap", "grid_border"), 1, cv2.LINE_AA)
     if write_image_unicode(output_path, canvas):
         return output_path
     return None

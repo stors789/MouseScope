@@ -2,6 +2,7 @@ import unittest
 import pathlib
 import sys
 import os
+import tempfile
 from unittest.mock import patch
 
 import cv2
@@ -15,7 +16,13 @@ if str(CORE) not in sys.path:
     sys.path.insert(0, str(CORE))
 
 from core.light_dark_box import LightDarkBoxTracker, _render_tracker_template_canvas
+from core.file_utils import read_image_unicode, write_image_unicode
+from core.novel_object import NovelObjectTracker, render_novel_object_trackmap
+from core.open_field import render_open_field_image_grid
+from core.spatial_render import append_heatmap_legend, classic_heatmap
 from core.three_chamber import ThreeChamberTracker
+from core.visual_style import DEFAULT_VISUAL_STYLE, normalize_visual_style
+from core.y_maze import _arm_head_label_anchor, _extend_edge_to_quad
 from services.analysis_builders import build_light_dark_box_config, build_three_chamber_config
 from services.experiment_registry import (
     get_experiment_spec,
@@ -24,6 +31,8 @@ from services.experiment_registry import (
     list_experiments,
     normalize_experiment_type,
 )
+from services.visual_style_store import VisualStyleStore
+from services.visual_style_preview import preview_experiment_payload, render_visual_style_preview
 from vision_tracker import MouseDetector
 
 
@@ -84,6 +93,151 @@ class QueuedDetector:
 
 
 class NewAssayTrackerTests(unittest.TestCase):
+    def test_visual_style_store_normalizes_and_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "visual_style.json"
+            store = VisualStyleStore(path)
+            saved = store.save_style({
+                "trackmap": {
+                    "track": "00FF10",
+                    "background": "not-a-color",
+                },
+                "heatmap": {
+                    "colormap": "viridis",
+                    "legend_high_label": "Very high occupancy label",
+                    "show_legend": True,
+                },
+            })
+
+            self.assertEqual(saved["trackmap"]["track"], "#00ff10")
+            self.assertEqual(saved["trackmap"]["background"], DEFAULT_VISUAL_STYLE["trackmap"]["background"])
+            self.assertEqual(saved["heatmap"]["colormap"], "viridis")
+            self.assertEqual(saved["heatmap"]["legend_high_label"], "Very high occupa")
+            self.assertTrue(path.exists())
+            self.assertEqual(store.get_style(), saved)
+
+    def test_heatmap_legend_uses_style_and_can_be_hidden(self):
+        style = normalize_visual_style({
+            "heatmap": {
+                "colormap": "custom",
+                "custom_low": "#010203",
+                "custom_high": "#f0e0d0",
+                "zero_color": "#000000",
+                "show_legend": True,
+            }
+        })
+        norm = np.linspace(0.0, 1.0, 100, dtype=np.float32).reshape(10, 10)
+        heatmap = classic_heatmap(norm, style)
+        canvas = np.zeros((40, 60, 3), dtype=np.uint8)
+        with_legend = append_heatmap_legend(canvas, style)
+        hidden = append_heatmap_legend(canvas, {"heatmap": {"show_legend": False}})
+
+        self.assertEqual(heatmap.shape, (10, 10, 3))
+        self.assertEqual(tuple(int(v) for v in heatmap[0, 0]), (0, 0, 0))
+        self.assertEqual(with_legend.shape[:2], (40, 156))
+        self.assertEqual(hidden.shape, canvas.shape)
+
+    def test_custom_heatmap_high_color_changes_rendered_color(self):
+        norm = np.ones((3, 3), dtype=np.float32)
+        blue_high = classic_heatmap(norm, {"heatmap": {"colormap": "custom", "custom_low": "#000000", "custom_high": "#0000ff"}})
+        red_high = classic_heatmap(norm, {"heatmap": {"colormap": "custom", "custom_low": "#000000", "custom_high": "#ff0000"}})
+
+        self.assertNotEqual(tuple(int(v) for v in blue_high[1, 1]), tuple(int(v) for v in red_high[1, 1]))
+
+    def test_nor_object_colors_follow_visual_style(self):
+        tracker = NovelObjectTracker(
+            arena_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+            object_points=[
+                {"point": {"x": 30, "y": 50}, "role": "familiar"},
+                {"point": {"x": 70, "y": 50}, "role": "novel"},
+            ],
+            arena_width_cm=10,
+            arena_height_cm=10,
+            interaction_radius_cm=1,
+        )
+        tracker.trajectory_cm_stats = [(1.0, 1.0), (1.0, 2.0)]
+        style = {"trackmap": {"object_familiar": "#00ff00", "object_novel": "#ff0000"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "nor_track.png"
+            self.assertTrue(render_novel_object_trackmap(tracker, str(out), pixels_per_cm=10, style=style))
+            image = read_image_unicode(out)
+
+        self.assertIsNotNone(image)
+        self.assertEqual(tuple(int(v) for v in image[50, 30]), (0, 255, 0))
+        self.assertEqual(tuple(int(v) for v in image[50, 70]), (0, 0, 255))
+
+    def test_image_grid_draws_title_with_style_color(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = pathlib.Path(tmp) / "source.png"
+            out = pathlib.Path(tmp) / "grid.png"
+            self.assertTrue(write_image_unicode(source, np.full((20, 20, 3), 255, dtype=np.uint8)))
+            self.assertTrue(render_open_field_image_grid(
+                [str(source)],
+                str(out),
+                title="Grid",
+                style={"trackmap": {"grid_background": "#000000", "grid_title": "#ff0000", "grid_border": "#ffffff"}},
+            ))
+            image = read_image_unicode(out)
+
+        self.assertIsNotNone(image)
+        title_band = image[:40, :]
+        red_pixels = (title_band[:, :, 2] > 180) & (title_band[:, :, 0] < 80) & (title_band[:, :, 1] < 80)
+        self.assertGreater(int(np.count_nonzero(red_pixels)), 0)
+
+    def test_visual_style_preview_uses_real_renderers(self):
+        payload = render_visual_style_preview(
+            {"heatmap": {"colormap": "custom", "custom_low": "#000000", "custom_high": "#ffffff"}},
+            "y_maze",
+        )
+
+        self.assertTrue(payload["trackmap"].startswith("data:image/png;base64,"))
+        self.assertTrue(payload["heatmap"].startswith("data:image/png;base64,"))
+        self.assertEqual(payload["experiment"], "y_maze")
+
+    def test_visual_style_preview_excludes_unreleased_three_chamber_button(self):
+        keys = [item["key"] for item in preview_experiment_payload()]
+
+        self.assertNotIn("three_chamber", keys)
+
+    def test_y_maze_arm_labels_anchor_at_distal_heads(self):
+        arm_width = 10.0
+        arm_length = 30.0
+        tri_height = arm_width * np.sqrt(3.0) / 2.0
+        center = np.array(
+            [
+                [0.0, 0.0],
+                [arm_width, 0.0],
+                [arm_width * 0.5, tri_height],
+            ],
+            dtype=np.float32,
+        )
+        center_point = np.mean(center, axis=0).astype(np.float32)
+        arms = [
+            np.array(
+                [
+                    [0.0, -arm_length],
+                    [arm_width, -arm_length],
+                    [arm_width, 0.0],
+                    [0.0, 0.0],
+                ],
+                dtype=np.float32,
+            ),
+            _extend_edge_to_quad(center[1], center[2], center_point, arm_length),
+            _extend_edge_to_quad(center[2], center[0], center_point, arm_length),
+        ]
+
+        for arm in arms:
+            arm_center = np.mean(arm, axis=0).astype(np.float32)
+            outward = arm_center - center_point
+            outward = outward / np.linalg.norm(outward)
+            anchor = _arm_head_label_anchor(arm, center, outward_px=4.0)
+            distal_edge_projection = max(float(np.dot(point - center_point, outward)) for point in arm)
+            centroid_projection = float(np.dot(arm_center - center_point, outward))
+            anchor_projection = float(np.dot(anchor - center_point, outward))
+
+            self.assertGreater(distal_edge_projection, centroid_projection)
+            self.assertGreater(anchor_projection, distal_edge_projection)
+
     def test_light_dark_doorway_jitter_counts_one_transition(self):
         tracker = LightDarkBoxTracker(
             zone_polygons={
