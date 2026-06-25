@@ -776,7 +776,7 @@ function updatePoolList() {
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation(); deletePool(${index});">${pageText('card.delete', 'Delete')}</button>
                 </div>
-                <div class="compact-grid">
+                <div class="compact-grid" onclick="event.stopPropagation()">
                     <div>${subjectMarkup}</div>
                     <div>
                         <label class="form-label">${pageText('card.pool_diameter', 'Pool diameter (cm)')}</label>
@@ -794,7 +794,7 @@ function updatePoolList() {
                         </select>
                     </div>
                 </div>
-                <div class="compact-grid mt-2" style="${time.mode === 'precise' ? '' : 'display:none'}">
+                <div class="compact-grid mt-2" onclick="event.stopPropagation()" style="${time.mode === 'precise' ? '' : 'display:none'}">
                     <div><label class="form-label">${pageText('card.start', 'Start (s)')}</label><input class="form-control" type="number" step="0.1" value="${time.start == null ? '' : time.start}" onchange="updatePoolTimeValue(${index}, 'start', this.value)"></div>
                     <div><label class="form-label">${pageText('card.end', 'End (s)')}</label><input class="form-control" type="number" step="0.1" value="${time.end == null ? '' : time.end}" onchange="updatePoolTimeValue(${index}, 'end', this.value)"></div>
                 </div>
@@ -845,7 +845,13 @@ function startNewPool() {
     };
     rois.push(roi); activePoolIndex = rois.length - 1; drawMode = 'boundary'; persistCurrentVideoState(); updatePoolList(); drawPoolCanvas();
 }
-function selectPool(index) { if (maskEditPoolIndex != null && maskEditPoolIndex !== index) { clearMaskDraft(); drawMode = 'boundary'; } activePoolIndex = index; updatePoolList(); drawPoolCanvas(); }
+function selectPool(index) {
+    if (activePoolIndex === index && (maskEditPoolIndex == null || maskEditPoolIndex === index)) return;
+    if (maskEditPoolIndex != null && maskEditPoolIndex !== index) { clearMaskDraft(); drawMode = 'boundary'; }
+    activePoolIndex = index;
+    updatePoolList();
+    drawPoolCanvas();
+}
 function setDrawMode(mode) { if (!activePool()) startNewPool(); if (mode !== 'mask') clearMaskDraft(); drawMode = mode; updateStatusLabels(); drawPoolCanvas(); }
 function setActiveDrawMode(index, mode, event) {
     if (event) event.stopPropagation();

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,40 @@ from services.video_export import find_ffmpeg_exe
 
 def _truthy_env(name: str) -> bool:
     return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalise_orientation_degrees(value) -> int:
+    try:
+        degrees = int(round(float(value))) % 360
+    except (TypeError, ValueError):
+        return 0
+    return degrees if degrees in {90, 180, 270} else 0
+
+
+@lru_cache(maxsize=128)
+def _opencv_orientation_meta(video_path: str) -> int:
+    orientation_prop = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
+    if orientation_prop is None:
+        return 0
+
+    cap = cv2.VideoCapture(str(video_path))
+    try:
+        if not cap.isOpened():
+            return 0
+        return _normalise_orientation_degrees(cap.get(orientation_prop))
+    finally:
+        cap.release()
+
+
+def _apply_orientation_meta(frame, orientation_degrees: int):
+    orientation = _normalise_orientation_degrees(orientation_degrees)
+    if orientation == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if orientation == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if orientation == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
 
 
 def _read_with_pyav(video_path: str | os.PathLike, frame_idx: int, fps: float | None = None):
@@ -46,7 +81,8 @@ def _read_with_pyav(video_path: str | os.PathLike, frame_idx: int, fps: float | 
                 break
         if selected is None:
             return None
-        return selected.to_ndarray(format="bgr24")
+        frame = selected.to_ndarray(format="bgr24")
+        return _apply_orientation_meta(frame, _opencv_orientation_meta(str(video_path)))
     except Exception:
         return None
     finally:
