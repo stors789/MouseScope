@@ -158,7 +158,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         final_output_video_path = f"{final_base}_analyzed.mp4"
         generate_video = bool(vision_config.get('generate_video', True))
 
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"Unable to open video: {video_path}")
             raise RuntimeError(f"Unable to open video: {video_path}")
@@ -176,6 +176,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             fps,
             total_frames,
             label='OFT',
+            prefer_pts=not bool(fps_override),
         )
 
         sampling = self._resolve_video_sampling(
@@ -445,7 +446,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         timebase,
         batch_index=None,
     ):
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"Unable to reopen OFT video for rendering: {video_path}")
             return False

@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import copy
 import logging
+import math
 import os
 import platform
 import re
+import secrets
 import subprocess
 import tempfile
 import time
@@ -13,9 +15,11 @@ import zipfile
 from pathlib import Path
 
 import cv2
-from flask import jsonify, request, send_file, url_for
+from flask import Response, after_this_request, jsonify, request, send_file, stream_with_context, url_for
 
+from services.api_errors import build_api_error
 from services.analysis_builders import build_analysis_config
+from services.analysis_windows import effective_video_duration_seconds, validate_analysis_windows, validate_roi_windows
 from services.analysis_sessions import (
     ElevatedPlusMultiArenaAnalysisSession,
     ForcedSwimMultiCylinderAnalysisSession,
@@ -29,7 +33,23 @@ from services.analysis_sessions import (
 )
 from services.debug_preview import build_debug_preview_response
 from services.experiment_registry import get_experiment_spec, is_experiment_release_hidden, summarize_batch_state
+from services.experiment_defaults import ExperimentDefaultsValidationError
+from services.output_runs import prepare_session_run_output
+from services.reproducibility import (
+    DEFAULT_RANDOM_SEED,
+    ReproducibilityError,
+    apply_deterministic_seed,
+    build_run_snapshot,
+    find_run_snapshot,
+    load_run_snapshot,
+    reproducibility_status,
+    resolved_config_for_replay,
+    validate_replay_snapshot,
+    write_run_snapshot,
+)
+from services.resource_policy import resolved_run_resource_policy
 from services.video_frame_reader import read_video_frame
+from services.video_orientation import orientation_override_degrees
 from services.visual_style_preview import preview_experiment_payload, render_visual_style_preview
 
 
@@ -41,10 +61,88 @@ def register_api_routes(app, ctx) -> None:
     analysis_history = ctx.analysis_history
     project_store = getattr(ctx, "project_store", None)
     visual_style_store = getattr(ctx, "visual_style_store", None)
+    experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
+    app_version = str(getattr(ctx, "APP_VERSION", ""))
     RESULT_DIR = ctx.RESULT_DIR
     _resolve_result_dir = ctx._resolve_result_dir
     _result_zip_arcname = ctx._result_zip_arcname
     _session_video_info = ctx._session_video_info
+    _update_video_entry_info = ctx._update_video_entry_info
+
+    runtime_setting_keys = ("start_sec", "end_sec", "fps_override", "orientation_override")
+
+    def _api_error(
+        message: str | None = None,
+        status: int = 400,
+        *,
+        code: str | None = None,
+        message_en: str | None = None,
+        **extra,
+    ):
+        return jsonify(build_api_error(message, code=code, message_en=message_en, **extra)), status
+
+    def _detach_exact_replay_after_edit(sess: dict) -> bool:
+        """Turn an edited replay draft into an ordinary custom configuration."""
+
+        if not isinstance(sess.get('replay_resolved_config'), dict):
+            return False
+        sess.pop('replay_resolved_config', None)
+        sess.pop('replay_of', None)
+        sess['replay_detached_by_edit'] = True
+        return True
+
+    def _preserve_per_video_runtime_settings(incoming: dict, saved: dict, total_videos: int) -> dict:
+        """Calibration pages only serialize assay fields; retain video setup fields."""
+        raw_incoming = incoming.get("per_video_configs") if isinstance(incoming, dict) else None
+        raw_saved = saved.get("per_video_configs") if isinstance(saved, dict) else None
+        if not isinstance(raw_incoming, list) or not isinstance(raw_saved, list):
+            return incoming
+        for index in range(min(total_videos, len(raw_incoming), len(raw_saved))):
+            config = raw_incoming[index]
+            previous = raw_saved[index]
+            if not isinstance(config, dict) or not isinstance(previous, dict):
+                continue
+            for key in runtime_setting_keys:
+                if key not in config and key in previous:
+                    config[key] = copy.deepcopy(previous[key])
+        return incoming
+
+    def _batch_cards(sess: dict):
+        return summarize_batch_state(
+            sess.get('experiment_type'),
+            sess.get('draft_payload'),
+            sess.get('video_infos'),
+            project_context=sess.get('project_context'),
+        )
+
+    def _ensure_writable_output_directory(value: str | os.PathLike) -> str:
+        """Create and verify an output directory without leaving probe files."""
+        path = Path(value)
+        if path.exists() and not path.is_dir():
+            raise NotADirectoryError(f'{path} is not a directory')
+        path.mkdir(parents=True, exist_ok=True)
+        fd = None
+        probe_path = None
+        try:
+            fd, probe_path = tempfile.mkstemp(prefix='.mousescope-write-test-', dir=str(path))
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if probe_path:
+                try:
+                    os.unlink(probe_path)
+                except FileNotFoundError:
+                    pass
+        return str(path)
+
+    def _output_directory_error(exc: Exception):
+        return _api_error(
+            '输出目录不可用，请选择一个可写文件夹。',
+            400,
+            code='output_dir_invalid',
+            message_en='The output location is not a writable folder.',
+            detail=str(exc),
+        )
 
     def _task_search_blob(task: dict) -> str:
         fields = [
@@ -88,10 +186,7 @@ def register_api_routes(app, ctx) -> None:
         if task.get('can_monitor') and session_id:
             task['monitor_url'] = url_for('monitor', session_id=session_id)
         if task.get('can_configure') and session_id:
-            if task.get('is_batch'):
-                task['configure_url'] = url_for('batch_workspace', session_id=session_id)
-            else:
-                task['configure_url'] = url_for('calibrate', session_id=session_id)
+            task['configure_url'] = url_for('analysis_config', session_id=session_id)
         if task.get('can_stop') and session_id:
             task['stop_url'] = url_for('stop_analysis', session_id=session_id)
         if task.get('can_download'):
@@ -108,6 +203,20 @@ def register_api_routes(app, ctx) -> None:
             task['project_url'] = url_for('project_home', project_id=task.get('project_id'))
         if task.get('can_delete') and run_id and not task.get('project_id'):
             task['delete_url'] = url_for('delete_task_record', run_id=run_id)
+        project_latest_run_id = str(task.get('project_latest_run_id') or '').strip()
+        replay_source_id = project_latest_run_id or str(run_id or '').strip()
+        replay_record = analysis_history.get_record(project_latest_run_id) if project_latest_run_id else task
+        replay_snapshot = find_run_snapshot(replay_record or task)
+        if (
+            replay_source_id
+            and replay_snapshot
+            and str(task.get('status') or '').lower() in {'completed', 'error', 'stopped', 'interrupted'}
+        ):
+            task['can_replay'] = True
+            task['replay_url'] = url_for('replay_task', run_id=replay_source_id)
+        replay_result_status = reproducibility_status(replay_record or task)
+        if replay_result_status:
+            task['reproducibility_status'] = replay_result_status
         return task
 
     def _project_subject_binding_error(sess: dict, payload: dict) -> str:
@@ -138,6 +247,8 @@ def register_api_routes(app, ctx) -> None:
             return '请先在项目中添加小鼠，然后为每个 ROI 选择对应小鼠。'
 
         video_infos = sess.get('video_infos') or []
+        video_assignment_map = project_context.get('video_assignment_map') or {}
+        unit_map = project_context.get('unit_map') or {}
 
         def video_name(index: int) -> str:
             if 0 <= index < len(video_infos):
@@ -148,10 +259,24 @@ def register_api_routes(app, ctx) -> None:
         def check_rois(rois, video_index: int) -> str:
             if not isinstance(rois, list) or not rois:
                 return ''
+            assignment_id = video_assignment_map.get(str(video_index))
+            allowed_units = {
+                str(unit.get('unit_id') or ''): unit
+                for unit in (unit_map.get(assignment_id) or [])
+                if isinstance(unit, dict) and str(unit.get('unit_id') or '')
+            }
             for roi_index, roi in enumerate(rois, start=1):
                 subject_id = str((roi or {}).get('subject_id') or '').strip() if isinstance(roi, dict) else ''
                 if not subject_id or subject_id not in valid_subject_ids:
                     return f"{video_index + 1}. {video_name(video_index)}: ROI {roi_index} 未绑定项目小鼠，请从已有小鼠中选择。"
+                project_unit_id = str((roi or {}).get('project_unit_id') or '').strip() if isinstance(roi, dict) else ''
+                if project_unit_id:
+                    unit = allowed_units.get(project_unit_id)
+                    if not unit or str(unit.get('subject_id') or '').strip() != subject_id:
+                        return (
+                            f"{video_index + 1}. {video_name(video_index)}: ROI {roi_index} 的实验单元"
+                            "不属于该视频，请重新选择项目小鼠。"
+                        )
             return ''
 
         raw_configs = payload.get('per_video_configs') if isinstance(payload, dict) else None
@@ -461,16 +586,27 @@ def register_api_routes(app, ctx) -> None:
         return path
 
     def _send_zip_and_cleanup(zip_path: str, download_name: str):
-        response = send_file(zip_path, as_attachment=True, download_name=download_name)
+        file_size = os.path.getsize(zip_path)
+        safe_name = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(download_name or 'MouseScope_results.zip'))
 
-        @response.call_on_close
-        def _cleanup_zip():
+        def _stream_zip():
             try:
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
-            except Exception:
-                pass
+                with open(zip_path, 'rb') as handle:
+                    while True:
+                        chunk = handle.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        yield chunk
+            finally:
+                try:
+                    if os.path.exists(zip_path):
+                        os.remove(zip_path)
+                except Exception:
+                    logger.exception('Failed to remove temporary download archive: %s', zip_path)
 
+        response = Response(stream_with_context(_stream_zip()), mimetype='application/zip')
+        response.content_length = file_size
+        response.headers['Content-Disposition'] = f'attachment; filename="{safe_name}"'
         return response
 
     @app.route('/api/tasks')
@@ -481,7 +617,7 @@ def register_api_routes(app, ctx) -> None:
         try:
             limit = int(request.args.get('limit') or 200)
         except (TypeError, ValueError):
-            return jsonify({'success': False, 'error': '任务数量参数无效'}), 400
+            return _api_error('任务数量参数无效', 400, code='invalid_task_limit')
         limit = max(1, min(limit, 1000))
         project_lookup, project_only_tasks = _project_task_indexes()
 
@@ -554,12 +690,8 @@ def register_api_routes(app, ctx) -> None:
         removed_runtime = False
 
         if sess:
-            analysis = sess.get('analysis')
-            if analysis is not None:
-                status = str(getattr(analysis, 'status', '') or '').lower()
-                is_running = bool(getattr(analysis, 'is_running', False)) or status in {'waiting', 'analyzing'}
-                if is_running:
-                    return jsonify({'success': False, 'error': '任务仍在运行，请先停止分析。'}), 400
+            if analysis_sessions.has_active_analysis(session_id):
+                return _api_error('任务仍在运行，请先停止分析。', 400, code='task_running')
             analysis_sessions.delete(session_id)
             removed_runtime = True
 
@@ -568,7 +700,7 @@ def register_api_routes(app, ctx) -> None:
             deleted_history = analysis_history.delete_record(session_id) or deleted_history
 
         if not deleted_history and not removed_runtime:
-            return jsonify({'success': False, 'error': '任务记录不存在'}), 404
+            return _api_error('任务记录不存在', 404, code='task_not_found')
 
         return jsonify({
             'success': True,
@@ -576,6 +708,123 @@ def register_api_routes(app, ctx) -> None:
             'session_id': session_id,
             'deleted_history': bool(deleted_history),
             'removed_runtime': bool(removed_runtime),
+        })
+
+    @app.route('/api/tasks/<run_id>/replay', methods=['POST'])
+    def replay_task(run_id):
+        """Create a new session that uses the exact resolved configuration of a prior run."""
+
+        record = analysis_history.get_record(run_id)
+        if not record:
+            return _api_error('找不到要重跑的任务记录。', 404, code='task_not_found')
+        if str(record.get('status') or '').lower() in {'waiting', 'analyzing'}:
+            return _api_error('原任务仍在运行，完成或停止后才能按原配置重跑。', 409, code='replay_source_running')
+        snapshot_path = find_run_snapshot(record)
+        if not snapshot_path:
+            return _api_error('该任务没有可用的运行快照，无法按原配置重跑。', 409, code='snapshot_missing')
+        try:
+            snapshot = load_run_snapshot(snapshot_path)
+        except (OSError, ValueError, ReproducibilityError) as exc:
+            return _api_error(f'无法读取运行快照：{exc}', 409, code='snapshot_read_failed')
+
+        replay_errors = validate_replay_snapshot(snapshot, app_version=app_version)
+        if replay_errors:
+            return _api_error(
+                replay_errors[0],
+                409,
+                code='snapshot_read_failed',
+                message_en='The source videos or software version no longer match the run snapshot.',
+                replay_errors=replay_errors,
+            )
+
+        experiment_type = str(snapshot.get('experiment_type') or 'tst').strip().lower()
+        if is_experiment_release_hidden(experiment_type):
+            return _api_error(
+                '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。',
+                403,
+                code='three_chamber_hidden',
+            )
+
+        session_id = secrets.token_hex(16)
+        video_paths = [str(item.get('path')) for item in (snapshot.get('input_files') or []) if item.get('path')]
+        video_infos = copy.deepcopy(snapshot.get('video_infos') or [])
+        for index, video_path in enumerate(video_paths):
+            while len(video_infos) <= index:
+                video_infos.append({})
+            if not isinstance(video_infos[index], dict):
+                video_infos[index] = {}
+            video_infos[index]['path'] = video_path
+            video_infos[index].setdefault('original_name', Path(video_path).name)
+        video_infos = video_infos[:len(video_paths)]
+
+        project_context = copy.deepcopy(snapshot.get('project_context')) if isinstance(snapshot.get('project_context'), dict) else None
+        output_root_dir = str(snapshot.get('output_root_dir') or Path(snapshot_path).parent.parent)
+        if project_context:
+            if project_store is None:
+                return _api_error('项目工作台不可用，无法重建该项目任务。', 409, code='replay_project_unavailable')
+            project_id = str(project_context.get('project_id') or '')
+            try:
+                project = project_store.get_project(project_id, include_summary=False)
+            except TypeError:
+                project = project_store.get_project(project_id)
+            if not project:
+                return _api_error('原项目不存在，无法按原项目配置重跑。', 409, code='replay_project_missing')
+            project_context['project_run_id'] = f"prun_{secrets.token_hex(8)}"
+            project_context['subject_candidates'] = project_store.subject_candidates(project_id)
+            output_root_dir = str(Path(project['project_dir']) / 'results' / experiment_type)
+
+        session_payload = {
+            'experiment_type': experiment_type,
+            'video_paths': video_paths,
+            'video_infos': video_infos,
+            'video_info': copy.deepcopy(video_infos[0] if video_infos else {}),
+            'start_seconds': snapshot.get('start_seconds'),
+            'end_seconds': snapshot.get('end_seconds'),
+            'output_dir': output_root_dir,
+            'output_root_dir': output_root_dir,
+            'fps_override': snapshot.get('fps_override'),
+            'is_batch': bool(snapshot.get('is_batch') or len(video_paths) > 1),
+            'draft_payload': copy.deepcopy(snapshot.get('draft_payload') or {}),
+            'draft_updated_at': time.time(),
+            'selected_video_idx': int(snapshot.get('selected_video_idx') or 0),
+            'created_at': time.time(),
+            'last_accessed_at': time.time(),
+            'reproducibility_seed': int(snapshot.get('random_seed') or DEFAULT_RANDOM_SEED),
+            'replay_resolved_config': copy.deepcopy(snapshot.get('resolved_config') or {}),
+            'replay_of': {
+                'session_id': str(snapshot.get('session_id') or run_id),
+                'snapshot_path': str(snapshot_path),
+            },
+        }
+        if project_context:
+            session_payload['project_context'] = project_context
+        analysis_sessions.create(session_id, session_payload)
+
+        if project_context:
+            project_store.upsert_project_run(
+                project_id=project_context.get('project_id'),
+                project_run_id=project_context.get('project_run_id'),
+                run_id=session_id,
+                session_id=session_id,
+                experiment_type=experiment_type,
+                assignment_ids=project_context.get('assignment_ids') or [],
+                output_dir=output_root_dir,
+                status='configured',
+                progress=0,
+                message='Reproducibility replay session created',
+            )
+            project_store.set_assignments_status(
+                project_context.get('project_id'),
+                project_context.get('assignment_ids') or [],
+                'configured',
+                latest_run_id=session_id,
+            )
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'start_url': url_for('start_analysis', session_id=session_id),
+            'monitor_url': url_for('monitor', session_id=session_id),
         })
 
     @app.route('/api/tasks/bulk_delete', methods=['POST'])
@@ -605,17 +854,13 @@ def register_api_routes(app, ctx) -> None:
             removed_runtime = False
 
             if sess:
-                analysis = sess.get('analysis')
-                if analysis is not None:
-                    status = str(getattr(analysis, 'status', '') or '').lower()
-                    is_running = bool(getattr(analysis, 'is_running', False)) or status in {'waiting', 'analyzing'}
-                    if is_running:
-                        skipped.append({
-                            'run_id': run_id,
-                            'session_id': session_id,
-                            'error': '任务仍在运行，请先停止分析。',
-                        })
-                        continue
+                if analysis_sessions.has_active_analysis(session_id):
+                    skipped.append({
+                        'run_id': run_id,
+                        'session_id': session_id,
+                        'error': '任务仍在运行，请先停止分析。',
+                    })
+                    continue
                 analysis_sessions.delete(session_id)
                 removed_runtime = True
 
@@ -697,7 +942,7 @@ def register_api_routes(app, ctx) -> None:
         """获取视频帧（用于标定页面）"""
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
+            return _api_error('会话不存在', 404, code='session_not_found')
 
         try:
             frame_idx = _nonnegative_int(request.args.get('frame', 0), 'frame')
@@ -707,7 +952,12 @@ def register_api_routes(app, ctx) -> None:
 
         video_paths = sess.get('video_paths') or []
         if not video_paths:
-            return jsonify({'error': '会话没有视频文件'}), 404
+            return _api_error(
+                '会话没有视频文件',
+                404,
+                code='video_not_found',
+                message_en='The analysis session has no video files.',
+            )
         video_idx = min(video_idx, len(video_paths) - 1)
         video_info = _session_video_info(sess, video_idx)
         total_frames = int(video_info.get('total_frames') or 0)
@@ -715,10 +965,20 @@ def register_api_routes(app, ctx) -> None:
             frame_idx = min(frame_idx, total_frames - 1)
 
         video_path = video_paths[video_idx]
-        frame = read_video_frame(video_path, frame_idx, fps=video_info.get('detected_fps') or video_info.get('fps'))
+        frame = read_video_frame(
+            video_path,
+            frame_idx,
+            fps=video_info.get('detected_fps') or video_info.get('fps'),
+            orientation_override=video_info.get('orientation_override'),
+        )
 
         if frame is None:
-            return jsonify({'error': '无法读取帧'}), 400
+            return _api_error(
+                '无法读取帧',
+                400,
+                code='video_not_found',
+                message_en='The requested video frame could not be read.',
+            )
 
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
@@ -735,9 +995,9 @@ def register_api_routes(app, ctx) -> None:
     def api_batch_state(session_id):
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
+            return _api_error('会话不存在', 404, code='session_not_found')
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+            return jsonify({'success': False, 'error': '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         cards = summarize_batch_state(
             sess.get('experiment_type'),
             sess.get('draft_payload'),
@@ -762,10 +1022,10 @@ def register_api_routes(app, ctx) -> None:
     def api_draft_payload(session_id):
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
+            return _api_error('会话不存在', 404, code='session_not_found')
 
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+            return jsonify({'success': False, 'error': '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
 
         if request.method == 'GET':
             return jsonify({
@@ -775,11 +1035,34 @@ def register_api_routes(app, ctx) -> None:
                 'selected_video_idx': int(sess.get('selected_video_idx') or 0),
             })
 
+        if analysis_sessions.has_active_analysis(session_id):
+            return _api_error('分析任务运行期间不能修改配置。', 409, code='analysis_config_locked')
+
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
-            return jsonify({'error': '草稿数据格式无效'}), 400
+            return _api_error('草稿数据格式无效', 400, code='invalid_draft')
 
         selected_video_idx = payload.pop('_selected_video_idx', None)
+        payload = _preserve_per_video_runtime_settings(
+            payload,
+            copy.deepcopy(sess.get('draft_payload') or {}),
+            len(sess.get('video_infos') or []),
+        )
+        window_errors = validate_analysis_windows(
+            payload,
+            sess.get('video_infos'),
+            session_start=sess.get('start_seconds'),
+            session_end=sess.get('end_seconds'),
+        )
+        if window_errors:
+            return _api_error(
+                window_errors[0],
+                400,
+                code='invalid_draft',
+                message_en='One or more video or ROI time windows are invalid.',
+                window_errors=window_errors,
+            )
+        _detach_exact_replay_after_edit(sess)
         analysis_sessions.save_draft(session_id, payload, selected_video_idx=selected_video_idx)
         cards = summarize_batch_state(
             sess.get('experiment_type'),
@@ -798,11 +1081,15 @@ def register_api_routes(app, ctx) -> None:
     def api_draft_action(session_id):
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
+            return _api_error('会话不存在', 404, code='session_not_found')
 
-        payload = request.get_json(silent=True) or {}
+        if analysis_sessions.has_active_analysis(session_id):
+            return _api_error('分析任务运行期间不能修改配置。', 409, code='analysis_config_locked')
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return _api_error('草稿操作数据格式无效', 400, code='invalid_draft_action')
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+            return jsonify({'success': False, 'error': '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
         action = str(payload.get('action') or '').strip().lower()
         draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
         total_videos = len(sess.get('video_infos') or [])
@@ -811,6 +1098,32 @@ def register_api_routes(app, ctx) -> None:
             per_video_configs = []
         while len(per_video_configs) < total_videos:
             per_video_configs.append({})
+        workspace_configs = draft_payload.get('workspace_video_configs')
+        if not isinstance(workspace_configs, list):
+            workspace_configs = []
+        while len(workspace_configs) < total_videos:
+            workspace_configs.append({})
+        video_infos = copy.deepcopy(sess.get('video_infos') or [])
+        project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
+
+        def _clear_project_roi_identity(config: dict) -> None:
+            if not project_context:
+                return
+            identity_keys = ('project_unit_id', 'subject_id', 'animal_code', 'group_id', 'group_name')
+            for roi_index, roi in enumerate(config.get('rois') or []):
+                if not isinstance(roi, dict):
+                    continue
+                previous_code = str(roi.get('animal_code') or '')
+                for key in identity_keys:
+                    roi.pop(key, None)
+                if previous_code and str(roi.get('name') or '') == previous_code:
+                    roi['name'] = f'ROI {roi_index + 1}'
+
+        def _refreshed_video_info(index: int, config: dict) -> dict:
+            info = copy.deepcopy(video_infos[index]) if isinstance(video_infos[index], dict) else {}
+            info['orientation_override'] = orientation_override_degrees(config.get('orientation_override'))
+            _update_video_entry_info(info)
+            return info
 
         def _payload_int(value, label: str) -> int:
             try:
@@ -829,13 +1142,62 @@ def register_api_routes(app, ctx) -> None:
             if not isinstance(target_indices, list) or not target_indices:
                 return jsonify({'error': '目标视频索引无效'}), 400
             source_config = copy.deepcopy(per_video_configs[source_index] or {})
+            try:
+                source_info = _refreshed_video_info(source_index, source_config)
+            except Exception:
+                logger.exception('Failed to refresh source video before copying configuration: session=%s', session_id)
+                return _api_error('无法读取源视频信息，配置未复制。', 400, code='copy_video_probe_failed')
+            parsed_targets: list[int] = []
             for raw_idx in target_indices:
                 try:
                     idx = _payload_int(raw_idx, '目标视频索引')
                 except ValueError as exc:
                     return jsonify({'error': str(exc)}), 400
-                if 0 <= idx < total_videos:
-                    per_video_configs[idx] = copy.deepcopy(source_config)
+                if not (0 <= idx < total_videos):
+                    return jsonify({'error': '目标视频索引无效'}), 400
+                if idx not in parsed_targets:
+                    parsed_targets.append(idx)
+
+            staged: list[tuple[int, dict, dict]] = []
+            for idx in parsed_targets:
+                copied_config = copy.deepcopy(source_config)
+                _clear_project_roi_identity(copied_config)
+                try:
+                    target_info = _refreshed_video_info(idx, copied_config)
+                except Exception:
+                    logger.exception('Failed to refresh target video while copying configuration: session=%s video=%s', session_id, idx)
+                    return _api_error(
+                        f'无法读取第 {idx + 1} 个目标视频的信息，配置未复制。',
+                        400,
+                        code='copy_video_probe_failed',
+                    )
+                if copied_config.get('rois'):
+                    source_size = (int(source_info.get('width') or 0), int(source_info.get('height') or 0))
+                    target_size = (int(target_info.get('width') or 0), int(target_info.get('height') or 0))
+                    if source_size != target_size:
+                        return _api_error(
+                            f'第 {idx + 1} 个目标视频画面尺寸为 {target_size[0]}×{target_size[1]}，'
+                            f'与源视频 {source_size[0]}×{source_size[1]} 不一致，不能直接复制像素 ROI。',
+                            400,
+                            code='copy_geometry_mismatch',
+                        )
+                window_errors = validate_analysis_windows(
+                    {'per_video_configs': [copied_config]},
+                    [target_info],
+                )
+                if window_errors:
+                    return _api_error(
+                        f'第 {idx + 1} 个目标视频：{window_errors[0]}',
+                        400,
+                        code='copy_window_invalid',
+                        window_errors=window_errors,
+                    )
+                staged.append((idx, copied_config, target_info))
+
+            for idx, copied_config, target_info in staged:
+                per_video_configs[idx] = copied_config
+                workspace_configs[idx] = copy.deepcopy(copied_config)
+                video_infos[idx] = target_info
         elif action == 'reset':
             try:
                 target_index = _payload_int(payload.get('target_index', -1), '目标视频索引')
@@ -844,10 +1206,19 @@ def register_api_routes(app, ctx) -> None:
             if not (0 <= target_index < total_videos):
                 return jsonify({'error': '目标视频索引无效'}), 400
             per_video_configs[target_index] = {}
+            workspace_configs[target_index] = {}
+            try:
+                video_infos[target_index] = _refreshed_video_info(target_index, {})
+            except Exception:
+                logger.exception('Failed to reset target video orientation metadata: session=%s video=%s', session_id, target_index)
+                return _api_error('无法恢复视频方向信息，配置未重置。', 400, code='reset_video_probe_failed')
         else:
             return jsonify({'error': '不支持的草稿操作'}), 400
 
         draft_payload['per_video_configs'] = per_video_configs
+        draft_payload['workspace_video_configs'] = workspace_configs
+        _detach_exact_replay_after_edit(sess)
+        sess['video_infos'] = video_infos
         analysis_sessions.save_draft(session_id, draft_payload)
         cards = summarize_batch_state(
             sess.get('experiment_type'),
@@ -862,15 +1233,180 @@ def register_api_routes(app, ctx) -> None:
         })
 
 
+    @app.route('/api/video_settings/<session_id>', methods=['POST'])
+    @app.route('/api/batch_video_settings/<session_id>', methods=['POST'])
+    def api_video_settings(session_id):
+        """Save the pre-calibration time, FPS, and orientation for one video."""
+        sess = analysis_sessions.get(session_id)
+        if not sess:
+            return jsonify({'error': '会话不存在'}), 404
+        if analysis_sessions.has_active_analysis(session_id):
+            return _api_error('分析任务运行期间不能修改配置。', 409, code='analysis_config_locked')
+        if is_experiment_release_hidden(sess.get('experiment_type')):
+            return jsonify({'success': False, 'error': '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return _api_error('视频配置数据格式无效', 400, code='invalid_video_settings')
+        validate_only = payload.get('validate_only') is True
+        try:
+            video_index = int(payload.get('video_index'))
+        except (TypeError, ValueError):
+            return jsonify({'error': '视频索引无效'}), 400
+        video_infos = sess.get('video_infos') or []
+        if not (0 <= video_index < len(video_infos)):
+            return jsonify({'error': '视频索引无效'}), 400
+
+        def optional_number(key: str, label: str) -> float | None:
+            value = payload.get(key)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                return None
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f'{label}必须是数字')
+            if not math.isfinite(number):
+                raise ValueError(f'{label}必须是有限数字')
+            return number
+
+        try:
+            start_sec = optional_number('start_sec', '起始时间')
+            end_sec = optional_number('end_sec', '结束时间')
+            fps_override = optional_number('fps_override', 'FPS')
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        if start_sec is not None and start_sec < 0:
+            return jsonify({'error': '起始时间不能小于 0'}), 400
+        if end_sec is not None and end_sec <= 0:
+            return jsonify({'error': '结束时间必须大于 0'}), 400
+        if start_sec is not None and end_sec is not None and end_sec <= start_sec:
+            return jsonify({'error': '结束时间必须大于起始时间'}), 400
+        if fps_override is not None and not (0.001 <= fps_override <= 1000.0):
+            return jsonify({'error': 'FPS 必须在 0.001 到 1000 之间'}), 400
+
+        # Work on an isolated copy until every validation and metadata refresh
+        # succeeds.  Otherwise a failed request can still leak a partially
+        # changed orientation into the in-memory session through the dict
+        # reference stored in ``video_infos``.
+        info = copy.deepcopy(video_infos[video_index]) if isinstance(video_infos[video_index], dict) else {}
+        duration = effective_video_duration_seconds(info, fps_override)
+        if duration and start_sec is not None and start_sec >= duration:
+            return jsonify({'error': f'起始时间必须小于视频时长（{duration:.3f} 秒）'}), 400
+        if duration and end_sec is not None and end_sec > duration + 0.001:
+            return jsonify({'error': f'结束时间不能超过视频时长（{duration:.3f} 秒）'}), 400
+
+        raw_orientation = payload.get('orientation_override', 'auto')
+        orientation_override = orientation_override_degrees(raw_orientation)
+        is_auto_orientation = raw_orientation is None or (
+            isinstance(raw_orientation, str) and raw_orientation.strip().lower() in {'', 'auto', 'metadata', 'detected'}
+        )
+        if orientation_override is None and not is_auto_orientation:
+            return jsonify({'error': '方向只能设为自动、0、90、180 或 270 度'}), 400
+
+        draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
+        configs = draft_payload.get('per_video_configs')
+        if not isinstance(configs, list):
+            configs = []
+        while len(configs) < len(video_infos):
+            configs.append({})
+        existing_config = configs[video_index] if isinstance(configs[video_index], dict) else {}
+        previous_orientation = orientation_override_degrees(existing_config.get('orientation_override'))
+        orientation_changed = previous_orientation != orientation_override
+        has_existing_roi = bool(existing_config.get('rois'))
+        if orientation_changed and has_existing_roi and not bool(payload.get('reset_configuration')):
+            return jsonify({
+                'success': False,
+                'requires_recalibration': True,
+                'error': '改变视频方向会使已有 ROI 坐标失效；请确认后重新标定该视频。',
+            }), 409
+        if orientation_changed and has_existing_roi:
+            existing_config = {}
+            configs[video_index] = existing_config
+            workspace_configs = draft_payload.get('workspace_video_configs')
+            if isinstance(workspace_configs, list) and video_index < len(workspace_configs):
+                workspace_configs[video_index] = {}
+
+        existing_config.update({
+            'start_sec': max(0.0, float(start_sec)) if start_sec is not None else None,
+            'end_sec': float(end_sec) if end_sec is not None else None,
+            'fps_override': float(fps_override) if fps_override is not None else None,
+            'orientation_override': orientation_override,
+        })
+        roi_window_errors = validate_roi_windows(
+            existing_config.get('rois'),
+            video_start=existing_config.get('start_sec'),
+            video_end=existing_config.get('end_sec') if existing_config.get('end_sec') is not None else duration,
+            video_label=f'第 {video_index + 1} 个视频',
+        )
+        if roi_window_errors:
+            return jsonify({'error': roi_window_errors[0], 'window_errors': roi_window_errors}), 400
+        configs[video_index] = existing_config
+        draft_payload['per_video_configs'] = configs
+
+        info['orientation_override'] = orientation_override
+        try:
+            _update_video_entry_info(info)
+        except Exception:
+            logger.exception('Failed to refresh video metadata after orientation change: session=%s video=%s', session_id, video_index)
+            return jsonify({'error': '无法更新视频方向信息'}), 400
+        if validate_only:
+            return jsonify({
+                'success': True,
+                'validated': True,
+                'video_info': info,
+            })
+        video_infos[video_index] = info
+        sess['video_infos'] = video_infos
+        _detach_exact_replay_after_edit(sess)
+        analysis_sessions.save_draft(session_id, draft_payload)
+        cards = _batch_cards(sess)
+        return jsonify({
+            'success': True,
+            'cards': cards,
+            'draft_updated_at': sess.get('draft_updated_at'),
+            'video_info': cards[video_index].get('video_info') if video_index < len(cards) else None,
+        })
+
+
+    @app.route('/api/analysis_config/<session_id>', methods=['POST'])
+    def api_analysis_config(session_id):
+        """Save session-level fields that belong to the unified analysis configuration page."""
+        sess = analysis_sessions.get(session_id)
+        if not sess:
+            return _api_error('会话不存在', 404, code='session_not_found')
+        if analysis_sessions.has_active_analysis(session_id):
+            return _api_error('分析任务运行期间不能修改配置。', 409, code='analysis_config_locked')
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return _api_error('分析配置数据格式无效', 400, code='invalid_analysis_config')
+        if sess.get('project_context'):
+            return jsonify({
+                'success': True,
+                'output_dir': sess.get('output_dir'),
+                'project_managed': True,
+            })
+        raw_output_dir = str(payload.get('output_dir') or '').strip().strip('"').strip("'")
+        try:
+            output_dir = _resolve_result_dir(raw_output_dir) if raw_output_dir else None
+            if output_dir:
+                output_dir = _ensure_writable_output_directory(output_dir)
+        except (TypeError, ValueError, OSError) as exc:
+            return _output_directory_error(exc)
+        _detach_exact_replay_after_edit(sess)
+        sess['output_dir'] = output_dir
+        analysis_sessions.persist(session_id)
+        return jsonify({'success': True, 'output_dir': output_dir, 'project_managed': False})
+
+
     @app.route('/api/debug_preview/<session_id>', methods=['POST'])
     def debug_preview(session_id):
         """参数调试预览"""
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
+            return _api_error('会话不存在', 404, code='session_not_found')
 
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
+            return jsonify({'success': False, 'error': '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
 
         data = request.get_json()
         if not isinstance(data, dict):
@@ -926,41 +1462,179 @@ def register_api_routes(app, ctx) -> None:
         return jsonify(payload)
 
 
+    @app.route('/api/experiment_defaults', methods=['GET'])
+    def get_experiment_defaults():
+        if experiment_defaults_store is None:
+            return jsonify({'error': 'Experiment defaults store is not configured.'}), 500
+        payload = experiment_defaults_store.get_payload()
+        payload['success'] = True
+        return jsonify(payload)
+
+
+    @app.route('/api/experiment_defaults', methods=['POST'])
+    def save_experiment_defaults():
+        if experiment_defaults_store is None:
+            return jsonify({'error': 'Experiment defaults store is not configured.'}), 500
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'error': '默认配置格式无效'}), 400
+        defaults = data.get('defaults', data)
+        try:
+            saved = experiment_defaults_store.save_defaults(defaults)
+        except ExperimentDefaultsValidationError as exc:
+            return jsonify({
+                'success': False,
+                'error': str(exc),
+                'error_en': exc.message_en,
+                'validation_errors': exc.errors,
+            }), 400
+        return jsonify({'success': True, 'defaults': saved})
+
+
+    @app.route('/api/experiment_defaults/reset', methods=['POST'])
+    def reset_experiment_defaults():
+        if experiment_defaults_store is None:
+            return jsonify({'error': 'Experiment defaults store is not configured.'}), 500
+        saved = experiment_defaults_store.reset()
+        return jsonify({'success': True, 'defaults': saved})
+
+
     @app.route('/api/start_analysis/<session_id>', methods=['POST'])
     def start_analysis(session_id):
         """启动分析"""
         sess = analysis_sessions.get(session_id)
         if not sess:
-            return jsonify({'error': '会话不存在'}), 404
-        if analysis_sessions.has_active_analysis(session_id):
-            return jsonify({'success': False, 'error': '分析任务已在运行，请勿重复启动。'}), 409
+            return _api_error('会话不存在', 404, code='session_not_found')
+        if not analysis_sessions.reserve_start(session_id):
+            return _api_error('分析任务已在运行，请勿重复启动。', 409, code='analysis_already_running')
 
+        @after_this_request
+        def _release_start_reservation(response):
+            analysis_sessions.release_start(session_id)
+            return response
+
+        saved_draft = copy.deepcopy(sess.get('draft_payload') or {})
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             data = {}
         use_saved_draft = bool(data.get('use_saved_draft'))
         if use_saved_draft:
-            draft_payload = copy.deepcopy(sess.get('draft_payload') or {})
+            draft_payload = copy.deepcopy(saved_draft)
             if not draft_payload:
-                return jsonify({'error': '当前没有可用于启动分析的已保存配置'}), 400
+                return _api_error('当前没有可用于启动分析的已保存配置', 400, code='missing_saved_config')
             data = draft_payload
-        elif not data and sess.get('draft_payload'):
-            data = copy.deepcopy(sess.get('draft_payload') or {})
+        elif not data and saved_draft:
+            data = copy.deepcopy(saved_draft)
+
+        # Single-video calibration pages start analysis directly and serialize
+        # assay/ROI fields only. Preserve the video-level time window, FPS and
+        # orientation saved on the unified analysis configuration page before
+        # validating or replacing the stored draft.
+        data = _preserve_per_video_runtime_settings(
+            data,
+            saved_draft,
+            len(sess.get('video_infos') or []),
+        )
+
+        window_errors = validate_analysis_windows(
+            data,
+            sess.get('video_infos'),
+            session_start=sess.get('start_seconds'),
+            session_end=sess.get('end_seconds'),
+        )
+        if window_errors:
+            return _api_error(
+                window_errors[0],
+                400,
+                code='invalid_draft',
+                message_en='One or more video or ROI time windows are invalid.',
+                window_errors=window_errors,
+            )
 
         binding_error = _project_subject_binding_error(sess, data)
         if binding_error:
-            return jsonify({'success': False, 'error': binding_error}), 400
+            return _api_error(binding_error, 400, code='project_subject_required')
+
+        output_root = (
+            sess.get('output_dir')
+            if isinstance(sess.get('project_context'), dict)
+            else (sess.get('output_root_dir') or sess.get('output_dir') or RESULT_DIR)
+        )
+        try:
+            _ensure_writable_output_directory(_resolve_result_dir(output_root))
+        except (TypeError, ValueError, OSError) as exc:
+            return _output_directory_error(exc)
 
         if isinstance(data, dict) and data:
             selected_video_idx = data.get('video', sess.get('selected_video_idx'))
             analysis_sessions.save_draft(session_id, data, selected_video_idx=selected_video_idx)
 
+        prepare_session_run_output(
+            sess,
+            session_id=session_id,
+            default_output_root=RESULT_DIR,
+            resolve_output_dir=_resolve_result_dir,
+            force_new=sess.get('analysis') is not None,
+        )
+        analysis_sessions.persist(session_id)
+
         experiment_type = str(sess.get('experiment_type') or 'tst').strip().lower()
         if is_experiment_release_hidden(experiment_type):
-            return jsonify({'success': False, 'error': '三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。'}), 403
-        vision_config = build_analysis_config(experiment_type, sess, data)
-        if visual_style_store is not None:
-            vision_config['visual_style'] = visual_style_store.get_style()
+            return _api_error(
+                '三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。',
+                403,
+                code='three_chamber_hidden',
+            )
+        replay_config = sess.get('replay_resolved_config') if isinstance(sess.get('replay_resolved_config'), dict) else None
+        if replay_config:
+            try:
+                vision_config = resolved_config_for_replay({
+                    'resolved_config': replay_config,
+                    'random_seed': sess.get('reproducibility_seed'),
+                }, output_dir=sess.get('output_dir') or RESULT_DIR)
+            except ReproducibilityError as exc:
+                return _api_error(
+                    str(exc),
+                    409,
+                    code='snapshot_read_failed',
+                    message_en='The saved resolved configuration is missing or invalid.',
+                )
+        else:
+            global_defaults = experiment_defaults_store.get_defaults() if experiment_defaults_store is not None else None
+            vision_config = build_analysis_config(experiment_type, sess, data, global_defaults=global_defaults)
+            if visual_style_store is not None:
+                vision_config['visual_style'] = visual_style_store.get_style()
+
+        reproducibility_seed = apply_deterministic_seed(
+            sess.get('reproducibility_seed') or vision_config.get('reproducibility_seed') or DEFAULT_RANDOM_SEED
+        )
+        sess['reproducibility_seed'] = reproducibility_seed
+        vision_config['reproducibility_seed'] = reproducibility_seed
+        vision_config.setdefault(
+            'resource_policy',
+            resolved_run_resource_policy(
+                len(sess.get('video_paths') or []),
+                requested_workers=vision_config.get('batch_workers') or os.environ.get('MOUSESCOPE_BATCH_WORKERS'),
+            ),
+        )
+        try:
+            run_snapshot = build_run_snapshot(
+                session_id=session_id,
+                app_version=app_version,
+                sess=sess,
+                resolved_config=vision_config,
+            )
+            snapshot_path = write_run_snapshot(
+                vision_config.get('output_dir') or sess.get('output_dir') or RESULT_DIR,
+                run_snapshot,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.exception("Failed to persist run snapshot for session %s", session_id)
+            return _api_error(
+                f'无法写入运行快照，分析未启动：{exc}',
+                500,
+                code='snapshot_write_failed',
+            )
         analysis_class_map = {
             'tst': VisionAnalysisSession,
             'open_field': OpenFieldMultiArenaAnalysisSession,
@@ -979,9 +1653,14 @@ def register_api_routes(app, ctx) -> None:
             video_infos=sess['video_infos'],
             config=vision_config
         )
+        append_result = getattr(analysis, '_append_result_file', None)
+        if callable(append_result):
+            append_result(snapshot_path, group='metadata')
+        elif snapshot_path not in analysis.result_files:
+            analysis.result_files.append(snapshot_path)
 
-        if not analysis_sessions.set_analysis_if_idle(session_id, analysis):
-            return jsonify({'success': False, 'error': '分析任务已在运行，请勿重复启动。'}), 409
+        if not analysis_sessions.commit_reserved_analysis(session_id, analysis):
+            return _api_error('分析任务已在运行，请勿重复启动。', 409, code='analysis_already_running')
         try:
             analysis.start()
         except RuntimeError as exc:
@@ -990,7 +1669,7 @@ def register_api_routes(app, ctx) -> None:
             analysis.message = str(exc)
             analysis.end_time = time.time()
             analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
-            return jsonify({'success': False, 'error': str(exc)}), 409
+            return _api_error(str(exc), 409, message_en=str(exc))
         analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
         project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
         if project_store is not None and project_context:
@@ -1066,18 +1745,25 @@ def register_api_routes(app, ctx) -> None:
     def stop_analysis(session_id):
         """停止分析"""
         sess = analysis_sessions.get(session_id)
-        if sess and 'analysis' in sess:
-            sess['analysis'].stop()
-            analysis_history.upsert_runtime(session_id, sess, analysis=sess['analysis'])
+        if sess and sess.get('analysis') is not None:
+            analysis = sess['analysis']
+            stopped_now = bool(analysis.stop())
+            analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
             project_context = sess.get('project_context') if isinstance(sess.get('project_context'), dict) else None
-            if project_store is not None and project_context:
+            if stopped_now and project_store is not None and project_context:
                 project_store.set_assignments_status(
                     project_context.get('project_id'),
                     project_context.get('assignment_ids') or [],
                     'stopped',
                     latest_run_id=session_id,
                 )
-            return jsonify({'message': '已发送停止命令'})
+            if stopped_now:
+                return jsonify({'success': True, 'message': '已发送停止命令'})
+            return jsonify({
+                'success': True,
+                'message': '分析任务已经结束，无需重复停止。',
+                'status': str(getattr(analysis, 'status', '') or ''),
+            })
         return jsonify({'error': '会话不存在'}), 404
 
 
@@ -1130,12 +1816,11 @@ def register_api_routes(app, ctx) -> None:
             return send_file(files[0], as_attachment=True)
 
         result_dir = _resolve_result_dir(sess.get('output_dir'))
-        os.makedirs(result_dir, exist_ok=True)
-        zip_path = os.path.join(result_dir, f'{session_id}_{file_type}.zip')
+        zip_path = _temp_zip_path(f'{session_id}_{file_type}')
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for path in files:
                 zf.write(path, _result_zip_arcname(path, result_dir))
-        return send_file(zip_path, as_attachment=True)
+        return _send_zip_and_cleanup(zip_path, f'MouseScope_{file_type}.zip')
 
 
     @app.route('/api/open_folder/<session_id>', methods=['POST'])

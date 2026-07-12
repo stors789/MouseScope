@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v3.4.0-c96442" alt="Version"/>
+  <img src="https://img.shields.io/badge/Version-v3.5.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
   <img src="https://img.shields.io/badge/Modules-8%20Assays-16a34a" alt="Modules"/>
@@ -23,16 +23,16 @@
 </p>
 
 <p align="center">
-  <img src="static/img/ui_home.png" alt="MouseScope v3.4.0 home page" width="960"/>
+  <img src="static/img/ui_home.png" alt="MouseScope v3.5.0 home page" width="960"/>
   <br/>
-  <sub>MouseScope Desktop v3.4.0 首页 · Project Workspace and Quick Analysis entry points</sub>
+  <sub>MouseScope Desktop v3.5.0 首页 · Project Workspace and Quick Analysis entry points</sub>
 </p>
 
 ## MouseScope 是什么 | Overview
 
-MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、标定配置、参数预览、批量分析到结果复核串成一条统一流程，覆盖悬尾、强迫游泳、水迷宫、旷场、新奇物体识别、高架十字迷宫、Y 迷宫和明暗箱等常用实验，同时保留 `项目工作台 Project Workspace` 与 `快速分析 Quick Analysis` 两种入口。
+MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把小鼠行为学视频从项目组织、视频导入、分析范围配置、标定与 ROI 设置、参数预览、批量分析到结果复核串成一条统一流程，覆盖悬尾、强迫游泳、水迷宫、旷场、新奇物体识别、高架十字迷宫、Y 迷宫和明暗箱等常用实验，同时保留 `项目工作台 Project Workspace` 与 `快速分析 Quick Analysis` 两种入口。
 
-MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. It covers common assays including TST, FST, Morris Water Maze, OFT, NOR, EPM, Y-Maze, and Light-Dark Box while the `Project Workspace` and `Quick Analysis` entry points remain available.
+MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, analysis-range setup, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. It covers common assays including TST, FST, Morris Water Maze, OFT, NOR, EPM, Y-Maze, and Light-Dark Box while the `Project Workspace` and `Quick Analysis` entry points remain available.
 
 ## 两种入口 | Two Entry Points
 
@@ -46,8 +46,8 @@ Use this for formal studies, long-term projects, and workflows where results mus
   Project list and local project-folder management.
 - 组别管理和小鼠编号批量生成。
   Group management and bulk animal-code generation.
-- 视频导入、视频元数据索引和实验类型绑定。
-  Video import, metadata indexing, and experiment-type assignment.
+- 视频导入、视频元数据索引、实验类型绑定，以及逐视频起止时间、FPS 和画面方向配置。
+  Video import, metadata indexing, experiment-type assignment, and per-video start/end time, FPS, and orientation setup.
 - 同一实验类型的视频记录可批量进入配置与分析。
   Records of the same assay type can be configured and analyzed together.
 - 项目运行记录会回写到项目结果页，并可直接打开结果目录。
@@ -61,10 +61,19 @@ Use this for temporary runs, parameter trials, single videos, or small batches t
 
 - 支持拖拽上传或填写本机视频/文件夹路径。
   Supports drag-and-drop upload or local file/folder paths.
-- 保留原有上传 -> 标定 -> ROI/区域 -> 参数预览 -> 分析流程。
-  Keeps the original upload -> calibration -> ROI/zone setup -> preview -> analysis workflow.
+- 统一使用分析配置页设置逐视频起止时间、FPS 和画面方向，再进入标定与 ROI/区域配置。
+  Uses the shared analysis-configuration page for per-video time ranges, FPS, and orientation before calibration and ROI/zone setup.
 - 支持多视频批量工作台，为每个视频独立保存配置。
   Supports batch workspace with per-video configuration.
+
+## 全局设置 | Global Settings
+
+- `图像样式 Image Style` 用于统一轨迹图、热力图、结果拼图和图例颜色，并提供按实验类型切换的真实渲染预览。
+  `Image Style` controls track-map, heatmap, result-grid, and legend colors with real rendered previews for each assay.
+- `实验默认配置 Experiment Defaults` 汇总各实验模块的可配置参数。保存后的默认值用于新建分析，具体视频和 ROI 中仍可继续覆盖。
+  `Experiment Defaults` centralizes configurable assay parameters. Saved defaults apply to newly created analyses and can still be overridden for individual videos and ROIs.
+- 全局默认值不会追溯修改已经保存或已经运行的任务。
+  Global defaults do not retroactively alter saved or completed runs.
 
 ## 支持实验模块 | Supported Assays
 
@@ -89,9 +98,9 @@ Use this for temporary runs, parameter trials, single videos, or small batches t
    Add groups and create or enter animal codes.
 3. 导入视频，并为每个视频选择实验类型。
    Import videos and assign an experiment type to each video.
-4. 在分析页选择同一种实验类型的记录，进入配置流程。
-   Select records of the same assay type and enter setup.
-5. 在 ROI/arena/cylinder/maze unit 中选择对应项目小鼠。
+4. 在分析配置页为每个视频确认起止时间、FPS 和画面方向。
+   Confirm each video's start/end time, FPS, and orientation on the analysis-configuration page.
+5. 进入标定与 ROI/arena/cylinder/maze unit 配置，并选择对应项目小鼠。
    Bind each ROI, arena, cylinder, or maze unit to a project animal.
 6. 完成参数预览、启动分析，并在项目结果页查看运行记录。
    Tune parameters, start analysis, and review runs from the project result page.
@@ -100,10 +109,10 @@ Use this for temporary runs, parameter trials, single videos, or small batches t
 
 1. 选择实验模块并上传一个或多个视频。
    Choose an assay and upload one or more videos.
-2. 根据实验类型完成标定、ROI、迷宫区域或目标物设置。
-   Configure calibration, ROI, maze zones, or objects.
-3. 设置时间窗、检测遮掩框和关键参数，并用预览检查检测质量。
-   Set time windows, detection masks, and key parameters, then check preview quality.
+2. 在分析配置页为每个视频确认起止时间、FPS 和画面方向。
+   Confirm per-video start/end time, FPS, and orientation on the analysis-configuration page.
+3. 根据实验类型完成标定、ROI、迷宫区域、目标物、检测遮掩框和关键参数设置，并用预览检查检测质量。
+   Configure calibration, ROIs, maze zones, objects, detection masks, and key parameters, then check preview quality.
 4. 多视频时进入批量工作台，逐个确认配置完整性。
    For multi-video sessions, use the batch workspace to confirm each video's setup.
 5. 启动分析，并在任务中心或监控页查看进度与结果。
@@ -127,6 +136,8 @@ MouseScope exports not only raw tables, but also review-friendly materials.
   Trackmaps, heatmaps, or zone summaries for MWM, OFT, NOR, EPM, and Y-Maze; LDB exports trackmaps/heatmaps only when the dark chamber is visible.
 - 项目分析结果会进入项目目录下的 `results/`，便于按课题归档。
   Project runs are saved under the project's `results/` directory for study-level organization.
+- 每次分析使用独立结果目录并保存运行快照；任务中心可在原视频未变化时按原配置重新运行，并比较科研 CSV/TSV/TXT 结果的一致性。
+  Each analysis uses an isolated result directory and stores a run snapshot. Task Center can replay the saved configuration when source videos are unchanged and compare scientific CSV/TSV/TXT outputs for consistency.
 
 ## 结果示例 | Featured Results
 
@@ -282,10 +293,10 @@ MouseScope Desktop 默认在本机保存运行数据，不引入账号、云同�
 
 MouseScope Desktop stores runtime data locally by default. It does not introduce accounts, cloud sync, or server-side collaboration.
 
-- 快速分析上传与结果通常位于 `data/uploads/`、`data/results/` 和 `data/history/`。
-  Quick-analysis uploads and outputs are usually under `data/uploads/`, `data/results/`, and `data/history/`.
-- 项目工作台数据位于 `data/projects/`，每个项目包含本地 SQLite 数据库、视频索引和项目结果目录。
-  Project Workspace data is stored under `data/projects/`, including local SQLite databases, video indexes, and project result folders.
+- 在程序目录可写时，快速分析与项目数据保存在 EXE 同级 `data/` 下；程序目录不可写时自动使用 `%LOCALAPPDATA%\MouseScope\data`。
+  When the application directory is writable, quick-analysis and project data are stored under `data/` beside the EXE; otherwise MouseScope automatically uses `%LOCALAPPDATA%\MouseScope\data`.
+- `data/uploads/`、`data/results/` 和 `data/history/` 保存快速分析数据；`data/projects/` 保存项目数据库、视频索引和项目结果目录。
+  `data/uploads/`, `data/results/`, and `data/history/` hold quick-analysis data; `data/projects/` holds project databases, video indexes, and project result folders.
 - 不建议把 `data/` 下的实验数据、数据库、密钥或视频文件提交到 Git。
   Do not commit experimental data, local databases, secrets, or videos under `data/`.
 
@@ -315,16 +326,20 @@ MouseScope/
 |  |- analysis_history.py
 |  |- analysis_runtime.py
 |  |- analysis_sessions.py
+|  |- analysis_windows.py
+|  |- experiment_defaults.py
 |  |- debug_preview.py
 |  |- experiment_registry.py
 |  |- light_dark_session.py
 |  |- payload_geometry.py
 |  |- project_store.py
 |  |- session_store.py
+|  |- reproducibility.py
 |  |- water_maze_session.py
 |  |- video_export.py
 |  |- video_frame_reader.py
 |  |- video_metadata.py
+|  |- video_orientation.py
 |  \- video_timebase.py
 |- templates/
 |  |- projects.html
@@ -364,8 +379,8 @@ MouseScope/
   MouseScope is a research-assistance tool. Raw videos and annotated outputs should still be checked before formal interpretation.
 - 跟踪效果会受到光照、背景、阴影、反光、视角稳定性和视频质量影响。
   Tracking quality depends on lighting, background, shadows, glare, camera stability, and video quality.
-- 当前系统主要基于经典计算机视觉方法，不等同于完整姿态估计。
-  The current system mainly uses classical computer vision and is not equivalent to full pose estimation.
+- MouseScope 主要基于经典计算机视觉方法，不等同于完整姿态估计。
+  MouseScope mainly uses classical computer vision and is not equivalent to full pose estimation.
 - NOR 探索判定包含头向和尾部证据的启发式逻辑，不能完全替代人工专业判断。
   NOR exploration scoring uses heuristic head-direction and tail-evidence logic and should not fully replace expert review.
 
@@ -381,13 +396,13 @@ If MouseScope helps your work, please cite the platform version below.
   title   = {MouseScope: Mouse Behavioral Video Analysis Platform},
   year    = {2026},
   url     = {https://github.com/fujiacheng3/MouseScope},
-  version = {3.4.0}
+  version = {3.5.0}
 }
 ```
 
 Plain text:
 
-> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.4.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
+> Fu, J. (2026). *MouseScope: Mouse behavioral video analysis platform* (Version 3.5.0) [Software]. GitHub. https://github.com/fujiacheng3/MouseScope
 
 ## 许可与联系 | License & Contact
 

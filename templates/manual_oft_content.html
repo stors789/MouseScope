@@ -5,19 +5,18 @@
     const OFT_MANUAL = {
         zh: {
             heroEyebrow: 'Open Field Test / OFT',
-            heroTitle: '旷场实验完整操作手册',
+            heroTitle: '旷场实验',
             heroSubtitle: '本手册覆盖多 arena 标定、检测遮罩、每个参数的作用、全部结果字段含义，以及批量模式下每个视频应该如何独立配置。',
-            heroChips: ['4 角点标定', '透视校正到厘米坐标', '每视频独立批量', 'track / summary / bins', '热图 + 轨迹图'],
             heroCards: [
                 ['fas fa-border-all', '模块真正输出的是什么', 'OFT 不只是“有无进中心区”。系统会在透视校正后的厘米坐标里统计总距离、中心区距离、外周区距离、速度、中心区、壁区、移动 / 静止时间，并导出逐帧轨迹、分箱结果和图像。'],
                 ['fas fa-clone', '批量模式的使用规则', '每个视频都会独立保存 arena、遮罩、时间窗和调参参数；但在同一个视频内部，多 arena 仍共享这一视频的检测与统计参数。'],
                 ['fas fa-compass-drafting', '为什么 arena 角点这么重要', 'arena 四角不只是画个框。它决定透视矫正、厘米坐标、中心区位置、距离统计和热图坐标系，角点一旦偏，后面所有空间指标都会跟着偏。'],
             ],
-            flow: ['视频采集要求', '上传与时间范围', 'arena 标定', 'ROI 命名与时间窗', '调参与预览', '结果与图像'],
+            flow: ['视频采集要求', '导入与分析配置', 'arena 标定', 'ROI 命名与时间窗', '调参与预览', '结果与图像'],
             nav: [
                 ['overview', '总览'],
                 ['recording', '采集要求'],
-                ['upload', '上传与时间范围'],
+                ['upload', '导入与分析配置'],
                 ['arena', 'arena / 遮罩 / 时间窗'],
                 ['params', '参数字典'],
                 ['outputs', '结果字典'],
@@ -34,7 +33,7 @@
                         '导出的轨迹、热图和 CSV 都基于透视矫正后的坐标，而不是原始像素。'
                     ],
                     callouts: [
-                        ['warning', '最容易被误读的一点', '<code>outer_time_s</code> / <code>outer_percent</code> / <code>outer_distance_cm</code> 表示“非中心区”统计，其中已经包含壁区；它不是“去掉壁区之后剩余的中间环带”。']
+                        ['warning', '最容易被误读的一点', '<code>outer_time_s</code> / <code>outer_percent</code> / <code>outer_distance_cm</code> 表示“非中心区”统计，其中包含壁区；它不是“去掉壁区之后剩余的中间环带”。']
                     ]
                 },
                 recording: {
@@ -55,7 +54,7 @@
                             icon: 'fas fa-lightbulb',
                             items: [
                                 '让鼠体和地面保持明显对比，减少中心区高光、阴影和反光。',
-                                '如果不同笼位亮度差异很大，虽然现在可以逐视频独立调参，但同一视频内多个 arena 仍共享参数，所以最好先改善采集。',
+                                '同一视频内的多个 arena 共享检测参数。不同笼位亮度差异较大时，建议优先改善采集条件，避免同一组参数难以兼顾。',
                                 '当小鼠躯体可能超出 arena 边界时，可用检测遮罩额外框定允许检测鼠体的范围，而不是把 arena 硬往外画。'
                             ]
                         },
@@ -73,12 +72,12 @@
                     ]
                 },
                 upload: {
-                    title: '上传与时间范围',
-                    lead: '上传页负责定义本批次视频、默认统计时间和输出目录。之后每个 arena 还能继续设置自己的时间模式和时间窗。',
+                    title: '导入与分析配置',
+                    lead: '导入页负责选择实验和视频；分析配置页逐视频设置外层统计时间、FPS、方向和输出目录。每个 arena 还能继续设置自己的时间窗。',
                     points: [
-                        '上传页的全局开始时间 / 结束时间是默认统计窗口；arena 如果设置为“跟随全局”，就直接沿用这里的时间。',
-                        '如果视频 FPS 元数据不稳定或你用了可变帧率素材，建议在上传页手动覆盖 FPS。',
-                        '批量时建议先把同类视频放在同一批，比如同机位、同 arena 尺寸、同采集条件的视频。虽然现在支持逐视频独立配置，但这样仍然最稳。'
+                        '分析配置页的视频开始 / 结束时间是外层统计窗口；arena 如果设置为“跟随视频”，就直接沿用该范围。',
+                        '如果视频 FPS 元数据不稳定或使用了可变帧率素材，建议在分析配置页手动覆盖 FPS。',
+                        '批量分析建议组合机位、arena 尺寸和采集条件相近的视频，便于逐视频配置和统一复核。'
                     ],
                     callouts: [
                         ['success', '输出目录会怎么写', '批量分析时，系统会在你选定的总输出目录下自动创建每个视频各自的子文件夹，并把该视频对应的 CSV、报告、热图、轨迹图和结果视频都放进去。']
@@ -94,7 +93,7 @@
                             items: [
                                 '每个 arena 必须恰好 4 个角点，建议按顺时针或逆时针连续点击，避免自交。',
                                 '输入的 arena 边长 <code>arena_side_cm</code> 会决定透视校正后的厘米尺度。',
-                                '如果 arena 实际不是正方形，请务必确认当前实验设计是否允许使用方形边长近似；当前 OFT GUI 默认按正方形 arena 处理。'
+                                '如果 arena 实际不是正方形，请确认实验设计是否允许使用方形边长近似；OFT 按正方形 arena 处理。'
                             ]
                         },
                         {
@@ -119,7 +118,7 @@
                     timeTable: {
                         headers: ['模式', '含义', '什么时候用'],
                         rows: [
-                            ['<code>global</code>', '跟随上传页的全局开始 / 结束时间。', '多 arena 共用同一实验时长时。'],
+                            ['<code>global</code>', '跟随分析配置页中对应视频的开始 / 结束时间。', '多 arena 共用同一实验时长时。'],
                             ['<code>precise</code>', '直接按视频绝对时间指定开始 / 结束秒数。', '不同 arena 需要各自统计不同时间段时。']
                         ]
                     },
@@ -156,7 +155,7 @@
                         ]
                     },
                     callouts: [
-                        ['info', '同一视频里的共享规则', '现在 OFT 已经支持“每个视频独立调参”，但一个视频里的多个 arena 仍共享该视频的检测参数和统计参数。也就是说，参数是按视频独立，不是按 arena 独立。']
+                        ['info', '同一视频里的共享规则', 'OFT 参数按视频独立保存；同一视频里的多个 arena 共享该视频的检测参数和统计参数。参数层级是“每个视频一套”，不是“每个 arena 一套”。']
                     ]
                 },
                 outputs: {
@@ -242,9 +241,9 @@
                 },
                 batch: {
                     title: '批量流程',
-                    lead: '现在 OFT 已经可以做到“每个视频单独配置，然后统一批量运行”。正确流程是先把每个视频的 arena 和参数都配完，再开始整批分析。',
+                    lead: 'OFT 批量分析为每个视频保存独立配置。请先完成每个视频的 arena 和参数设置，再启动整批分析。',
                     steps: [
-                        '上传多个 OFT 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '导入多个 OFT 视频，在分析配置页逐视频设置时间范围、FPS、方向和输出目录。',
                         '进入 arena 标定页后，逐个视频切换并分别输入 arena 边长，画完该视频里的所有 arena。',
                         '如果某个视频中小鼠躯体可能超出 arena 边界，为对应 arena 单独画检测遮罩。',
                         '分别给每个 arena 命名，并设置该 arena 的时间模式和精确时间窗。',
@@ -261,7 +260,7 @@
                 },
                 troubleshooting: {
                     title: '常见问题与排错',
-                    lead: '如果 OFT 已经能跑出结果，但你怀疑某些图和数值不对，通常先从 arena 角点、遮罩和检测率看起，而不是先看最终 summary。',
+                    lead: '如果 OFT 结果中的图或数值存在疑问，优先检查 arena 角点、遮罩和检测率，再复核最终 summary。',
                     items: [
                         '热图和轨迹图整体被拉歪：优先怀疑 arena 四角点顺序或位置偏差。',
                         '边界附近检测不完整：优先补检测遮罩，再考虑继续调阈值和形态学参数。',
@@ -276,12 +275,11 @@
         },
         en: {
             heroEyebrow: 'Open Field Test / OFT',
-            heroTitle: 'Complete Open Field Manual',
+            heroTitle: 'Open Field Test',
             heroSubtitle: 'This manual explains multi-arena calibration, detection masks, every exposed parameter, every exported result field, and the correct per-video batch workflow.',
-            heroChips: ['4-corner calibration', 'Perspective-corrected cm space', 'Per-video batch configs', 'track / summary / bins', 'Heatmap + trackmap'],
             heroCards: [
                 ['fas fa-border-all', 'What the module really outputs', 'OFT is not only “time in center.” The system measures total distance, center distance, outer distance, speed, center occupancy, wall occupancy, movement and immobility time inside perspective-corrected centimeter coordinates, then exports frame-level tracks, time bins, and figures.'],
-                ['fas fa-clone', 'Batch workflow rule', 'Arena layout, masks, time windows, and tuning are stored per video. However, arenas inside the same video still share one detection-and-statistics parameter set.'],
+                ['fas fa-clone', 'Batch workflow rule', 'Arena layout, masks, time windows, and tuning are stored per video. Arenas inside the same video share one detection-and-statistics parameter set.'],
                 ['fas fa-compass-drafting', 'Why arena corners matter so much', 'The four arena corners do not just draw a box. They define the perspective transform, centimeter coordinates, center-zone location, distance metrics, and the heatmap coordinate system. If the corners drift, all spatial outputs drift with them.'],
             ],
             flow: ['Recording requirements', 'Upload and analysis range', 'Arena calibration', 'Arena naming and time window', 'Tuning and preview', 'Results and figures'],
@@ -301,7 +299,7 @@
                     lead: 'The OFT module quantifies total distance, center/outer distance, speed, center occupancy, and wall preference in the open field test. Every arena is transformed into standardized centimeter coordinates before statistics are calculated.',
                     points: [
                         'In OFT, each ROI represents one full arena, not an arbitrary polygonal activity patch.',
-                        'If one video contains multiple arenas, they are processed in parallel, but those arenas still share one tuning set for that video.',
+                        'If one video contains multiple arenas, they are processed in parallel and share one tuning set for that video.',
                         'The exported trajectories, heatmaps, and CSV files are based on perspective-corrected coordinates rather than raw pixels.'
                     ],
                     callouts: [
@@ -326,7 +324,7 @@
                             icon: 'fas fa-lightbulb',
                             items: [
                                 'Maintain strong contrast between the mouse and the arena floor, and avoid center-zone glare or harsh shadows.',
-                                'Even though videos now support per-video tuning, arenas inside one video still share parameters, so it is best to improve uneven lighting upstream.',
+                                'Arenas within one video share detection parameters. If lighting differs substantially between positions, improve acquisition conditions so one parameter set can cover every arena.',
                                 'When the mouse body may extend beyond the arena boundary, use a detection mask instead of forcing the arena polygon outward.'
                             ]
                         },
@@ -345,11 +343,11 @@
                 },
                 upload: {
                     title: 'Upload and analysis range',
-                    lead: 'The upload page defines the videos in the run, the default analysis window, and the output directory. Each arena can later refine its own time window.',
+                    lead: 'Import selects the assay and videos. Analysis Configuration sets each video\'s outer range, FPS, orientation, and output directory; each arena can then narrow its own window.',
                     points: [
                         'The upload-page global start and end time define the default analysis window; arenas in “follow global” mode use it directly.',
                         'If FPS metadata is unreliable or variable frame rate was used, override FPS manually.',
-                        'For batch work, it is still best to group videos with similar camera setup and arena conditions together, even though per-video configuration is now supported.'
+                        'For batch work, group videos with similar camera setup, arena dimensions, and acquisition conditions to simplify per-video setup and review.'
                     ],
                     callouts: [
                         ['success', 'How the output directory is written', 'During batch analysis, the system creates one subfolder per video under the chosen parent output folder and stores that video’s CSVs, reports, figures, and result video there.']
@@ -373,7 +371,7 @@
                             icon: 'fas fa-mask',
                             items: [
                                 'The detection mask defines where the mouse body is allowed to be detected. It does not change arena geometry, center-zone size, or spatial coordinates.',
-                                'Use it when the mouse body may touch or extend beyond the arena boundary while statistics should still use the original arena.',
+                                'Use it when the mouse body may touch or extend beyond the arena boundary while statistics must use the defined arena.',
                                 'If no separate mask is drawn, the arena polygon itself is used as the default detection region.'
                             ]
                         },
@@ -400,7 +398,7 @@
                 },
                 params: {
                     title: 'Parameter dictionary',
-                    lead: 'Below are the parameters that are currently exposed in the OFT GUI. They fall into two groups: mouse detection parameters and statistics-definition parameters.',
+                    lead: 'The OFT settings are divided into mouse-detection parameters and statistics-definition parameters.',
                     detectTable: {
                         headers: ['Parameter', 'Where', 'What it does', 'Typical adjustment logic'],
                         rows: [
@@ -427,7 +425,7 @@
                         ]
                     },
                     callouts: [
-                        ['info', 'The sharing rule inside one video', 'OFT now supports per-video tuning, but multiple arenas within the same video still share that video’s detection and statistics parameters. In other words, tuning is per video, not per arena.']
+                        ['info', 'The sharing rule inside one video', 'OFT stores one parameter set per video. Multiple arenas within the same video share its detection and statistics parameters; tuning is per video, not per arena.']
                     ]
                 },
                 outputs: {
@@ -513,7 +511,7 @@
                 },
                 batch: {
                     title: 'Batch workflow',
-                    lead: 'OFT now supports truly per-video configuration followed by one combined batch run. The correct workflow is to finish every video’s arena setup and tuning before you start analysis.',
+                    lead: 'OFT batch analysis stores an independent configuration for each video. Finish every video’s arena setup and tuning before starting the batch.',
                     steps: [
                         'Upload multiple OFT videos and set the global time range, FPS override, and output directory.',
                         'On the arena-calibration step, switch through videos one by one and enter the arena side length for each video, then finish all arenas in that video.',
@@ -525,7 +523,7 @@
                     ],
                     rules: [
                         'In batch mode, each video stores its own <code>arena_side_cm</code>, arena list, detection masks, time windows, and tuning parameters.',
-                        'Multiple arenas inside the same video still share one parameter set for detection and statistics.',
+                        'Multiple arenas inside the same video share one parameter set for detection and statistics.',
                         'If a video is missing required arena geometry or contains invalid mask setup, the batch is blocked before start.',
                         'ZIP downloads preserve the per-video subdirectory structure.'
                     ]
@@ -608,9 +606,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

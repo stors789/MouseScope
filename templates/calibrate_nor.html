@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}NOR 配置 - MouseScope{% endblock %}
 
 {% block extra_css %}
@@ -65,11 +65,11 @@
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
-            <strong>批量单视频编辑模式</strong>
-            <div class="small mt-1">当前正在编辑第 {{ current_video_index + 1 }} 个视频。保存当前设置后返回批次页面，再统一启动整批分析。</div>
+            <strong>逐视频配置模式</strong>
+            <div class="small mt-1">正在编辑第 {{ current_video_index + 1 }} 个视频。保存设置后返回分析配置页，再统一开始分析。</div>
         </div>
         <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
-            <i class="fas fa-layer-group me-2"></i>返回批次页面
+            <i class="fas fa-layer-group me-2"></i>返回分析配置
         </a>
     </div>
     {% endif %}
@@ -329,7 +329,7 @@
                             </div>
                             <div class="d-flex align-items-end">
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                    <input class="form-check-input" type="checkbox" id="generateVideo"{% if experiment_defaults.get('generate_video', true) %} checked{% endif %}>
                                     <label class="form-check-label" for="generateVideo" data-nor-i18n="stats.generate_video">生成标注视频</label>
                                 </div>
                             </div>
@@ -365,6 +365,7 @@ const launchMode = {{ launch_mode | tojson }};
 const currentVideoIndexFromServer = {{ current_video_index | tojson }};
 const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
 const initialDraftPayload = {{ draft_payload | tojson }};
+const experimentDefaults = {{ experiment_defaults | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
 {% else %}
@@ -410,7 +411,7 @@ const NOR_I18N = {
         'roi_list.card.points_hint_mask_default': '4 个 arena 角点 + 2 个物体中心点 · 检测遮罩默认跟随 arena',
         'roi_list.card.name': '名称',
         'roi_list.card.time_mode': '统计模式',
-        'roi_list.card.mode.global': '跟随全局',
+        'roi_list.card.mode.global': '跟随视频',
         'roi_list.card.mode.precise': '精确时间窗',
         'roi_list.card.start_time': '开始时间 (s)',
         'roi_list.card.end_time': '结束时间 (s)',
@@ -520,7 +521,7 @@ const NOR_I18N = {
         'roi_list.card.points_hint_mask_default': '4 arena corners + 2 object centers · detection mask follows the arena by default',
         'roi_list.card.name': 'Name',
         'roi_list.card.time_mode': 'Statistics Mode',
-        'roi_list.card.mode.global': 'Follow Global',
+        'roi_list.card.mode.global': 'Follow Video',
         'roi_list.card.mode.precise': 'Precise Time Window',
         'roi_list.card.start_time': 'Start Time (s)',
         'roi_list.card.end_time': 'End Time (s)',
@@ -655,11 +656,15 @@ function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
         return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
     }
     const selectedId = roi.subject_id || '';
-    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+    const english = norLang() === 'en';
+    const selectText = english ? 'Select a registered animal' : '请选择已有小鼠';
+    const labelText = english ? 'Animal / Experimental Unit' : '小鼠 / 实验单元';
+    const noteText = english ? 'Project mode requires a registered animal.' : '项目模式下必须选择已登记小鼠';
+    const options = [`<option value="">${selectText}</option>`].concat((projectSubjects || []).map(subject => {
         const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
         return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     })).join('');
-    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateROIProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+    return `<label class="form-label">${labelText}</label><select class="form-select" onchange="updateROIProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : noteText}</div>`;
 }
 function defaultNorTuningParams() {
     return {
@@ -682,6 +687,7 @@ function defaultNorTuningParams() {
         movement_threshold_cm_s: 2.0,
         min_valid_exploration_s: 20.0,
         bin_seconds: 300.0,
+        ...experimentDefaults,
     };
 }
 function readNorTuningParamsFromControls() {
@@ -739,9 +745,9 @@ function applyNorTuningParamsToControls(params) {
     updateBgMethodUI();
 }
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
-    phase: 'recognition',
-    arena_width_cm: 50.0,
-    arena_height_cm: 50.0,
+    phase: experimentDefaults.phase ?? 'recognition',
+    arena_width_cm: experimentDefaults.arena_width_cm ?? 50.0,
+    arena_height_cm: experimentDefaults.arena_height_cm ?? 50.0,
     rois: [],
     current_roi: { points: [], objects: [] },
     is_drawing_roi: false,
@@ -789,9 +795,9 @@ function currentVideoName(index) {
 function ensureVideoConfig(index) {
     if (!videoConfigs[index]) {
         videoConfigs[index] = {
-            phase: 'recognition',
-            arena_width_cm: 50.0,
-            arena_height_cm: 50.0,
+            phase: experimentDefaults.phase ?? 'recognition',
+            arena_width_cm: experimentDefaults.arena_width_cm ?? 50.0,
+            arena_height_cm: experimentDefaults.arena_height_cm ?? 50.0,
             rois: [],
             current_roi: { points: [], objects: [] },
             is_drawing_roi: false,
@@ -1204,7 +1210,7 @@ function loadFrame(frameIdx, callback) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                alert(data.error);
+                alert(apiErrorText(data, norTr('preview.failed', 'Preview failed')));
                 return;
             }
             if (data.video_info) {
@@ -1374,7 +1380,7 @@ document.addEventListener('DOMContentLoaded', function () {
     hydrateFromDraftPayload();
     if (launchMode === 'workspace') {
         const primaryActionText = document.getElementById('primaryActionText');
-        if (primaryActionText) primaryActionText.textContent = '保存设置并返回批次页面';
+        if (primaryActionText) primaryActionText.textContent = '保存设置并返回分析配置';
     }
     const canvas = document.getElementById('arenaCanvas');
 
@@ -1663,7 +1669,7 @@ function updateROIList() {
                     <div>
                         <label class="form-label">${norTr('roi_list.card.time_mode', 'Statistics Mode')}</label>
                         <select class="form-select" onchange="updateROITimeMode(${index}, this.value)">
-                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${norTr('roi_list.card.mode.global', 'Follow Global')}</option>
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${norTr('roi_list.card.mode.global', 'Follow Video')}</option>
                             <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${norTr('roi_list.card.mode.precise', 'Precise Time Window')}</option>
                         </select>
                     </div>
@@ -1909,7 +1915,7 @@ async function saveDraftPayload(redirectToWorkspace = false) {
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
-        throw new Error(data.error || '保存当前设置失败');
+        throw new Error(apiErrorText(data, norLang() === 'en' ? 'Failed to save current setup' : '保存当前设置失败'));
     }
     if (redirectToWorkspace && batchWorkspaceUrl) {
         window.location.href = batchWorkspaceUrl;
@@ -1939,7 +1945,7 @@ function updateDebugPreview(frameIdx) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                setPreviewStatus('server_error', { message: data.error });
+                setPreviewStatus('server_error', { message: apiErrorText(data, norTr('preview.failed', 'Preview failed')) });
                 return;
             }
             drawImageOnCanvas('previewOriginal', data.original);
@@ -2041,7 +2047,7 @@ function startAnalysis() {
                 return;
             }
             document.getElementById('loading').style.display = 'none';
-            alert(data.error || norTr('alerts.start_failed', 'Failed to start analysis'));
+            alert(apiErrorText(data, norTr('alerts.start_failed', 'Failed to start analysis')));
         })
         .catch(err => {
             document.getElementById('loading').style.display = 'none';

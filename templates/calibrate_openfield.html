@@ -55,11 +55,11 @@
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
-            <strong>批量单视频编辑模式</strong>
-            <div class="small mt-1">当前正在编辑第 {{ current_video_index + 1 }} 个视频。保存当前设置后返回批次页面，再统一启动整批分析。</div>
+            <strong>逐视频配置模式</strong>
+            <div class="small mt-1">正在编辑第 {{ current_video_index + 1 }} 个视频。保存设置后返回分析配置页，再统一开始分析。</div>
         </div>
         <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
-            <i class="fas fa-layer-group me-2"></i>返回批次页面
+            <i class="fas fa-layer-group me-2"></i>返回分析配置
         </a>
     </div>
     {% endif %}
@@ -277,7 +277,7 @@
                             </div>
                             <div class="d-flex align-items-end">
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                    <input class="form-check-input" type="checkbox" id="generateVideo"{% if experiment_defaults.get('generate_video', true) %} checked{% endif %}>
                                     <label class="form-check-label" for="generateVideo" data-i18n="oft.calib.stats.generate_video">生成标注视频</label>
                                 </div>
                             </div>
@@ -303,6 +303,7 @@ const launchMode = {{ launch_mode | tojson }};
 const currentVideoIndexFromServer = {{ current_video_index | tojson }};
 const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
 const initialDraftPayload = {{ draft_payload | tojson }};
+const experimentDefaults = {{ experiment_defaults | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
 {% else %}
@@ -370,11 +371,15 @@ function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
         return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
     }
     const selectedId = roi.subject_id || '';
-    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+    const english = (typeof getLang === 'function') && getLang() === 'en';
+    const selectText = english ? 'Select a registered animal' : '请选择已有小鼠';
+    const labelText = english ? 'Animal / Experimental Unit' : '小鼠 / 实验单元';
+    const noteText = english ? 'Project mode requires a registered animal.' : '项目模式下必须选择已登记小鼠';
+    const options = [`<option value="">${selectText}</option>`].concat((projectSubjects || []).map(subject => {
         const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
         return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     })).join('');
-    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateArenaProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+    return `<label class="form-label">${labelText}</label><select class="form-select" onchange="updateArenaProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : noteText}</div>`;
 }
 function defaultTuningParams() {
     return {
@@ -391,6 +396,7 @@ function defaultTuningParams() {
         wall_margin_cm: 8.0,
         movement_threshold_cm_s: 2.0,
         bin_seconds: 300.0,
+        ...experimentDefaults,
     };
 }
 function readTuningParamsFromControls() {
@@ -435,7 +441,7 @@ function applyTuningParamsToControls(params) {
     updateBgMethodUI();
 }
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
-    arena_side_cm: 50.0,
+    arena_side_cm: experimentDefaults.arena_side_cm ?? 50.0,
     rois: [],
     current_roi: [],
     is_drawing_arena: false,
@@ -542,7 +548,7 @@ function currentVideoName(index) {
 function ensureVideoConfig(index) {
     if (!videoConfigs[index]) {
         videoConfigs[index] = {
-            arena_side_cm: 50.0,
+            arena_side_cm: experimentDefaults.arena_side_cm ?? 50.0,
             rois: [],
             current_roi: [],
             is_drawing_arena: false,
@@ -746,7 +752,7 @@ function loadFrame(frameIdx, callback) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                alert(data.error);
+                alert(apiErrorText(data, tr('oft.calib.preview.failed', 'Preview failed')));
                 return;
             }
             if (data.video_info) {
@@ -886,7 +892,7 @@ document.addEventListener('DOMContentLoaded', function () {
     hydrateFromDraftPayload();
     if (launchMode === 'workspace') {
         const primaryActionText = document.getElementById('primaryActionText');
-        if (primaryActionText) primaryActionText.textContent = '保存设置并返回批次页面';
+        if (primaryActionText) primaryActionText.textContent = '保存设置并返回分析配置';
     }
     const canvas = document.getElementById('arenaCanvas');
     canvas.addEventListener('click', function (e) {
@@ -1146,7 +1152,7 @@ function updateArenaList() {
                     <div>
                         <label class="form-label">${tr('oft.calib.roi.time_mode', 'Time Mode')}</label>
                         <select class="form-select" onchange="updateArenaTimeMode(${index}, this.value)">
-                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('oft.calib.roi.mode.global', 'Follow Global')}</option>
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('oft.calib.roi.mode.global', 'Follow Video')}</option>
                             <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${tr('oft.calib.roi.mode.precise', 'Precise Time Window')}</option>
                         </select>
                     </div>
@@ -1329,7 +1335,7 @@ async function saveDraftPayload(redirectToWorkspace = false) {
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
-        throw new Error(data.error || '保存当前设置失败');
+        throw new Error(apiErrorText(data, (typeof getLang === 'function' && getLang() === 'en') ? 'Failed to save current setup' : '保存当前设置失败'));
     }
     if (redirectToWorkspace && batchWorkspaceUrl) {
         window.location.href = batchWorkspaceUrl;
@@ -1347,7 +1353,7 @@ function updateDebugPreview(frameIdx) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                document.getElementById('previewStatus').textContent = data.error;
+                document.getElementById('previewStatus').textContent = apiErrorText(data, tr('oft.calib.preview.failed', 'Preview failed'));
                 return;
             }
             drawImageOnCanvas('previewOriginal', data.original);
@@ -1430,7 +1436,7 @@ function startAnalysis() {
                 return;
             }
             document.getElementById('loading').style.display = 'none';
-            alert(data.error || tr('oft.calib.alert.start_failed', 'Failed to start analysis'));
+            alert(apiErrorText(data, tr('oft.calib.alert.start_failed', 'Failed to start analysis')));
         })
         .catch(err => {
             document.getElementById('loading').style.display = 'none';

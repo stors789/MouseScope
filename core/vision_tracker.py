@@ -15,6 +15,7 @@ from tst_lis import (
     TSTLISFeatureExtractor,
     default_tst_lis_features,
 )
+from services.video_orientation import open_video_capture
 
 # GPU 检测（用于 OpenCV CUDA，如果可用）
 USE_GPU = False
@@ -2252,7 +2253,7 @@ def render_tst_activity_curve(logs, trackers, path):
 
 # ==================== 便捷函数 ====================
 
-def create_static_background(video_path, num_frames=10, start_frame=0):
+def create_static_background(video_path, num_frames=10, start_frame=0, orientation_override=None):
     """
     从视频中提取静态背景
     
@@ -2264,7 +2265,7 @@ def create_static_background(video_path, num_frames=10, start_frame=0):
     返回:
         背景图像（中值法）
     """
-    cap = cv2.VideoCapture(video_path)
+    cap = open_video_capture(video_path, orientation_override=orientation_override)
     
     # 跳到起始帧
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)

@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Route and inline-script smoke test for the v3.4.0 workbench flow."""
+"""Route and inline-script smoke test for the v3.5.0 workbench flow."""
 
 from __future__ import annotations
 
@@ -98,40 +98,48 @@ def main() -> int:
     if is_three_chamber_enabled():
         public_paths.append("/manual?module=three_chamber")
 
-    with app.test_client() as client:
-        with client.session_transaction() as sess:
-            sess["license_accepted"] = True
+    seeded_session_ids: list[str] = []
+    try:
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["license_accepted"] = True
 
-        for path in public_paths:
-            response = client.get(path)
-            if response.status_code != 200:
-                raise RuntimeError(f"{path} returned {response.status_code}")
-            _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
+            for path in public_paths:
+                response = client.get(path)
+                if response.status_code != 200:
+                    raise RuntimeError(f"{path} returned {response.status_code}")
+                _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
 
-        for experiment in EXPERIMENTS:
-            single_id = f"smoke-single-{experiment}"
-            batch_id = f"smoke-batch-{experiment}"
-            _seed_session(single_id, experiment, is_batch=False)
-            _seed_session(batch_id, experiment, is_batch=True)
+            for experiment in EXPERIMENTS:
+                single_id = f"smoke-single-{experiment}"
+                batch_id = f"smoke-batch-{experiment}"
+                seeded_session_ids.extend((single_id, batch_id))
+                _seed_session(single_id, experiment, is_batch=False)
+                _seed_session(batch_id, experiment, is_batch=True)
 
-            checks = [
-                (f"/calibrate/{single_id}", 200),
-                (f"/monitor/{single_id}", 200),
-                (f"/batch/{batch_id}", 200),
-                (f"/calibrate/{batch_id}", 302),
-                (f"/calibrate/{batch_id}/video/1", 200),
-                (f"/monitor/{batch_id}", 200),
-                (f"/api/batch_state/{batch_id}", 200),
-                (f"/api/draft/{batch_id}", 200),
-            ]
-            for path, expected_status in checks:
-                response = client.get(path, follow_redirects=False)
-                if response.status_code != expected_status:
-                    raise RuntimeError(f"{experiment} {path} returned {response.status_code}, expected {expected_status}")
-                if expected_status == 200 and response.content_type.startswith("text/html"):
-                    _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
+                checks = [
+                    (f"/analysis-config/{single_id}", 200),
+                    (f"/calibrate/{single_id}", 200),
+                    (f"/monitor/{single_id}", 200),
+                    (f"/analysis-config/{batch_id}", 200),
+                    (f"/batch/{batch_id}", 302),
+                    (f"/calibrate/{batch_id}", 302),
+                    (f"/calibrate/{batch_id}/video/1", 200),
+                    (f"/monitor/{batch_id}", 200),
+                    (f"/api/batch_state/{batch_id}", 200),
+                    (f"/api/draft/{batch_id}", 200),
+                ]
+                for path, expected_status in checks:
+                    response = client.get(path, follow_redirects=False)
+                    if response.status_code != expected_status:
+                        raise RuntimeError(f"{experiment} {path} returned {response.status_code}, expected {expected_status}")
+                    if expected_status == 200 and response.content_type.startswith("text/html"):
+                        _check_js_syntax(path, _rendered_script_blocks(response.get_data(as_text=True)))
+    finally:
+        for session_id in seeded_session_ids:
+            analysis_sessions.delete(session_id)
 
-    print("v3.4.0 route smoke test passed")
+    print("v3.5.0 route smoke test passed")
     return 0
 
 

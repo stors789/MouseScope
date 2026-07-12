@@ -3,15 +3,8 @@
         <div class="manual-hero-top">
             <div>
                 <div class="manual-eyebrow">Y-Maze</div>
-                <h2>Y 迷宫完整操作手册</h2>
+                <h2>Y 迷宫</h2>
                 <p>本手册覆盖 Y 迷宫自发交替实验的实验逻辑、采集要求、三角中心区 + 3 条臂的手动画区、检测遮罩、时间窗、主要参数，以及结果字段的解释方式。</p>
-            </div>
-            <div class="manual-chip-row">
-                <span class="manual-chip">中心区 + 3 臂手动画区</span>
-                <span class="manual-chip">自发交替统计</span>
-                <span class="manual-chip">入臂深度判定</span>
-                <span class="manual-chip">检测遮罩可选</span>
-                <span class="manual-chip">track / summary / bins</span>
             </div>
         </div>
         <div class="manual-hero-grid">
@@ -34,7 +27,7 @@
         <div class="card-body py-3">
             <div class="flow-steps justify-content-center">
                 <span class="flow-step">1. 采集要求</span><i class="fas fa-chevron-right flow-arrow"></i>
-                <span class="flow-step">2. 上传与时间范围</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. 导入与分析配置</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">3. 三角中心区 + 三臂画区</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">4. 调参与预览</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">5. 结果复核</span>
@@ -47,7 +40,7 @@
             <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
                 <a href="#ymaze-overview-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>总览</span></a>
                 <a href="#ymaze-recording-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>采集要求</span></a>
-                <a href="#ymaze-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>上传与时间范围</span></a>
+                <a href="#ymaze-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>导入与分析配置</span></a>
                 <a href="#ymaze-calibration-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>三角中心区与时间窗</span></a>
                 <a href="#ymaze-params-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>参数字典</span></a>
                 <a href="#ymaze-outputs-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>结果字典</span></a>
@@ -77,11 +70,11 @@
             </section>
 
             <section class="manual-section" id="ymaze-upload-zh">
-                <h3><span class="step-number">3</span><span>上传与时间范围</span></h3>
+                <h3><span class="step-number">3</span><span>导入与分析配置</span></h3>
                 <ul class="manual-list">
-                    <li>上传页中的开始秒数和结束秒数是默认统计时间窗；ROI 设为“跟随全局”时会直接沿用。</li>
+                    <li>分析配置页中对应视频的开始和结束时间是外层统计窗口；ROI 设为“跟随视频”时会直接沿用。</li>
                     <li>FPS 元数据不可靠时建议手动覆盖，否则距离、速度和潜伏时间可能不准确。</li>
-                    <li>多视频模式下会先进入批次页面，再逐条完成每个视频的 Y 迷宫设置。</li>
+                    <li>单视频和多视频都会先进入分析配置页；多视频再逐条完成每个视频的 Y 迷宫设置。</li>
                 </ul>
             </section>
 
@@ -113,7 +106,7 @@
                 <table class="manual-data-table">
                     <thead><tr><th>模式</th><th>含义</th><th>推荐场景</th></tr></thead>
                     <tbody>
-                        <tr><td><code>global</code></td><td>跟随上传页的全局开始 / 结束时间。</td><td>大多数标准 Y 迷宫分析。</td></tr>
+                        <tr><td><code>global</code></td><td>跟随分析配置页中对应视频的开始 / 结束时间。</td><td>大多数标准 Y 迷宫分析。</td></tr>
                         <tr><td><code>precise</code></td><td>按视频绝对时间指定开始 / 结束秒数。</td><td>只分析固定片段时。</td></tr>
                     </tbody>
                 </table>
@@ -176,7 +169,7 @@
                         <tr><td><code>alternation_percent</code></td><td>交替率。</td><td>总入臂数过低时容易不稳定。</td></tr>
                         <tr><td><code>arm_a_time_s</code> / <code>arm_b_time_s</code> / <code>arm_c_time_s</code></td><td>各臂停留时间。</td><td>可用于识别明显的臂偏好。</td></tr>
                         <tr><td><code>center_time_s</code></td><td>中心区停留时间。</td><td>过高时常提示有效探索不足。</td></tr>
-                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，当前默认为约 0.2 s。</td></tr>
+                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，默认值约为 0.2 s。</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -185,9 +178,9 @@
                 <h3><span class="step-number">7</span><span>批量流程</span></h3>
                 <p>Y 迷宫的批量模式是“每个视频各自配置，再统一运行”。不要只画第一个视频就直接开始整批分析。</p>
                 <ol class="manual-step-list">
-                    <li>上传多个 Y 迷宫视频，并设置全局时间窗、FPS 覆盖和输出目录。</li>
+                    <li>导入多个 Y 迷宫视频，在分析配置页逐视频设置时间窗、FPS、方向和输出目录。</li>
                     <li>逐条打开视频卡片，完成当前视频的三角中心区、三条臂、检测遮罩、时间窗和参数设置。</li>
-                    <li>保存当前设置并返回批次页面，再继续处理下一条视频。</li>
+                    <li>保存该视频设置并返回分析配置页，再继续处理下一条视频。</li>
                     <li>确认所有卡片都显示为已完成后，再统一开始批量分析。</li>
                 </ol>
             </section>
@@ -214,15 +207,8 @@
         <div class="manual-hero-top">
             <div>
                 <div class="manual-eyebrow">Y-Maze</div>
-                <h2>Complete Y-Maze Manual</h2>
+                <h2>Y-Maze</h2>
                 <p>This manual covers assay logic, recording requirements, triangular-center plus three-arm drawing, detection masks, time windows, key parameters, and result interpretation for spontaneous alternation.</p>
-            </div>
-            <div class="manual-chip-row">
-                <span class="manual-chip">Center + 3 manual arms</span>
-                <span class="manual-chip">Spontaneous alternation</span>
-                <span class="manual-chip">Entry-depth gating</span>
-                <span class="manual-chip">Optional mask</span>
-                <span class="manual-chip">track / summary / bins</span>
             </div>
         </div>
         <div class="manual-hero-grid">
@@ -291,7 +277,7 @@
                 <ul class="manual-list">
                     <li>Global start and end time define the default analysis window.</li>
                     <li>Override FPS when metadata is unreliable because distance, speed, and latency depend on it.</li>
-                    <li>Multi-video sessions open the batch page first so each video can be configured independently.</li>
+                    <li>Single- and multi-video sessions both open Analysis Configuration first; multi-video runs then configure each video independently.</li>
                 </ul>
             </section>
 
@@ -341,7 +327,7 @@
                 <ol class="manual-step-list">
                     <li>Upload multiple Y-maze videos and define global timing, FPS override, and output folder.</li>
                     <li>Open each video card and finish the triangular center, three arms, mask, timing, and tuning for that video.</li>
-                    <li>Save the current setup and return to the batch page before moving to the next video.</li>
+                    <li>Save the video setup and return to Analysis Configuration before moving to the next video.</li>
                     <li>Only start analysis after all cards are marked complete.</li>
                 </ol>
             </section>

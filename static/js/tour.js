@@ -308,14 +308,14 @@
             if (inDebug) {
                 return [
                     calibrationNavStep('LDB', '当前是第 2 步：调检测、检查预览，并确认真正参与统计的时间规则。', 'This is step 2: tune detection, inspect preview, and confirm timing rules used for metrics.'),
-                    tourStep('[data-tour-id="ldb-action-bar"]', '调参操作区', '这里可以返回标定、刷新当前帧预览，或在确认 ROI 和参数后开始分析。批量单视频编辑模式下，“开始”会保存当前视频配置并返回批次页。', 'Tuning Actions', 'Go back to ROI drawing, refresh the current-frame preview, or start after checking ROI and parameters. In batch single-video edit mode, Start saves this video setup and returns to the batch page.'),
+                    tourStep('[data-tour-id="ldb-action-bar"]', '调参操作区', '这里可以返回标定、刷新当前帧预览，或在确认 ROI 和参数后开始分析。多视频逐条编辑时，“开始”会保存当前视频配置并返回分析配置页。', 'Tuning Actions', 'Go back to ROI drawing, refresh the current-frame preview, or start after checking ROI and parameters. During multi-video editing, Start saves this video and returns to Analysis Configuration.'),
                     tourStep('[data-tour-id="ldb-preview-frame"]', '预览帧', '拖动这里选择用于调参的帧。建议看几帧明室、暗室和门口附近的画面，尤其检查黑门缝是否被误检。', 'Preview Frame', 'Drag this to choose the frame used for tuning. Check frames in the light chamber, dark chamber, and passage area, especially whether dark door seams are falsely detected.'),
                     tourStep('[data-tour-id="ldb-preview-grid"]', '预览画面', '左侧是原始帧，右侧会叠加鼠体检测结果、明室、暗室和可选门区。理想状态是鼠体轮廓稳定，门缝或黑边不被识别成鼠体。', 'Preview Canvases', 'The left side is the original frame; the right side overlays mouse detection plus light, dark, and optional doorway zones. Aim for a stable body contour without door seams or dark edges being detected as the animal.'),
                     tourStep('[data-tour-id="ldb-detection-params"]', '检测参数', '这些参数只负责把鼠体从背景中分出来。先选对背景类型，再调灰度阈值和最小面积；如果右侧轮廓断裂、粘住箱壁或漏检，优先在这里处理。', 'Detection Parameters', 'These settings only segment the animal from the background. Choose the correct background type, then tune gray threshold and minimum area. Use this section when the contour breaks, sticks to walls, or misses the animal.'),
                     tourStep('[data-tour-id="ldb-core-stats"]', '核心统计参数', '这一栏会影响明暗箱的事件和时间统计：什么时候开始算、一次转换怎样才成立，以及 bins 文件按多长时间切片。暗箱不可见模式下，转换由“明室可见/不可见”的稳定变化推断。', 'Core Statistics', 'This section affects LDB timing and events: when counting starts, when a transition is accepted, and how long each bin is in the binned output. In invisible-dark mode, transitions are inferred from stable visible/not-visible changes in the light chamber.'),
                     tourStep('[data-tour-id="ldb-door-delay"]', '开门延迟', '如果视频开头包含放鼠、开门、手还在画面里，填这里会从统计起点跳过这段秒数。它会影响首次入明室潜伏期和开头几秒的进入/转换事件；如果视频已经从正式实验开始，可设为 0。', 'Door-Open Delay', 'Use this when the video starts with placing the mouse, opening the door, or a hand still in frame. Those seconds are skipped from the metric start, affecting first-light latency and early entry/transition events. Set 0 if the video already starts at the formal trial.'),
                     tourStep('[data-tour-id="ldb-transition-dwell"]', '转换稳定时间', '这是主要防抖参数：小鼠进入新主室后，需要连续稳定停留这么久才算转换。即使不画门区，也会用这个规则避免门口来回抖动被算成很多次。', 'Transition Dwell', 'This is the main debounce setting: after entering a new main chamber, the animal must remain there for this long before a transition is accepted. It works even when no doorway is drawn.'),
-                    tourStep('[data-tour-id="ldb-doorway-reset"]', '门区重置', '门区现在更像可选的门缝/边界忽略带。默认检测会避开门区，适合门口很黑、阈值容易识别门缝的情况；如果小鼠在门区附近停留超过这个时间，会重置候选转换。', 'Doorway Reset', 'Doorway now acts more like an optional door-seam/boundary ignore band. Default detection excludes it, which helps when a dark passage seam is falsely segmented; lingering there longer than this value resets the pending transition.'),
+                    tourStep('[data-tour-id="ldb-doorway-reset"]', '门区重置', '门区是可选的门缝或边界忽略带。默认检测会避开门区，适合门口较暗、阈值容易识别门缝的情况；如果小鼠在门区附近停留超过这个时间，会重置候选转换。', 'Doorway Reset', 'Doorway is an optional door-seam or boundary ignore band. Default detection excludes it, which helps when a dark passage seam is falsely segmented; lingering there longer than this value resets the pending transition.'),
                     tourStep('[data-tour-id="ldb-bin-seconds"]', '分箱时长', '只影响按时间分段导出的 bins 文件，例如每 60 秒汇总一次明室时间、暗室时间和转换次数；不改变整段实验的总指标。', 'Bin Length', 'This only affects the time-binned output, for example summarizing light time, dark time, and transitions every 60 seconds. It does not change whole-session totals.'),
                     tourStep('[data-tour-id="ldb-aux-scale"]', '箱体尺寸（辅助）', '这里分别填写明箱和暗箱的真实长、宽。长宽只用于距离、速度、移动时间和规整轨迹图比例，不影响明暗室时间、进入次数、转换次数或首次入明室潜伏期。', 'Chamber Size (Auxiliary)', 'Enter the real length and width for the light and dark chambers separately. These values only affect distance, speed, movement time, and rectified trajectory-map scale; they do not affect core LDB metrics.'),
                     tourStep('[data-tour-id="ldb-shared-edge"]', '两箱重合边', '填写明箱和暗箱贴在一起的那条公共边实际重合长度。它不是门洞宽度，也不是画面 x/y 方向；系统会结合你画的两个 ROI 中最靠近的边，自动判断轨迹图应该横向拼接还是纵向拼接。', 'Shared Edge', 'Enter the real overlap length of the side where the light and dark boxes touch. This is not the doorway width or image x/y size; MouseScope combines it with the closest ROI edges to infer horizontal or vertical layout for the trajectory map.'),
@@ -343,15 +343,15 @@
                     calibrationActionStep(),
                     tourStep('[data-tour-id="tst-debug-preview"]', '预览结果', '左侧看原始帧，右侧看检测轮廓。目标是让绿色轮廓尽量紧密包住小鼠除尾巴外的主体躯干。', 'Preview', 'Original frame is on the left and detection result on the right. Aim for a tight green contour around the body trunk, excluding the tail.'),
                     tourStep('[data-tour-id="tst-detection-params"]', '检测参数', '背景类型决定阈值方向；灰度阈值、腐蚀/膨胀和最小面积一起决定轮廓是否紧密包住主体躯干。', 'Detection Parameters', 'Background type sets threshold direction; threshold, erosion/dilation, and minimum area determine how tightly the contour wraps the trunk.'),
-                    tourStep('[data-tour-id="tst-output-params"]', '输出与判断逻辑', '当前版本默认使用原本判断逻辑。需要尝试微小挣扎优化时，打开“使用新算法”；自动行为阈值和灵敏度只在原本逻辑下显示并生效。', 'Output and Decision Logic', 'The original decision logic is the default. Turn on “Use new algorithm” to try the subtle-struggle optimized path; auto-threshold and sensitivity appear only for the original logic.'),
-                    tourStep('#primaryActionBtn', '开始分析', '单视频会直接开始；项目/批量单视频编辑模式会先保存当前配置并返回批次页面。', 'Start Analysis', 'Single-video mode starts immediately. Project or batch editing saves this setup and returns to the batch page.')
+                    tourStep('[data-tour-id="tst-output-params"]', '输出与行为算法', '默认使用经典行为算法；如需增强低强度挣扎识别，可启用“微小挣扎优化算法”。自动行为阈值和灵敏度仅适用于经典行为算法。', 'Output and Behavior Algorithm', 'The classic behavior algorithm is selected by default. Enable the subtle-struggle optimized algorithm for low-intensity struggle detection. Auto-threshold and sensitivity apply only to the classic behavior algorithm.'),
+                    tourStep('#primaryActionBtn', '开始分析', '单视频会直接开始；多视频逐条编辑会先保存当前配置并返回分析配置页。', 'Start Analysis', 'Single-video mode starts immediately. Multi-video editing saves this setup and returns to Analysis Configuration.')
                 ];
             }
             if (inRoi) {
                 return [
                     calibrationNavStep('TST', '当前是第 2 步：为每只小鼠画 ROI，并设置 ROI 名称和统计时间窗。', 'Step 2 draws one ROI per animal and sets names plus timing windows.'),
                     tourStep('#roiCanvas', 'ROI 画布', '点击多个点圈住单只小鼠的完整悬挂活动范围。每个 ROI 只放一只小鼠。', 'ROI Canvas', 'Click points around one animal’s full suspension area. Keep one animal per ROI.'),
-                    tourStep('#roiList', 'ROI 列表', '这里修改 ROI 名称、绑定项目小鼠，并选择跟随全局、相对检测时间或精确时间段。', 'ROI List', 'Rename ROIs, bind project animals, and choose global, relative, or precise timing.'),
+                    tourStep('#roiList', 'ROI 列表', '这里修改 ROI 名称、绑定项目小鼠，并选择跟随视频、相对检测时间或精确时间段。', 'ROI List', 'Rename ROIs, bind project animals, and choose follow-video, relative, or precise timing.'),
                     projectSubjectBindingStep(),
                     tourStep('.stage-side', '当前规则', '右侧汇总 ROI 数量、点数和标定状态。TST 需要体长标定和至少一个有效 ROI。', 'Rules', 'The side panel summarizes ROI count, current points, and calibration state. TST needs calibration and at least one valid ROI.')
                 ];
@@ -455,14 +455,15 @@
     }
 
     function registerAutoTours() {
-        if (calibrationShell()) {
+        const declaredPage = document.querySelector('[data-tour-page]')?.getAttribute('data-tour-page') || '';
+        if (calibrationShell() && (!declaredPage || declaredPage === 'calibration')) {
             register('calibration', {
                 version: 'v5',
                 steps: calibrationTourSteps,
             });
             document.body.setAttribute('data-tour-page', 'calibration');
         }
-        if (document.querySelector('#progressBar') && document.querySelector('.monitor-card')) {
+        if (document.querySelector('#progressBar') && document.querySelector('.monitor-card') && (!declaredPage || declaredPage === 'monitor')) {
             register('monitor', {
                 version: 'v1',
                 steps: [

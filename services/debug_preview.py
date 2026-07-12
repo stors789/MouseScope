@@ -70,6 +70,13 @@ def _session_video_fps(sess: dict[str, Any], video_idx: int) -> float | None:
     return None
 
 
+def _session_orientation_override(sess: dict[str, Any], video_idx: int):
+    infos = sess.get('video_infos') or []
+    if 0 <= video_idx < len(infos) and isinstance(infos[video_idx], dict):
+        return infos[video_idx].get('orientation_override')
+    return None
+
+
 def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) -> None:
     for cache_key, entry in list(debug_static_bg_cache.items()):
         if isinstance(entry, dict):
@@ -89,18 +96,22 @@ def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) 
             debug_static_bg_cache.pop(cache_key, None)
 
 
-def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert):
+def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, orientation_override=None):
     if bg_method == 'threshold':
         return BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
     if bg_method == 'static':
-        cache_key = os.path.abspath(video_path)
+        cache_key = (os.path.abspath(video_path), str(orientation_override if orientation_override is not None else "auto"))
         cache_entry = debug_static_bg_cache.get(cache_key)
         if isinstance(cache_entry, dict):
             static_bg = cache_entry.get('bg')
         else:
             static_bg = cache_entry
         if static_bg is None:
-            static_bg = create_static_background(video_path, num_frames=15)
+            static_bg = create_static_background(
+                video_path,
+                num_frames=15,
+                orientation_override=orientation_override,
+            )
         debug_static_bg_cache[cache_key] = {
             'bg': static_bg,
             'last_accessed_at': _now_ts(),
@@ -138,7 +149,7 @@ def _open_field_debug_preview(frame, data, video_path):
         return jsonify({'error': 'Open field preview requires at least one ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -205,7 +216,7 @@ def _novel_object_debug_preview(frame, data, video_path):
         return jsonify({'error': 'Novel object preview requires at least one ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -291,7 +302,7 @@ def _elevated_plus_debug_preview(frame, data, video_path):
         return jsonify({'error': 'Elevated plus maze preview requires at least one ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -365,7 +376,7 @@ def _y_maze_debug_preview(frame, data, video_path):
         return jsonify({'error': 'Y-maze preview requires at least one ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -437,7 +448,7 @@ def _light_dark_debug_preview(frame, data, video_path):
     if not rois:
         return jsonify({'error': 'Light-dark box preview requires at least one ROI.'}), 400
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
     morph = MorphologyProcessor(erosion_kernel=erosion_kernel, erosion_iterations=erosion_iter, dilation_kernel=dilation_kernel, dilation_iterations=dilation_iter)
@@ -506,7 +517,7 @@ def _three_chamber_debug_preview(frame, data, video_path):
     if not rois:
         return jsonify({'error': 'Three-chamber preview requires at least one ROI.'}), 400
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
     morph = MorphologyProcessor(erosion_kernel=erosion_kernel, erosion_iterations=erosion_iter, dilation_kernel=dilation_kernel, dilation_iterations=dilation_iter)
@@ -583,7 +594,7 @@ def _forced_swim_debug_preview(frame, data, video_path):
         return jsonify({'error': 'FST preview requires at least one cylinder ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -670,7 +681,7 @@ def _water_maze_debug_preview(frame, data, video_path):
         return jsonify({'error': 'MWM preview requires at least one pool ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'Failed to build MWM background model: {e}'}), 400
 
@@ -806,7 +817,14 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         frame_idx = min(frame_idx, total_frames - 1)
 
     video_path = video_paths[video_idx]
-    frame = read_video_frame(video_path, frame_idx, fps=_session_video_fps(sess, video_idx))
+    data = dict(data)
+    data['_orientation_override'] = _session_orientation_override(sess, video_idx)
+    frame = read_video_frame(
+        video_path,
+        frame_idx,
+        fps=_session_video_fps(sess, video_idx),
+        orientation_override=_session_orientation_override(sess, video_idx),
+    )
 
     if frame is None:
         return jsonify({'error': '无法读取帧'}), 400
@@ -843,7 +861,7 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
     rois = data.get('rois', [])
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert)
+        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 

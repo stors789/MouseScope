@@ -68,6 +68,21 @@ class VideoTimebaseTest(unittest.TestCase):
         self.assertAlmostEqual(timebase.time_at(5), 5.0 / 15.0, places=6)
         self.assertTrue(any("falling back to uniform fps timing" in message for message in logs))
 
+    def test_manual_fps_uses_uniform_timing_and_exclusive_end(self):
+        with patch("services.video_timebase._extract_pts_times") as extract_pts:
+            timebase = build_video_timebase(
+                "sample.mp4",
+                fps=15.0,
+                total_frames=100,
+                prefer_pts=False,
+            )
+
+        extract_pts.assert_not_called()
+        self.assertEqual(timebase.source, "uniform")
+        self.assertEqual(timebase.summary()["long_gap_gt_50ms"], 0)
+        self.assertEqual(timebase.frame_before(1.0), 14)
+        self.assertEqual(timebase.frame_at_or_after(1.0), 15)
+
 
 if __name__ == "__main__":
     unittest.main()

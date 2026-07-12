@@ -10,6 +10,7 @@ import os
 import cv2
 import numpy as np
 from typing import Optional, Tuple
+from services.resource_policy import opencv_thread_limit
 
 def force_memory_cleanup():
     """
@@ -138,13 +139,7 @@ def auto_set_opencv_threads(num_videos: int = 1):
     """
     import os
     cpu_count = os.cpu_count() or 4
-    
-    # 如果只处理一个视频，使用所有CPU核心
-    if num_videos == 1:
-        optimal_threads = max(1, cpu_count - 1)  # 留一个核心给系统
-    else:
-        # 多视频并行时，每个视频分配较少线程
-        optimal_threads = max(1, (cpu_count - 1) // num_videos)
+    optimal_threads = opencv_thread_limit(cpu_count)
     
     cv2.setNumThreads(optimal_threads)
     return optimal_threads

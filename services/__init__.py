@@ -1,1 +1,1 @@
-"""Service layer for MouseScope v3.4.0."""
+"""Service layer for MouseScope v3.5.0."""

@@ -13,6 +13,7 @@ from typing import Any
 import cv2
 
 from services.video_export import find_ffmpeg_exe
+from services.video_orientation import oriented_dimensions, resolve_video_orientation
 
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,15 @@ def _capture_video_props(video_path: str | os.PathLike, cap: cv2.VideoCapture | 
         local_cap = cv2.VideoCapture(str(path))
         active_cap = local_cap
 
+    orientation_auto = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
+    if orientation_auto is not None and active_cap is not None and active_cap.isOpened():
+        try:
+            # Metadata must describe coded dimensions. Display rotation is
+            # applied explicitly below, matching OrientedVideoCapture.
+            active_cap.set(orientation_auto, 0)
+        except Exception:
+            pass
+
     try:
         if active_cap is None or not active_cap.isOpened():
             return {
@@ -180,6 +190,8 @@ def _capture_video_props(video_path: str | os.PathLike, cap: cv2.VideoCapture | 
             "width": _safe_int(active_cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
             "height": _safe_int(active_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             "total_frames": _safe_int(active_cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+            "orientation_applied": bool(getattr(active_cap, "orientation_applied", False)),
+            "orientation_degrees": getattr(active_cap, "orientation_degrees", None),
         }
     finally:
         if local_cap is not None:
@@ -282,6 +294,7 @@ def probe_video_info(
     fps_override: float | str | None = None,
     *,
     cap: cv2.VideoCapture | None = None,
+    orientation_override: float | str | None = None,
 ) -> dict[str, Any]:
     props = _capture_video_props(video_path, cap=cap)
     path = Path(str(video_path or ""))
@@ -297,8 +310,22 @@ def probe_video_info(
     opencv_frames = _safe_int(props.get("total_frames"))
     total_frames = ffprobe_frames or opencv_frames
 
-    width = _safe_int(props.get("width")) or _safe_int(ffprobe_info.get("width"))
-    height = _safe_int(props.get("height")) or _safe_int(ffprobe_info.get("height"))
+    raw_width = _safe_int(props.get("width")) or _safe_int(ffprobe_info.get("width"))
+    raw_height = _safe_int(props.get("height")) or _safe_int(ffprobe_info.get("height"))
+    metadata_orientation_degrees, metadata_orientation_source = resolve_video_orientation(video_path)
+    active_orientation = props.get("orientation_degrees") if props.get("orientation_applied") else None
+    if active_orientation is None:
+        orientation_degrees, orientation_source = resolve_video_orientation(
+            video_path,
+            orientation_override=orientation_override,
+        )
+    else:
+        orientation_degrees = int(active_orientation)
+        orientation_source = str(getattr(cap, "orientation_source", "capture"))
+    if props.get("orientation_applied"):
+        width, height = raw_width, raw_height
+    else:
+        width, height = oriented_dimensions(raw_width, raw_height, orientation_degrees)
     opencv_fps = props.get("opencv_fps")
     nominal_fps = ffprobe_info.get("nominal_fps") or ffmpeg_info.get("nominal_fps")
     detected_fps, fps_source = _choose_detected_fps(
@@ -321,4 +348,8 @@ def probe_video_info(
         "nominal_fps": float(nominal_fps) if _is_reasonable_fps(nominal_fps) else None,
         "opencv_fps": float(opencv_fps) if _is_reasonable_fps(opencv_fps) else None,
         "fps_source": fps_source,
+        "orientation_degrees": int(orientation_degrees),
+        "orientation_source": orientation_source,
+        "metadata_orientation_degrees": int(metadata_orientation_degrees),
+        "metadata_orientation_source": metadata_orientation_source,
     }

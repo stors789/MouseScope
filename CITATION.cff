@@ -2,8 +2,8 @@
 message: "If you use MouseScope in your work, please cite it as follows."
 type: software
 title: "MouseScope: Mouse Behavioral Video Analysis Platform"
-version: 3.4.0
-date-released: 2026-06-05
+version: 3.5.0
+date-released: 2026-07-12
 url: "https://github.com/fujiacheng3/MouseScope"
 repository-code: "https://github.com/fujiacheng3/MouseScope"
 license: GPL-3.0-or-later
@@ -27,9 +27,10 @@ keywords:
   - neuroscience
 abstract: >
   MouseScope is a modular desktop platform for practical mouse behavioral
-  video analysis. Version 3.4.0 adds the Morris Water Maze (MWM) workflow while
-  retaining the Project Workspace workflow, real video timebase handling, safer
-  upload validation, runtime guards, and packaging metadata. It supports Tail
+  video analysis. Version 3.5.0 adds shared experiment defaults, consistent
+  per-video time/FPS setup, and orientation-aware handling for mobile recordings,
+  while retaining the Project Workspace workflow, real video timebase handling,
+  safer upload validation, runtime guards, and packaging metadata. It supports Tail
   Suspension Test (TST), Forced Swim Test (FST), Morris Water Maze (MWM), Open
   Field Test (OFT), Novel Object Recognition (NOR), Elevated Plus Maze (EPM),
   Y-Maze, and Light-Dark Box (LDB) with visual setup, batch review, result

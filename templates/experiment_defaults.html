@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}实验默认配置 - MouseScope{% endblock %}
+
+{% block extra_css %}
+<style>
+.defaults-shell { max-width: 1440px; margin: 0 auto; }
+.defaults-card, .module-rail {
+    border: 1px solid rgba(166, 110, 74, .18); border-radius: 24px;
+    background: rgba(255, 251, 247, .94); box-shadow: 0 16px 34px rgba(105, 72, 47, .08);
+}
+.defaults-actions { display:flex; gap:.6rem; flex-wrap:wrap; justify-content:flex-end; }
+.defaults-layout { display:grid; grid-template-columns: 245px minmax(0,1fr); gap:1rem; align-items:start; }
+.module-rail { padding:.7rem; position:sticky; top:1rem; }
+.module-btn { width:100%; border:0; background:transparent; text-align:left; display:flex; gap:.7rem; align-items:center; padding:.72rem .8rem; margin:.15rem 0; border-radius:14px; color:#73553f; font-weight:700; }
+.module-btn:hover { background:rgba(180,111,72,.09); }
+.module-btn.active { background:linear-gradient(135deg,#a96745,#8d5036); color:#fff; box-shadow:0 8px 17px rgba(124,71,45,.2); }
+.defaults-card { padding:1.15rem; }
+.module-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:.9rem; }
+.module-head h2 { margin:0; color:#482f20; font-size:1.2rem; font-weight:800; }
+.module-head p { margin:.3rem 0 0; color:#876852; font-size:.9rem; }
+.group-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:.9rem; align-items:start; }
+.default-group { align-self:start; border:1px solid rgba(166,110,74,.16); border-radius:18px; padding:.9rem; background:#fffdfb; }
+.default-group h3 { margin:0 0 .75rem; color:#65432f; font-size:.96rem; font-weight:800; }
+.field-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; }
+.default-field { display:grid; gap:.28rem; min-width:0; }
+.default-field.wide { grid-column:1/-1; }
+.default-field label { color:#775944; font-size:.79rem; font-weight:700; line-height:1.35; }
+.default-field .form-control, .default-field .form-select { min-width:0; font-size:.9rem; }
+.default-field .invalid-feedback { font-size:.74rem; }
+.default-field textarea { min-height:120px; resize:vertical; font-family:ui-monospace,Consolas,monospace; font-size:.78rem; }
+.form-check.default-check { min-height:38px; display:flex; align-items:center; gap:.6rem; padding:.5rem .6rem  .5rem 2.05rem; border:1px solid rgba(166,110,74,.16); border-radius:10px; background:#fff; }
+.form-check.default-check .form-check-input { margin-left:-1.45rem; }
+.defaults-status { display:none; margin:0 0 1rem; }
+.defaults-status.show { display:block; }
+@media(max-width:960px){.defaults-layout{grid-template-columns:1fr}.module-rail{position:static;display:flex;overflow:auto;gap:.35rem}.module-btn{width:auto;white-space:nowrap}.defaults-actions{justify-content:flex-start}.group-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.field-grid{grid-template-columns:1fr}.defaults-card{padding:.8rem}.module-rail{border-radius:16px}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="defaults-shell" data-tour-page="experiment-defaults">
+    <section class="app-page-hero settings-page-hero" data-tour-id="experiment-defaults-overview">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-flask"></i></span>
+            <div>
+                <div class="settings-kicker" data-i18n="nav.global_settings">全局设置</div>
+                <h1 class="app-page-title" id="pageTitle">实验默认配置</h1>
+                <p class="app-page-subtitle" id="pageSubtitle">统一设置新视频的场地尺寸、检测和分析参数。已经保存到具体视频或 ROI 的参数始终优先，不会被这里覆盖。</p>
+            </div>
+        </div>
+        <div class="app-page-actions defaults-actions" data-tour-id="experiment-defaults-actions">
+            <button class="btn btn-primary" type="button" id="saveBtn" disabled><i class="fas fa-floppy-disk me-2"></i><span id="saveText">保存全局默认配置</span></button>
+            <button class="btn btn-outline-secondary" type="button" id="resetBtn" disabled><i class="fas fa-rotate-left me-2"></i><span id="resetText">恢复软件初始值</span></button>
+        </div>
+        <nav class="nav nav-pills settings-tabs settings-tabs-in-hero" aria-label="Global settings" data-tour-id="global-settings-tabs">
+            <a class="nav-link" href="{{ url_for('visual_style_page') }}"><i class="fas fa-palette me-2"></i><span data-i18n="settings.tab.visual_style">图像样式</span></a>
+            <a class="nav-link active" href="{{ url_for('experiment_defaults_page') }}"><i class="fas fa-sliders me-2"></i><span data-i18n="settings.tab.experiment_defaults">实验默认配置</span></a>
+        </nav>
+    </section>
+    <div class="alert defaults-status" id="statusBox" role="status"></div>
+    <div class="defaults-layout">
+        <aside class="module-rail" id="moduleRail" aria-label="Experiment modules" data-tour-id="experiment-defaults-modules"></aside>
+        <main class="defaults-card" data-tour-id="experiment-defaults-fields">
+            <div class="module-head"><div><h2 id="moduleTitle"></h2><p id="moduleHint"></p></div></div>
+            <div class="group-grid" id="groups"></div>
+        </main>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DEFAULTS_I18N = {
+    zh: { title:'实验默认配置', subtitle:'统一设置新视频的场地尺寸、检测和分析参数。已经保存到具体视频或 ROI 的参数始终优先，不会被这里覆盖。', save:'保存全局默认配置', reset:'恢复软件初始值', hint:'此处只影响之后新建或尚未单独设置的配置；视频与 ROI 的单独设置优先。', loading:'正在读取默认配置…', loadFailed:'读取默认配置失败', saving:'正在保存…', saved:'已保存。后续新建配置会使用这些值。', saveFailed:'保存失败', resetting:'正在恢复初始值…', resetDone:'已恢复软件初始值。', resetFailed:'恢复失败', confirmReset:'恢复所有实验模块的软件初始默认值？', invalidJson:'{0} 的 JSON 格式无效。', groups:{geometry:'场地与尺寸',detection:'检测参数',analysis:'分析与统计',protocol:'试验流程'} },
+    en: { title:'Experiment Default Configuration', subtitle:'Set arena dimensions, detection, and analysis values for new videos. Values saved for a specific video or ROI always take precedence.', save:'Save Global Defaults', reset:'Restore Factory Defaults', hint:'These values affect future/new setups that have not been explicitly configured; video and ROI overrides win.', loading:'Loading defaults…', loadFailed:'Failed to load defaults', saving:'Saving…', saved:'Saved. New configurations will use these values.', saveFailed:'Failed to save defaults', resetting:'Restoring factory defaults…', resetDone:'Factory defaults restored.', resetFailed:'Failed to restore defaults', confirmReset:'Restore factory defaults for every experiment module?', invalidJson:'Invalid JSON for {0}.', groups:{geometry:'Arena & Dimensions',detection:'Detection',analysis:'Analysis & Statistics',protocol:'Protocol'} },
+};
+const MODULES = {
+    tst:['悬尾实验（TST）','Tail Suspension Test (TST)','fa-link'], forced_swim:['强迫游泳（FST）','Forced Swim Test (FST)','fa-water'], water_maze:['水迷宫（MWM）','Morris Water Maze (MWM)','fa-person-swimming'], open_field:['旷场（OFT）','Open Field Test (OFT)','fa-square'], novel_object:['新奇物体识别（NOR）','Novel Object Recognition (NOR)','fa-cubes'], elevated_plus:['高架十字迷宫（EPM）','Elevated Plus Maze (EPM)','fa-plus'], y_maze:['Y 迷宫','Y-Maze','fa-y'], light_dark_box:['明暗箱（LDB）','Light-Dark Box (LDB)','fa-table-columns'], three_chamber:['三箱社交（3CST）','Three-Chamber Social Test (3CST)','fa-users']
+};
+let defaultsPayload = {}; let schema = {}; let activeModule = 'open_field';
+let defaultsLoaded = false; let defaultsMutationActive = false; let defaultsLoadGeneration = 0;
+function lang(){ return (typeof getLang === 'function' && getLang()==='en') ? 'en' : 'zh'; }
+function tx(key){ const parts=key.split('.'); let value=DEFAULTS_I18N[lang()]; for(const part of parts) value=value?.[part]; return value ?? key; }
+function textFor(label){ return (label || {})[lang()] || (label || {}).zh || ''; }
+function escapeHtml(value){ return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;'); }
+function showStatus(message, tone='info'){ const el=document.getElementById('statusBox'); el.textContent=message; el.className=`alert defaults-status show alert-${tone}`; }
+function setDefaultsActionsDisabled(disabled){ document.getElementById('saveBtn').disabled=disabled; document.getElementById('resetBtn').disabled=disabled; }
+function moduleName(key){ const item=MODULES[key] || [key,key,'fa-flask']; return lang()==='en'?item[1]:item[0]; }
+function renderStatic(){ document.title=`${tx('title')} - MouseScope`; document.getElementById('pageTitle').textContent=tx('title'); document.getElementById('pageSubtitle').textContent=tx('subtitle'); document.getElementById('saveText').textContent=tx('save'); document.getElementById('resetText').textContent=tx('reset'); }
+function renderRail(){ const rail=document.getElementById('moduleRail'); rail.innerHTML=Object.keys(schema.modules || {}).map(key=>{const mod=MODULES[key]||[key,key,'fa-flask']; return `<button class="module-btn ${key===activeModule?'active':''}" type="button" onclick="selectModule('${key}')"><i class="fas ${mod[2]}"></i><span>${escapeHtml(moduleName(key))}</span></button>`;}).join(''); }
+function jsonText(value){ return JSON.stringify(value, null, 2); }
+function numberAttributes(field){ const attrs=[]; if(field.min!==undefined)attrs.push(`min="${escapeHtml(field.min)}"`); if(field.max!==undefined)attrs.push(`max="${escapeHtml(field.max)}"`); attrs.push(`step="${escapeHtml(field.step ?? (field.type==='int'?1:'any'))}"`); if(!field.nullable)attrs.push('required'); return attrs.join(' '); }
+function feedbackMarkup(id){ return `<div class="invalid-feedback" id="${id}-feedback"></div>`; }
+function inputMarkup(field, value){ const id=`field-${activeModule}-${field.key}`; const label=escapeHtml(textFor(field.label)); if(field.type==='bool') return `<div class="default-field"><label>${label}</label><div class="form-check default-check"><input class="form-check-input" type="checkbox" id="${id}" ${value?'checked':''}><label class="form-check-label" for="${id}">${value ? (lang()==='en'?'Enabled':'启用') : (lang()==='en'?'Disabled':'关闭')}</label></div></div>`; if(field.type==='select'){const options=(field.options||[]).map(item=>`<option value="${escapeHtml(item.value)}" ${String(value)===String(item.value)?'selected':''}>${escapeHtml(lang()==='en'?item.en:item.zh)}</option>`).join(''); return `<div class="default-field"><label for="${id}">${label}</label><select class="form-select" id="${id}" data-kind="select">${options}</select>${feedbackMarkup(id)}</div>`;} if(field.type==='json')return `<div class="default-field wide"><label for="${id}">${label}</label><textarea class="form-control" id="${id}" data-kind="json" ${field.nullable?'':'required'}>${escapeHtml(jsonText(value))}</textarea>${feedbackMarkup(id)}</div>`; const type=field.type==='text'?'text':'number'; const attrs=type==='number'?numberAttributes(field):(field.nullable?'':'required'); const actual=value ?? ''; return `<div class="default-field"><label for="${id}">${label}</label><input class="form-control" id="${id}" data-kind="${field.type}" type="${type}" ${attrs} value="${escapeHtml(actual)}">${feedbackMarkup(id)}</div>`; }
+function renderModule(){
+    const modules=schema.modules||{};
+    const moduleKeys=Object.keys(modules);
+    // Language initialization fires before the defaults request may finish.
+    // Leave the loading state intact until a schema is available.
+    if(!moduleKeys.length)return;
+    if(!modules[activeModule])activeModule=moduleKeys[0];
+    renderRail();
+    document.getElementById('moduleTitle').textContent=moduleName(activeModule);
+    document.getElementById('moduleHint').textContent=tx('hint');
+    const fields=modules[activeModule]||[];
+    const defaults=defaultsPayload[activeModule]||{};
+    const order=['geometry','detection','analysis','protocol'];
+    document.getElementById('groups').innerHTML=order.map(group=>{const items=fields.filter(field=>field.group===group); if(!items.length)return ''; return `<section class="default-group"><h3>${escapeHtml(tx(`groups.${group}`))}</h3><div class="field-grid">${items.map(field=>inputMarkup(field,defaults[field.key])).join('')}</div></section>`;}).join('');
+}
+function selectModule(key){ try{collectAll();}catch(error){showStatus(error.message||tx('invalidJson'),'danger');return;} activeModule=key; renderModule(); }
+function collectModule(){ const result={}; for(const field of schema.modules?.[activeModule]||[]){const el=document.getElementById(`field-${activeModule}-${field.key}`); if(!el)continue; if(field.type==='bool'){result[field.key]=Boolean(el.checked);continue;} if(field.type==='json'){try{result[field.key]=JSON.parse(el.value);}catch(error){throw new Error(tx('invalidJson').replace('{0}',textFor(field.label)));}continue;} if(field.type==='int'){result[field.key]=el.value===''?null:Number.parseInt(el.value,10);continue;} if(field.type==='number'){result[field.key]=el.value===''?null:Number(el.value);continue;} result[field.key]=el.value;} return result; }
+function collectAll(){ const current=collectModule(); defaultsPayload[activeModule]={...(defaultsPayload[activeModule]||{}),...current}; return defaultsPayload; }
+async function loadDefaults(){ const generation=++defaultsLoadGeneration; defaultsLoaded=false; setDefaultsActionsDisabled(true); showStatus(tx('loading'),'info'); try{const r=await fetch('/api/experiment_defaults'); const data=await r.json(); if(!r.ok||!data.success)throw new Error(data.error||tx('loadFailed')); if(generation!==defaultsLoadGeneration)return; defaultsPayload=data.defaults||{}; schema=data.schema||{}; if(!schema.modules?.[activeModule])activeModule=Object.keys(schema.modules||{})[0]; defaultsLoaded=true; setDefaultsActionsDisabled(false); document.getElementById('statusBox').classList.remove('show'); renderModule(); window.setTimeout(()=>{if(window.MouseScopeTour)MouseScopeTour.start('experiment-defaults');},250);}catch(error){if(generation!==defaultsLoadGeneration)return; defaultsLoaded=false;setDefaultsActionsDisabled(true);showStatus(error.message||tx('loadFailed'),'danger');} }
+function clearFieldErrors(){ document.querySelectorAll('#groups .is-invalid').forEach(el=>el.classList.remove('is-invalid')); document.querySelectorAll('#groups .invalid-feedback').forEach(el=>el.textContent=''); }
+function applyValidationErrors(errors){ clearFieldErrors(); const relevant=(errors||[]).filter(item=>item.experiment===activeModule); for(const item of relevant){const el=document.getElementById(`field-${activeModule}-${item.field}`);if(!el)continue;el.classList.add('is-invalid');const feedback=document.getElementById(`${el.id}-feedback`);if(feedback)feedback.textContent=lang()==='en'?(item.message_en||item.message):(item.message||item.message_en);} }
+async function saveDefaults(){ if(!defaultsLoaded||defaultsMutationActive)return; defaultsMutationActive=true;setDefaultsActionsDisabled(true);try{collectAll(); clearFieldErrors(); showStatus(tx('saving'),'info'); const r=await fetch('/api/experiment_defaults',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({defaults:defaultsPayload})}); const data=await r.json(); if(!r.ok||!data.success){applyValidationErrors(data.validation_errors);throw new Error(lang()==='en'?(data.error_en||data.error||tx('saveFailed')):(data.error||data.error_en||tx('saveFailed')));} defaultsPayload=data.defaults||defaultsPayload; showStatus(tx('saved'),'success'); renderModule();}catch(error){showStatus(error.message||tx('saveFailed'),'danger');}finally{defaultsMutationActive=false;setDefaultsActionsDisabled(!defaultsLoaded);} }
+async function resetDefaults(){ if(!defaultsLoaded||defaultsMutationActive)return; if(!confirm(tx('confirmReset')))return; defaultsMutationActive=true;setDefaultsActionsDisabled(true);showStatus(tx('resetting'),'info'); try{const r=await fetch('/api/experiment_defaults/reset',{method:'POST'});const data=await r.json();if(!r.ok||!data.success)throw new Error(data.error||tx('resetFailed'));defaultsPayload=data.defaults||{};showStatus(tx('resetDone'),'success');renderModule();}catch(error){showStatus(error.message||tx('resetFailed'),'danger');}finally{defaultsMutationActive=false;setDefaultsActionsDisabled(!defaultsLoaded);} }
+document.getElementById('saveBtn').addEventListener('click',saveDefaults);
+document.getElementById('resetBtn').addEventListener('click',resetDefaults);
+document.getElementById('groups').addEventListener('change',event=>{
+    const input=event.target;
+    if(!(input instanceof HTMLInputElement)||input.type!=='checkbox')return;
+    const label=document.querySelector(`label[for="${input.id}"]`);
+    if(label)label.textContent=input.checked?(lang()==='en'?'Enabled':'启用'):(lang()==='en'?'Disabled':'关闭');
+});
+document.addEventListener('mousescope:langchange',()=>{try{collectAll();}catch(_error){}renderStatic();renderModule();});
+document.addEventListener('DOMContentLoaded',()=>{renderStatic();loadDefaults();});
+MouseScopeTour.register('experiment-defaults',{version:'v1',autoStart:false,steps:[
+    {target:'[data-tour-id="experiment-defaults-overview"]',titleKey:'tour.experiment_defaults.overview.title',bodyKey:'tour.experiment_defaults.overview.body'},
+    {target:'[data-tour-id="global-settings-tabs"]',titleKey:'tour.global_settings.tabs.title',bodyKey:'tour.global_settings.tabs.body'},
+    {target:'[data-tour-id="experiment-defaults-modules"]',titleKey:'tour.experiment_defaults.modules.title',bodyKey:'tour.experiment_defaults.modules.body'},
+    {target:'[data-tour-id="experiment-defaults-fields"]',titleKey:'tour.experiment_defaults.fields.title',bodyKey:'tour.experiment_defaults.fields.body'},
+    {target:'[data-tour-id="experiment-defaults-actions"]',titleKey:'tour.experiment_defaults.actions.title',bodyKey:'tour.experiment_defaults.actions.body'}
+]});
+</script>
+{% endblock %}

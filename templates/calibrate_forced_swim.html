@@ -49,11 +49,11 @@
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
-            <strong data-fst-i18n="workspace.title">批量单视频编辑模式</strong>
-            <div class="small mt-1" data-fst-i18n="workspace.body">保存当前视频的圆筒 ROI、直径线和参数后返回批次页面，再统一启动整批分析。</div>
+            <strong data-fst-i18n="workspace.title">逐视频配置模式</strong>
+            <div class="small mt-1" data-fst-i18n="workspace.body">保存该视频的圆筒 ROI、直径线和参数后返回分析配置页，再统一开始分析。</div>
         </div>
         <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
-            <i class="fas fa-layer-group me-2"></i><span data-fst-i18n="workspace.back">返回批次页面</span>
+            <i class="fas fa-layer-group me-2"></i><span data-fst-i18n="workspace.back">返回分析配置</span>
         </a>
     </div>
     {% endif %}
@@ -141,7 +141,7 @@
 
             <div class="fst-panel">
                 <h5 class="mb-3" data-fst-i18n="list.title">圆筒列表</h5>
-                <div class="fst-hint" data-fst-i18n="list.hint">每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。</div>
+                <div class="fst-hint" data-fst-i18n="list.hint">每个 ROI 必须有圆筒直径线。时间窗支持跟随视频、相对首次检测和精确视频时间。</div>
                 {% if project_context and project_context.project_id %}
                 <div class="alert alert-warning py-2 mb-3 project-subject-guide" data-tour-id="project-subject-required">
                     <i class="fas fa-circle-info me-2"></i><span data-fst-i18n="project.subject_required">项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。</span>
@@ -275,7 +275,7 @@
                         </div>
                         <div class="d-flex align-items-end">
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                                <input class="form-check-input" type="checkbox" id="generateVideo"{% if experiment_defaults.get('generate_video', true) %} checked{% endif %}>
                                 <label class="form-check-label" for="generateVideo" data-fst-i18n="stats.video">生成标注视频</label>
                             </div>
                         </div>
@@ -300,6 +300,7 @@ const launchMode = {{ launch_mode | tojson }};
 const currentVideoIndexFromServer = {{ current_video_index | tojson }};
 const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
 const initialDraftPayload = {{ draft_payload | tojson }};
+const experimentDefaults = {{ experiment_defaults | tojson }};
 {% if video_list %}
 const videoList = {{ video_list | tojson }};
 {% else %}
@@ -311,9 +312,9 @@ const isProjectMode = Boolean(projectContext && projectContext.project_id);
 
 const FST_I18N = {
     zh: {
-        'workspace.title': '批量单视频编辑模式',
-        'workspace.body': '保存当前视频的圆筒 ROI、直径线和参数后返回批次页面，再统一启动整批分析。',
-        'workspace.back': '返回批次页面',
+        'workspace.title': '逐视频配置模式',
+        'workspace.body': '保存该视频的圆筒 ROI、直径线和参数后返回分析配置页，再统一开始分析。',
+        'workspace.back': '返回分析配置',
         'header.title': '强迫游泳实验配置',
         'header.subtitle': '侧视多圆筒 FST，使用圆筒直径线归一化运动评分，输出不动时间、ethogram 与活动曲线。',
         'header.manual': 'FST 使用手册',
@@ -334,7 +335,7 @@ const FST_I18N = {
         'btn.back': '返回圆筒页',
         'btn.refresh': '刷新预览',
         'btn.start': '开始 FST 分析',
-        'btn.save': '保存设置并返回批次页面',
+        'btn.save': '保存设置并返回分析配置',
         'status.rois': '圆筒数',
         'status.points': '当前点数',
         'status.mode': '当前模式',
@@ -344,7 +345,7 @@ const FST_I18N = {
         'mode.waterline': '绘制水位线',
         'mode.mask': '编辑检测遮罩',
         'list.title': '圆筒列表',
-        'list.hint': '每个 ROI 必须有圆筒直径线。时间窗支持跟随全局、相对首次检测和精确视频时间。',
+        'list.hint': '每个 ROI 必须有圆筒直径线。时间窗支持跟随视频、相对首次检测和精确视频时间。',
         'list.empty': '还没有添加圆筒 ROI。',
         'project.subject_required': '项目模式下，每个完整 ROI 都必须选择项目中已有小鼠；否则不能进入调参或启动分析。',
         'card.points': 'ROI 点',
@@ -357,7 +358,7 @@ const FST_I18N = {
         'card.name': '名称',
         'card.diameter_cm': '圆筒内径 (cm)',
         'card.time_mode': '统计模式',
-        'card.global': '跟随全局',
+        'card.global': '跟随视频',
         'card.relative': '相对首次检测',
         'card.precise': '精确时间段',
         'card.start': '开始时间 (s)',
@@ -403,9 +404,9 @@ const FST_I18N = {
         'frame': '帧'
     },
     en: {
-        'workspace.title': 'Batch single-video editing',
-        'workspace.body': 'Save this video’s cylinder ROIs, diameter lines, and parameters, then return to the batch page to start the run.',
-        'workspace.back': 'Back to Batch',
+        'workspace.title': 'Per-video configuration',
+        'workspace.body': 'Save this video’s cylinder ROIs, diameter lines, and parameters, then return to Analysis Configuration.',
+        'workspace.back': 'Back to Analysis Configuration',
         'header.title': 'Forced Swim Test Setup',
         'header.subtitle': 'Side-view multi-cylinder FST with cylinder-diameter normalization, immobility scoring, ethogram, and activity curve outputs.',
         'header.manual': 'FST Manual',
@@ -449,7 +450,7 @@ const FST_I18N = {
         'card.name': 'Name',
         'card.diameter_cm': 'Diameter (cm)',
         'card.time_mode': 'Time Mode',
-        'card.global': 'Follow Global',
+        'card.global': 'Follow Video',
         'card.relative': 'Relative to Detection',
         'card.precise': 'Precise Time Range',
         'card.start': 'Start (s)',
@@ -550,11 +551,15 @@ function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
         return `<label class="form-label">${fallbackLabel}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="${updateNameFn}(${index}, this.value)">`;
     }
     const selectedId = roi.subject_id || '';
-    const options = [`<option value="">请选择已有小鼠</option>`].concat((projectSubjects || []).map(subject => {
+    const english = lang() === 'en';
+    const selectText = english ? 'Select a registered animal' : '请选择已有小鼠';
+    const labelText = english ? 'Animal / Experimental Unit' : '小鼠 / 实验单元';
+    const noteText = english ? 'Project mode requires a registered animal.' : '项目模式下必须选择已登记小鼠';
+    const options = [`<option value="">${selectText}</option>`].concat((projectSubjects || []).map(subject => {
         const label = `${subject.animal_code || ''}${subject.group_name ? ' · ' + subject.group_name : ''}`;
         return `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     })).join('');
-    return `<label class="form-label">小鼠 / 实验单元</label><select class="form-select" onchange="updateRoiProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : '项目模式下必须选择已登记小鼠'}</div>`;
+    return `<label class="form-label">${labelText}</label><select class="form-select" onchange="updateRoiProjectSubject(${index}, this.value)">${options}</select><div class="form-text small">${roi.group_name ? escapeHtml(roi.group_name) : noteText}</div>`;
 }
 
 function lang() { return (typeof getLang === 'function') ? getLang() : 'zh'; }
@@ -650,9 +655,10 @@ function defaultTuningParams() {
         threshold_sensitivity: 0,
         smoothing_window_s: 0.5,
         min_immobility_duration_s: 1.0,
-        min_active_duration_s: 0.3,
+        min_active_duration_s: experimentDefaults.min_active_duration_s ?? 0.3,
         gap_merge_s: 0.5,
-        bin_seconds: 60
+        bin_seconds: 60,
+        ...experimentDefaults
     };
 }
 function readTuningParamsFromControls() {
@@ -671,7 +677,7 @@ function readTuningParamsFromControls() {
         threshold_sensitivity: parseFloat(document.getElementById('thresholdSensitivity')?.value || '0'),
         smoothing_window_s: parseFloat(document.getElementById('smoothingWindow')?.value || '0.5'),
         min_immobility_duration_s: parseFloat(document.getElementById('minImmobility')?.value || '1.0'),
-        min_active_duration_s: 0.3,
+        min_active_duration_s: experimentDefaults.min_active_duration_s ?? 0.3,
         gap_merge_s: parseFloat(document.getElementById('gapMerge')?.value || '0.5'),
         bin_seconds: parseFloat(document.getElementById('binSeconds')?.value || '60')
     };
@@ -706,7 +712,7 @@ function applyTuningParamsToControls(params) {
 }
 
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
-    cylinder_diameter_cm: 10.0,
+    cylinder_diameter_cm: experimentDefaults.cylinder_diameter_cm ?? 10.0,
     rois: [],
     current_roi: [],
     current_edit_points: [],
@@ -718,7 +724,7 @@ let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
 function ensureVideoConfig(index) {
     if (!videoConfigs[index]) {
         videoConfigs[index] = {
-            cylinder_diameter_cm: 10.0,
+            cylinder_diameter_cm: experimentDefaults.cylinder_diameter_cm ?? 10.0,
             rois: [],
             current_roi: [],
             current_edit_points: [],
@@ -829,7 +835,7 @@ function loadFrame(frameIdx, callback) {
     fetch(`/api/get_first_frame/${sessionId}?frame=${frameIdx}&video=${currentVideoIdx}`)
         .then(r => r.json())
         .then(data => {
-            if (data.error) { alert(data.error); return; }
+            if (data.error) { alert(apiErrorText(data, tr('preview.failed', 'Preview failed'))); return; }
             if (data.video_info) {
                 currentVideoInfo = data.video_info;
                 videoInfoList[currentVideoIdx] = data.video_info;
@@ -1152,7 +1158,7 @@ function updateCylinderList() {
                     <div>
                         <label class="form-label">${tr('card.time_mode', 'Time Mode')}</label>
                         <select class="form-select" onchange="updateTimeMode(${index}, this.value)">
-                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('card.global', 'Follow Global')}</option>
+                            <option value="global" ${timeConfig.mode === 'global' ? 'selected' : ''}>${tr('card.global', 'Follow Video')}</option>
                             <option value="relative" ${timeConfig.mode === 'relative' ? 'selected' : ''}>${tr('card.relative', 'Relative to Detection')}</option>
                             <option value="precise" ${timeConfig.mode === 'precise' ? 'selected' : ''}>${tr('card.precise', 'Precise Time Range')}</option>
                         </select>
@@ -1272,7 +1278,7 @@ async function saveDraftPayload(redirectToWorkspace = false) {
         body: JSON.stringify(body)
     });
     const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error || '保存当前设置失败');
+    if (!response.ok || !data.success) throw new Error(apiErrorText(data, lang() === 'en' ? 'Failed to save current setup' : '保存当前设置失败'));
     if (redirectToWorkspace && batchWorkspaceUrl) window.location.href = batchWorkspaceUrl;
     return data;
 }
@@ -1286,7 +1292,7 @@ function updateDebugPreview(frameIdx) {
         .then(r => r.json())
         .then(data => {
             if (data.error) {
-                document.getElementById('previewStatus').textContent = data.error;
+                document.getElementById('previewStatus').textContent = apiErrorText(data, tr('preview.failed', 'Preview failed'));
                 return;
             }
             drawImageOnCanvas('previewOriginal', data.original);
@@ -1343,7 +1349,7 @@ function startAnalysis() {
                 return;
             }
             document.getElementById('loading').style.display = 'none';
-            alert(data.error || tr('alert.start_failed', 'Failed to start analysis'));
+            alert(apiErrorText(data, tr('alert.start_failed', 'Failed to start analysis')));
         })
         .catch(err => {
             document.getElementById('loading').style.display = 'none';

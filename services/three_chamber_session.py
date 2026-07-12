@@ -190,7 +190,7 @@ class ThreeChamberSocialAnalysisSession(AnalysisSessionBase):
         final_output_video_path = f"{final_base}_analyzed.mp4"
         generate_video = bool(vision_config.get('generate_video', True))
 
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"Unable to open video: {video_path}")
             raise RuntimeError(f"Unable to open video: {video_path}")
@@ -203,7 +203,13 @@ class ThreeChamberSocialAnalysisSession(AnalysisSessionBase):
         height = int(video_meta.get('height') or 0)
         total_frames = int(video_meta.get('total_frames') or 0)
         self._log(f"3CST video info: {width}x{height}, {fps:.2f}fps, {total_frames} frames")
-        timebase, timebase_summary, total_frames = self._build_timebase_for_video(video_path, fps, total_frames, label='3CST')
+        timebase, timebase_summary, total_frames = self._build_timebase_for_video(
+            video_path,
+            fps,
+            total_frames,
+            label='3CST',
+            prefer_pts=not bool(fps_override),
+        )
         sampling = self._resolve_video_sampling(
             width,
             height,
@@ -400,7 +406,7 @@ class ThreeChamberSocialAnalysisSession(AnalysisSessionBase):
         gc.collect()
 
     def _render_annotated_video(self, video_path, output_video_path, vision_config, roi_configs, fps, width, height, start_frame, end_frame, frames_to_process, global_start_time_s, sampling, timebase, batch_index=None):
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"Unable to reopen 3CST video for rendering: {video_path}")
             return False

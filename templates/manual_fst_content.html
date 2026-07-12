@@ -5,19 +5,18 @@
     const FST_MANUAL = {
         zh: {
             heroEyebrow: 'Forced Swim Test / FST',
-            heroTitle: '强迫游泳实验完整操作手册',
+            heroTitle: '强迫游泳实验',
             heroSubtitle: '本手册覆盖侧视视频采集、多圆筒 ROI、圆筒直径线标定、三种时间窗、自动与手动不动阈值、ethogram / 活动曲线复核，以及批量模式下每个视频的独立配置方式。',
-            heroChips: ['侧视多圆筒', '圆筒直径归一化', 'active / immobile', '三种时间窗', 'ethogram + 活动曲线'],
             heroCards: [
                 ['fas fa-water', '模块实际在判什么', 'FST 模块默认使用 <code>active / immobile</code> 二分类。明显游动、挣扎、踩水和攀爬样动作都会合并为 active；系统不会强行区分 swimming 和 climbing。'],
                 ['fas fa-ruler-horizontal', '为什么用圆筒直径标定', '侧视 FST 中鼠体会部分入水、姿态变化大，体长线不稳定。圆筒内径是更固定的物理尺度，系统用它把光流、质心速度和轮廓形变归一化。'],
                 ['fas fa-chart-line', '为什么一定要看图复核', 'FST 的关键不是只拿一个 summary 数值。ethogram 能看状态切换，活动曲线能看运动评分和阈值关系，是判断阈值是否合理的优先复核材料。'],
             ],
-            flow: ['视频采集要求', '上传与时间范围', '圆筒 ROI 标定', '阈值与预览', '正式分析监控', '结果复核'],
+            flow: ['视频采集要求', '导入与分析配置', '圆筒 ROI 标定', '阈值与预览', '正式分析监控', '结果复核'],
             nav: [
                 ['overview', '总览'],
                 ['recording', '采集要求'],
-                ['upload', '上传与时间范围'],
+                ['upload', '导入与分析配置'],
                 ['calibration', '圆筒 ROI / 直径线 / 时间窗'],
                 ['params', '参数字典'],
                 ['outputs', '结果字典'],
@@ -68,7 +67,7 @@
                             items: [
                                 '同一批视频尽量使用相同内径的圆筒；如果内径不同，需要在每个 ROI 里填写对应真实直径。',
                                 '水位可以不同，但 ROI 和水线参考要让你能判断鼠体是否被完整覆盖。',
-                                '如果源视频 FPS 元数据不可靠，上传页要手动覆盖 FPS，因为时长、潜伏期和片段合并都依赖 FPS。',
+                                '如果源视频 FPS 元数据不可靠，请在分析配置页手动覆盖 FPS，因为时长、潜伏期和片段合并都依赖 FPS。',
                                 '正式统计前建议先用 1 到 2 条代表性视频做完整试跑，确认阈值和输出图像符合人工观察。'
                             ]
                         }
@@ -78,12 +77,12 @@
                     ]
                 },
                 upload: {
-                    title: '上传与时间范围',
-                    lead: '上传页负责定义本次分析读取哪些视频、默认统计哪一段、是否覆盖 FPS、结果输出到哪里。后续每个圆筒 ROI 仍可以继续设置自己的时间模式。',
+                    title: '导入与分析配置',
+                    lead: '导入页只负责选择实验和视频；分析配置页负责逐视频设置外层时间范围、FPS、方向和输出目录。每个圆筒 ROI 还可以设置独立时间模式。',
                     points: [
                         '实验类型选择 <code>强迫游泳 Forced Swim Test</code> 后进入 FST 专用标定页。',
-                        '上传页的全局开始时间 / 结束时间是默认统计窗口；ROI 如果选择 <code>global</code>，就直接沿用这里的时间。',
-                        '如果只想分析正式测试阶段，例如第 60 秒到第 360 秒，可以先在上传页设置全局窗口，再让大多数 ROI 跟随全局。',
+                        '分析配置页的视频开始 / 结束时间是外层统计窗口；ROI 如果选择 <code>global</code>，就直接沿用对应视频的范围。',
+                        '如果只想分析正式测试阶段，例如第 60 秒到第 360 秒，可在分析配置页设置视频范围，再让大多数 ROI 跟随视频。',
                         '批量模式下建议把采集条件相近的视频放在同一批次。虽然每个视频都能独立配置，但这样更容易复核和调参。',
                         '自定义输出目录会作为批量结果总目录，每个视频会在其中生成自己的结果子文件夹。'
                     ],
@@ -129,7 +128,7 @@
                     timeTable: {
                         headers: ['模式', '含义', '推荐使用场景'],
                         rows: [
-                            ['<code>global</code>', '跟随上传页的全局开始 / 结束时间。', '所有圆筒投放时间一致，整批统计同一段视频时。'],
+                            ['<code>global</code>', '跟随分析配置页中对应视频的开始 / 结束时间。', '所有圆筒投放时间一致，统计同一段视频时。'],
                             ['<code>relative</code>', '从该 ROI 首次稳定检测到鼠体开始计时，再加上 ROI 起止偏移。', '同一画面多个圆筒投放时间略有先后，想按“检测到鼠体后第 N 秒”统计时。'],
                             ['<code>precise</code>', '直接按视频绝对时间指定该 ROI 的开始 / 结束秒数。', '某个圆筒需要单独统计固定视频片段时。']
                         ]
@@ -162,7 +161,7 @@
                             ['<code>smoothing_window_s</code>', '对运动评分做时间平滑，减少单帧噪声导致的状态抖动。', '噪声多可略增大；过大可能抹掉很短的真实活动。'],
                             ['<code>min_immobility_duration_s</code>', '低运动评分必须持续至少这么久，才保留为不动片段。', '减少偶发低分造成的假不动；设置过大可能漏掉短不动。'],
                             ['<code>gap_merge_s</code>', '两个不动片段之间很短的 active 间隙会被合并。', '适合处理漂浮时少量划水造成的短暂高分；过大可能吞掉真实活动。'],
-                            ['<code>min_active_duration_s</code>', '内部固定的最短活动片段规则，当前前端默认 0.3 秒。', '用于减少极短 active 抖动，通常无需手动关心。'],
+                            ['<code>min_active_duration_s</code>', '内部固定的最短活动片段规则，界面默认值为 0.3 秒。', '用于减少极短 active 抖动，通常无需手动关心。'],
                             ['<code>bin_seconds</code>', '分箱结果每一行覆盖的时间长度。', '常用 60 秒观察不动比例随时间变化，也可以按实验设计改成更短或更长。']
                         ]
                     },
@@ -248,7 +247,7 @@
                     title: '批量流程',
                     lead: 'FST 批量模式的正确姿势是：每个视频单独配置圆筒 ROI、直径线、水线 / 遮罩和时间窗；全部视频配置完成后，再统一启动批量分析。',
                     steps: [
-                        '在上传页选择 FST，导入多个视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '选择 FST 并导入多个视频，在分析配置页逐视频设置时间范围、FPS、方向和输出目录。',
                         '进入标定页后，使用视频切换器逐个视频检查画面和默认圆筒直径。',
                         '对当前视频逐个添加圆筒 ROI，完成多边形后为每个圆筒填写名称。',
                         '为每个圆筒画直径线，输入真实内径；如果需要，补充水线和检测遮罩。',
@@ -288,9 +287,8 @@
         },
         en: {
             heroEyebrow: 'Forced Swim Test / FST',
-            heroTitle: 'Forced Swim Test Complete Manual',
+            heroTitle: 'Forced Swim Test',
             heroSubtitle: 'This manual covers side-view acquisition, multi-cylinder ROI setup, cylinder-diameter calibration, three time modes, automatic and manual immobility thresholds, ethogram / activity-curve review, and per-video batch configuration.',
-            heroChips: ['Side-view cylinders', 'Diameter normalization', 'active / immobile', 'Three time modes', 'ethogram + activity curve'],
             heroCards: [
                 ['fas fa-water', 'What the module scores', 'The FST module uses <code>active / immobile</code> scoring by default. Clear swimming, struggling, treading, and climbing-like motion are all merged into active. The module does not force swimming and climbing into separate classes.'],
                 ['fas fa-ruler-horizontal', 'Why cylinder diameter is used', 'In side-view FST videos, body posture changes and the animal is partly submerged, so body-length calibration is unstable. Cylinder inner diameter is a fixed physical scale for normalizing optical flow, centroid speed, and contour change.'],
@@ -351,7 +349,7 @@
                             items: [
                                 'Use cylinders with the same inner diameter within one batch when possible. If diameters differ, enter the correct real diameter for each ROI.',
                                 'Water level may vary, but the ROI and optional waterline should still allow full animal review.',
-                                'If video FPS metadata is unreliable, override FPS on the upload page because durations, latency, and bout merging all depend on FPS.',
+                                'If video FPS metadata is unreliable, override FPS on the Analysis Configuration page because durations, latency, and bout merging all depend on FPS.',
                                 'Before formal statistics, run one or two representative videos end to end and check thresholds and figures against manual observation.'
                             ]
                         }
@@ -362,7 +360,7 @@
                 },
                 upload: {
                     title: 'Upload and Time Range',
-                    lead: 'The upload page defines which videos are analyzed, the default statistics window, optional FPS override, and the output folder. Each cylinder ROI can still use its own time mode later.',
+                    lead: 'The import page selects the assay and videos. Analysis Configuration sets the outer range, FPS, orientation, and output folder per video; each cylinder ROI may further narrow its time mode.',
                     points: [
                         'Choose <code>Forced Swim Test</code> as the experiment type to enter the dedicated FST calibration page.',
                         'The global start / end time on the upload page is the default statistics window. ROIs using <code>global</code> follow this window.',
@@ -445,7 +443,7 @@
                             ['<code>smoothing_window_s</code>', 'Smooths motion score over time to reduce single-frame noise.', 'Increase for noisy curves; too large can erase short real movements.'],
                             ['<code>min_immobility_duration_s</code>', 'A low-score period must last at least this long to remain an immobility bout.', 'Reduces false immobility from brief dips; too large can miss short immobility.'],
                             ['<code>gap_merge_s</code>', 'Very short active gaps between two immobility bouts are merged.', 'Useful for tiny paddling bursts during floating; too large can swallow real activity.'],
-                            ['<code>min_active_duration_s</code>', 'Internal minimum active-bout rule, currently set by the UI to 0.3 s.', 'Usually does not need manual attention.'],
+                            ['<code>min_active_duration_s</code>', 'Internal minimum active-bout rule set by the UI to 0.3 s.', 'Usually does not need manual attention.'],
                             ['<code>bin_seconds</code>', 'Temporal bin width for binned outputs.', 'Use 60 s to inspect minute-by-minute dynamics, or adjust to your experimental design.']
                         ]
                     },
@@ -531,7 +529,7 @@
                     title: 'Batch Workflow',
                     lead: 'The correct FST batch workflow is: configure each video separately, including cylinder ROIs, diameter lines, optional waterline / masks, and time windows; after all videos are complete, start the batch.',
                     steps: [
-                        'Choose FST on the upload page, import multiple videos, and set global time range, FPS override, and output folder.',
+                        'Choose FST and import multiple videos, then configure time range, FPS, orientation, and output folder per video on Analysis Configuration.',
                         'On the calibration page, use the video selector to inspect each video and default cylinder diameter.',
                         'Add cylinder ROIs for the current video and name each cylinder.',
                         'Draw a diameter line for every cylinder and enter the real inner diameter. Add waterline and detection mask if useful.',
@@ -632,9 +630,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

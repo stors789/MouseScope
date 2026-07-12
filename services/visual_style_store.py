@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import copy
-import json
 import threading
 from pathlib import Path
 from typing import Any
+
+from services.atomic_json import atomic_write_json, read_json
 
 from core.visual_style import DEFAULT_VISUAL_STYLE, normalize_visual_style, style_payload
 
@@ -22,7 +23,7 @@ class VisualStyleStore:
             if not self.path.exists():
                 return normalize_visual_style(None)
             try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
+                data = read_json(self.path)
             except Exception:
                 return normalize_visual_style(None)
             return normalize_visual_style(data)
@@ -34,10 +35,7 @@ class VisualStyleStore:
         normalized = normalize_visual_style(style)
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(
-                json.dumps(normalized, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            atomic_write_json(self.path, normalized)
         return normalized
 
     def reset(self) -> dict[str, Any]:

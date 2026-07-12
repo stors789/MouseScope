@@ -49,11 +49,11 @@
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
         <div>
-            <strong data-page-i18n="workspace.title">批量单视频编辑模式</strong>
-            <div class="small mt-1" data-page-i18n="workspace.copy">保存当前视频配置后返回批次页面，再统一启动整批分析。</div>
+            <strong data-page-i18n="workspace.title">逐视频配置模式</strong>
+            <div class="small mt-1" data-page-i18n="workspace.copy">保存该视频配置后返回分析配置页，再统一开始分析。</div>
         </div>
         <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}">
-            <i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回批次页面</span>
+            <i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回分析配置</span>
         </a>
     </div>
     {% endif %}
@@ -213,7 +213,7 @@
                         </div>
                     </div>
                     <div class="form-check d-flex align-items-center gap-2 mt-3">
-                        <input class="form-check-input" type="checkbox" id="generateVideo" checked>
+                        <input class="form-check-input" type="checkbox" id="generateVideo"{% if experiment_defaults.get('generate_video', true) %} checked{% endif %}>
                         <label class="form-check-label" for="generateVideo" data-page-i18n="params.video">生成标注视频</label>
                     </div>
                     <div class="mwm-note" data-page-i18n="params.experiment_note">实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里调整会直接影响统计结果和质量控制的参数。</div>
@@ -264,25 +264,25 @@
 <script>
 const PAGE_I18N = {
     zh: {
-        'workspace.title':'批量单视频编辑模式','workspace.copy':'保存当前视频配置后返回批次页面，再统一启动整批分析。','workspace.back':'返回批次页面',
+        'workspace.title':'逐视频配置模式','workspace.copy':'保存该视频配置后返回分析配置页，再统一开始分析。','workspace.back':'返回分析配置',
         'header.title':'水迷宫实验配置','header.subtitle':'圆池边界、平台位置、椭圆/畸变校正与探测试次指标设置。','header.manual':'MWM 使用手册',
         'step.roi':'1. 泳池与平台','step.preview':'2. 调参与启动','field.trial_type':'实验时期','field.pool_diameter':'泳池真实直径 (cm)','field.platform_radius':'平台半径 (cm)','field.preview_video':'预览视频','trial.hidden':'隐藏平台训练期','trial.probe':'探测试次','trial.visible':'可见平台期',
         'roi.hint':'先新增泳池，在右侧 ROI 卡片选择“绘制泳池”或“绘制平台”。像 PPT 画图形一样拖出椭圆；框定后可拖动椭圆内部移动位置，也可拉动边缘/角点手柄调整大小。',
         'frame.label':'选择帧','frame.preview':'预览帧','btn.add_pool':'新增泳池','btn.boundary':'泳池椭圆','btn.platform':'平台','btn.mask':'检测遮罩','btn.undo':'撤销','btn.finish_mask':'完成检测遮罩','btn.cancel_mask':'取消遮罩编辑','btn.delete':'删除当前','btn.to_preview':'进入调参','btn.back':'返回 ROI','btn.refresh':'刷新预览','btn.start':'开始 MWM 分析',
         'status.trial_type':'实验时期','status.pools':'泳池','status.boundary':'泳池形状','status.platform':'平台','status.mask':'遮罩点','status.mode':'模式','list.title':'ROI 列表','list.hint':'每个泳池都可绑定项目小鼠、命名、真实直径、平台半径和时间窗。多视频模式下配置会按视频保存。','list.empty':'还没有添加泳池。','project.required':'项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。',
-        'card.name':'名称','card.pool_diameter':'泳池直径 (cm)','card.platform_radius':'平台半径 (cm)','card.time_mode':'时间模式','card.global':'跟随全局','card.precise':'精确时间窗','card.start':'开始 (s)','card.end':'结束 (s)','card.pool_ready':'泳池已设置','card.pool_missing':'缺少泳池','card.platform_ready':'平台已设置','card.platform_missing':'缺少平台','card.mask_custom':'自定义遮罩','card.mask_default':'遮罩跟随泳池','card.draw_pool':'绘制泳池','card.draw_platform':'绘制平台','card.edit_mask':'编辑遮罩','card.continue_mask':'继续编辑遮罩','card.reset_mask':'重置遮罩','card.delete':'删除',
+        'card.name':'名称','card.pool_diameter':'泳池直径 (cm)','card.platform_radius':'平台半径 (cm)','card.time_mode':'时间模式','card.global':'跟随视频','card.precise':'精确时间窗','card.start':'开始 (s)','card.end':'结束 (s)','card.pool_ready':'泳池已设置','card.pool_missing':'缺少泳池','card.platform_ready':'平台已设置','card.platform_missing':'缺少平台','card.mask_custom':'自定义遮罩','card.mask_default':'遮罩跟随泳池','card.draw_pool':'绘制泳池','card.draw_platform':'绘制平台','card.edit_mask':'编辑遮罩','card.continue_mask':'继续编辑遮罩','card.reset_mask':'重置遮罩','card.delete':'删除',
         'card.coord_title':'坐标系与象限','card.coord_note':'中心固定为泳池中心；旋转轴线直到 I/II/III/IV 与实验记录一致。','card.axis_rotation':'坐标轴旋转','card.target_quadrant':'目标象限','card.target_auto':'自动按平台','card.release_point':'释放点','quadrant.i':'I（右上）','quadrant.ii':'II（左上）','quadrant.iii':'III（左下）','quadrant.iv':'IV（右下）',
         'preview.title':'调参与预览','preview.waiting':'等待预览。','params.title':'实验与检测参数','params.experiment_title':'统计设置','params.detect_title':'检测参数','params.trial_type':'实验时期','params.trial_hidden':'隐藏平台训练期','params.trial_probe':'探测试次','params.trial_visible':'可见平台期','params.target':'目标象限','params.target_auto':'自动按平台判断','params.start_pos':'释放点','params.bg_method':'检测方式','params.method_threshold':'阈值检测','params.method_static':'静态背景','params.bg_type':'背景类型','params.bg_light':'浅色水面 / 深色小鼠','params.bg_dark':'深色水面 / 浅色小鼠','params.gray':'灰度阈值','params.min_area':'最小目标面积','params.video':'生成标注视频','params.experiment_note':'实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里只确认是否生成标注视频。','params.detect_note':'通常先看右侧预览轮廓：小鼠漏检时调灰度阈值，碎点太多时提高最小面积。其它形态学参数保持默认即可。','alert.mask_need_points':'检测遮罩至少需要 3 个点。','alert.finish_mask_first':'请先完成或取消当前检测遮罩。',
         'params.thig_band':'趋边带宽 (cm)','params.platform_dwell':'平台停留判定 (s)','params.movement':'运动阈值 (cm/s)','params.bin':'分箱时长 (s)','params.max_jump':'跳点过滤 (cm)','params.max_gap':'短缺失补偿 (s)','params.exclude_platform':'检测时排除平台区','params.experiment_note':'实验时期、目标象限、释放点和坐标轴都在 ROI 页面按泳池设置；这里调整会直接影响统计结果和质量控制的参数。','params.detect_note':'通常先看右侧预览轮廓：小鼠漏检时调灰度阈值，碎点太多时提高最小面积；平台可见且被误检时打开平台排除。'
     },
     en: {
-        'workspace.title':'Batch single-video edit mode','workspace.copy':'Save this video, return to the batch page, then start the batch together.','workspace.back':'Back to Batch',
+        'workspace.title':'Per-video configuration','workspace.copy':'Save this video, return to Analysis Configuration, then start when all videos are ready.','workspace.back':'Back to Analysis Configuration',
         'header.title':'Morris Water Maze Setup','header.subtitle':'Pool boundary, platform position, ellipse/distortion correction, and probe-trial metrics.','header.manual':'MWM Manual',
         'step.roi':'1. Pool & Platform','step.preview':'2. Preview & Start','field.trial_type':'Experiment Period','field.pool_diameter':'Real pool diameter (cm)','field.platform_radius':'Platform radius (cm)','field.preview_video':'Preview video','trial.hidden':'Hidden platform training','trial.probe':'Probe trial','trial.visible':'Visible platform',
         'roi.hint':'Add a pool, then choose Draw Pool or Draw Platform in the ROI card. Drag out an ellipse like drawing a shape in PowerPoint; after it is created, drag inside to move it or drag edge/corner handles to resize it.',
         'frame.label':'Frame','frame.preview':'Preview frame','btn.add_pool':'Add Pool','btn.boundary':'Pool Ellipse','btn.platform':'Platform','btn.mask':'Detection Mask','btn.undo':'Undo','btn.finish_mask':'Finish Detection Mask','btn.cancel_mask':'Cancel Mask Editing','btn.delete':'Delete Current','btn.to_preview':'Tune Parameters','btn.back':'Back to ROI','btn.refresh':'Refresh Preview','btn.start':'Start MWM Analysis',
         'status.trial_type':'Period','status.pools':'Pools','status.boundary':'Pool shape','status.platform':'Platform','status.mask':'Mask pts','status.mode':'Mode','list.title':'ROI List','list.hint':'Each pool can be named, bound to a project animal, assigned a real diameter, platform radius, and time window. Batch sessions save settings per video.','list.empty':'No pool has been added.','project.required':'In project mode, every completed ROI must select an existing animal.',
-        'card.name':'Name','card.pool_diameter':'Pool diameter (cm)','card.platform_radius':'Platform radius (cm)','card.time_mode':'Time Mode','card.global':'Follow Global','card.precise':'Precise Time Range','card.start':'Start (s)','card.end':'End (s)','card.pool_ready':'Pool set','card.pool_missing':'Missing pool','card.platform_ready':'Platform set','card.platform_missing':'Missing platform','card.mask_custom':'Custom detection mask','card.mask_default':'Mask follows pool','card.draw_pool':'Draw Pool','card.draw_platform':'Draw Platform','card.edit_mask':'Edit Mask','card.continue_mask':'Continue Mask','card.reset_mask':'Reset Mask','card.delete':'Delete',
+        'card.name':'Name','card.pool_diameter':'Pool diameter (cm)','card.platform_radius':'Platform radius (cm)','card.time_mode':'Time Mode','card.global':'Follow Video','card.precise':'Precise Time Range','card.start':'Start (s)','card.end':'End (s)','card.pool_ready':'Pool set','card.pool_missing':'Missing pool','card.platform_ready':'Platform set','card.platform_missing':'Missing platform','card.mask_custom':'Custom detection mask','card.mask_default':'Mask follows pool','card.draw_pool':'Draw Pool','card.draw_platform':'Draw Platform','card.edit_mask':'Edit Mask','card.continue_mask':'Continue Mask','card.reset_mask':'Reset Mask','card.delete':'Delete',
         'card.coord_title':'Coordinate System & Quadrants','card.coord_note':'The center is the drawn pool center. Rotate the axes until I/II/III/IV match the experiment record.','card.axis_rotation':'Axis rotation','card.target_quadrant':'Target quadrant','card.target_auto':'Auto from platform','card.release_point':'Release point','quadrant.i':'I (upper right)','quadrant.ii':'II (upper left)','quadrant.iii':'III (lower left)','quadrant.iv':'IV (lower right)',
         'preview.title':'Preview & Tuning','preview.waiting':'Waiting for preview.','params.title':'Experiment and Detection Parameters','params.experiment_title':'Statistics Settings','params.detect_title':'Detection Parameters','params.trial_type':'Experiment Period','params.trial_hidden':'Hidden platform training','params.trial_probe':'Probe trial','params.trial_visible':'Visible platform','params.target':'Target quadrant','params.target_auto':'Auto from platform','params.start_pos':'Release point','params.bg_method':'Detection method','params.method_threshold':'Threshold detection','params.method_static':'Static background','params.bg_type':'Background type','params.bg_light':'Light water / dark mouse','params.bg_dark':'Dark water / light mouse','params.gray':'Gray threshold','params.min_area':'Minimum target area','params.video':'Generate annotated video','params.experiment_note':'Experiment period, target quadrant, release point, and axes are configured per pool on the ROI page; here you only confirm annotated video output.','params.detect_note':'Use the preview contour first: adjust gray threshold when the mouse is missed, and raise minimum area when small speckles appear. Other morphology settings stay on defaults.','alert.mask_need_points':'Detection mask needs at least 3 points.','alert.finish_mask_first':'Finish or cancel the current detection mask first.',
         'params.thig_band':'Thigmotaxis band (cm)','params.platform_dwell':'Platform dwell (s)','params.movement':'Movement threshold (cm/s)','params.bin':'Bin length (s)','params.max_jump':'Jump filter (cm)','params.max_gap':'Short-gap fill (s)','params.exclude_platform':'Exclude platform during detection','params.experiment_note':'Experiment period, target quadrant, release point, and axes are configured per pool on the ROI page; these controls affect statistics and QC.','params.detect_note':'Use the preview contour first: adjust gray threshold when the mouse is missed, raise minimum area for speckles, and exclude the platform if a visible platform is detected as the animal.'
@@ -297,6 +297,7 @@ const launchMode = {{ launch_mode | tojson }};
 const currentVideoIndexFromServer = {{ current_video_index | tojson }};
 const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
 const initialDraftPayload = {{ draft_payload | tojson }};
+const experimentDefaults = {{ experiment_defaults | tojson }};
 const projectContext = {{ (project_context or {}) | tojson }};
 const projectSubjects = {{ (project_subjects or []) | tojson }};
 {% if video_list %}const videoList = {{ video_list | tojson }};{% else %}const videoList = [];{% endif %}
@@ -310,7 +311,8 @@ let baseFrame = null;
 let currentVideoIdx = parseInt(currentVideoIndexFromServer || 0, 10) || 0;
 let currentVideoInfo = videoInfoList[currentVideoIdx] || videoInfo;
 let totalVideoCount = Math.max(videoInfoList.length || 1, 1);
-let videoConfigs = Array.from({length: totalVideoCount}, () => ({rois: [], tuning_params: {}, pool_diameter_cm: 120, platform_radius_cm: 5}));
+function defaultWaterMazeConfig() { return {rois: [], tuning_params: {...experimentDefaults}, pool_diameter_cm: experimentDefaults.pool_diameter_cm ?? 120, platform_radius_cm: experimentDefaults.platform_radius_cm ?? 5}; }
+let videoConfigs = Array.from({length: totalVideoCount}, () => defaultWaterMazeConfig());
 let rois = [];
 let activePoolIndex = null;
 let drawMode = 'boundary';
@@ -615,8 +617,8 @@ function writeTuningParams(params) {
 function persistCurrentVideoState() {
     const cfg = videoConfigs[currentVideoIdx] || {};
     cfg.rois = cloneState(rois) || [];
-    cfg.pool_diameter_cm = num('poolDiameterCm', 120);
-    cfg.platform_radius_cm = num('platformRadiusCm', 5);
+    cfg.pool_diameter_cm = num('poolDiameterCm', experimentDefaults.pool_diameter_cm ?? 120);
+    cfg.platform_radius_cm = num('platformRadiusCm', experimentDefaults.platform_radius_cm ?? 5);
     cfg.tuning_params = readTuningParams();
     videoConfigs[currentVideoIdx] = cfg;
 }
@@ -626,8 +628,8 @@ function applyCurrentVideoState() {
     clearMaskDraft();
     drawMode = 'boundary';
     rois = (cloneState(cfg.rois || []) || []).map(migrateLegacyPool);
-    document.getElementById('poolDiameterCm').value = Number.isFinite(cfg.pool_diameter_cm) ? cfg.pool_diameter_cm : 120;
-    document.getElementById('platformRadiusCm').value = Number.isFinite(cfg.platform_radius_cm) ? cfg.platform_radius_cm : 5;
+    document.getElementById('poolDiameterCm').value = Number.isFinite(cfg.pool_diameter_cm) ? cfg.pool_diameter_cm : (experimentDefaults.pool_diameter_cm ?? 120);
+    document.getElementById('platformRadiusCm').value = Number.isFinite(cfg.platform_radius_cm) ? cfg.platform_radius_cm : (experimentDefaults.platform_radius_cm ?? 5);
     writeTuningParams(cfg.tuning_params || {});
     activePoolIndex = rois.length ? 0 : null;
     updatePoolList();
@@ -663,7 +665,9 @@ function projectRoiSubjectsReady(source = rois) {
 }
 function validateProjectSubjects(source = rois) {
     if (projectRoiSubjectsReady(source)) return true;
-    alert((projectSubjects || []).length ? (pageText('project.required')) : '请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。');
+    alert((projectSubjects || []).length
+        ? pageText('project.required')
+        : biText('请先在项目中添加小鼠，再为每个 ROI 选择对应小鼠。', 'Add animals in the project first, then choose one for every ROI.'));
     return false;
 }
 
@@ -761,7 +765,7 @@ function updatePoolList() {
         const startPosition = normalizedStartPosition(roi.start_position || 'N');
         const selectedId = roi.subject_id || '';
         const subjectMarkup = isProjectMode
-            ? `<label class="form-label">小鼠 / Animal</label><select class="form-select" onchange="updatePoolSubject(${index}, this.value)"><option value="">请选择已有小鼠</option>${(projectSubjects || []).map(subject => `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml((subject.animal_code || '') + (subject.group_name ? ' · ' + subject.group_name : ''))}</option>`).join('')}</select><div class="form-text small">${escapeHtml(roi.group_name || '项目模式下必须选择已登记小鼠')}</div>`
+            ? `<label class="form-label">${biText('小鼠 / 实验单元', 'Animal / Experimental Unit')}</label><select class="form-select" onchange="updatePoolSubject(${index}, this.value)"><option value="">${biText('请选择已有小鼠', 'Select a registered animal')}</option>${(projectSubjects || []).map(subject => `<option value="${escapeHtml(subject.subject_id)}" ${subject.subject_id === selectedId ? 'selected' : ''}>${escapeHtml((subject.animal_code || '') + (subject.group_name ? ' · ' + subject.group_name : ''))}</option>`).join('')}</select><div class="form-text small">${escapeHtml(roi.group_name || biText('项目模式下必须选择已登记小鼠', 'Project mode requires a registered animal.'))}</div>`
             : `<label class="form-label">${pageText('card.name', 'Name')}</label><input class="form-control" value="${escapeHtml(roi.name || '')}" onchange="updatePoolName(${index}, this.value)">`;
         return `
             <div class="mwm-card ${index === activePoolIndex || editingMask ? 'active' : ''}" onclick="selectPool(${index})">
@@ -789,7 +793,7 @@ function updatePoolList() {
                     <div>
                         <label class="form-label">${pageText('card.time_mode', 'Time Mode')}</label>
                         <select class="form-select" onchange="updatePoolTimeMode(${index}, this.value)">
-                            <option value="global" ${time.mode !== 'precise' ? 'selected' : ''}>${pageText('card.global', 'Follow Global')}</option>
+                            <option value="global" ${time.mode !== 'precise' ? 'selected' : ''}>${pageText('card.global', 'Follow Video')}</option>
                             <option value="precise" ${time.mode === 'precise' ? 'selected' : ''}>${pageText('card.precise', 'Precise Time Range')}</option>
                         </select>
                     </div>
@@ -983,7 +987,7 @@ function loadFrame(frameIdx = 0, callback) {
     fetch(`/api/get_first_frame/${sessionId}?frame=${requestedFrame}&video=${requestVideoIdx}`)
         .then(r => r.json()).then(data => {
             if (requestToken !== poolFrameRequestToken || requestVideoIdx !== currentVideoIdx) return;
-            if (data.error) throw new Error(data.error);
+            if (data.error) throw new Error(apiErrorText(data, pageText('preview.failed', 'Preview failed')));
             if (data.video_info) {
                 currentVideoInfo = data.video_info;
                 videoInfoList[requestVideoIdx] = data.video_info;
@@ -1190,7 +1194,7 @@ async function saveDraftPayload(redirectToWorkspace = false) {
     const body = buildRequestBody(); body._selected_video_idx = currentVideoIdx;
     const response = await fetch(`/api/draft/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error || '保存当前设置失败');
+    if (!response.ok || !data.success) throw new Error(apiErrorText(data, currentLang() === 'en' ? 'Failed to save current setup' : '保存当前设置失败'));
     if (redirectToWorkspace && batchWorkspaceUrl) window.location.href = batchWorkspaceUrl;
     return data;
 }
@@ -1218,7 +1222,7 @@ function updateDebugPreview(frameIdx) {
     fetch(`/api/debug_preview/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
         .then(r => r.json()).then(data => {
             if (requestToken !== debugPreviewRequestToken || requestVideoIdx !== currentVideoIdx) return;
-            if (data.error) { document.getElementById('previewStatus').textContent = data.error; return; }
+            if (data.error) { document.getElementById('previewStatus').textContent = apiErrorText(data, pageText('preview.failed', 'Preview failed')); return; }
             const stillCurrent = () => requestToken === debugPreviewRequestToken && requestVideoIdx === currentVideoIdx;
             drawImageOnCanvas('previewOriginal', data.original, stillCurrent);
             drawImageOnCanvas('previewResult', data.result, stillCurrent);
@@ -1253,7 +1257,7 @@ function startAnalysis() {
     }
     document.getElementById('loading').style.display = 'flex';
     fetch(`/api/start_analysis/${sessionId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
-        .then(r => r.json()).then(data => { if (data.success) window.location.href = `/monitor/${sessionId}`; else { document.getElementById('loading').style.display = 'none'; alert(data.error || 'Failed to start analysis'); }})
+        .then(r => r.json()).then(data => { if (data.success) window.location.href = `/monitor/${sessionId}`; else { document.getElementById('loading').style.display = 'none'; alert(apiErrorText(data, currentLang() === 'en' ? 'Failed to start analysis' : '启动分析失败')); }})
         .catch(err => { document.getElementById('loading').style.display = 'none'; alert(err); });
 }
 
@@ -1271,7 +1275,7 @@ function escapeHtml(text) { return String(text || '').replace(/[&<>"']/g, ch => 
 
 document.addEventListener('DOMContentLoaded', function () {
     hydrateFromDraftPayload(); applyCurrentVideoState(); applyMWMLang();
-    if (launchMode === 'workspace') document.getElementById('primaryActionText').textContent = getLang() === 'en' ? 'Save and Return' : '保存设置并返回批次页面';
+    if (launchMode === 'workspace') document.getElementById('primaryActionText').textContent = getLang() === 'en' ? 'Save and Return' : '保存设置并返回分析配置';
     document.querySelectorAll('#step2 input, #step2 select').forEach(el => el.addEventListener('change', () => { persistCurrentVideoState(); updateDebugPreview(); }));
     const canvas = document.getElementById('poolCanvas');
     function canvasPoint(event) {

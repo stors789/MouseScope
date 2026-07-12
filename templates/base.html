@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -42,7 +42,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'visual_style_page' %}active{% endif %}" {% if request.endpoint == 'visual_style_page' %}aria-current="page"{% endif %} data-tour-id="nav-visual-style" href="{{ url_for('visual_style_page') }}"><span data-i18n="nav.visual_style">图像样式</span></a>
+                        <a class="nav-link {% if request.endpoint in ['visual_style_page', 'experiment_defaults_page'] %}active{% endif %}" {% if request.endpoint in ['visual_style_page', 'experiment_defaults_page'] %}aria-current="page"{% endif %} data-tour-id="nav-global-settings" href="{{ url_for('visual_style_page') }}"><span data-i18n="nav.global_settings">全局设置</span></a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'manual' %}active{% endif %}" {% if request.endpoint == 'manual' %}aria-current="page"{% endif %} data-tour-id="nav-manual" href="{{ manual_nav_url }}"{% if manual_nav_target %} target="{{ manual_nav_target }}"{% endif %}{% if manual_nav_rel %} rel="{{ manual_nav_rel }}"{% endif %}><span data-i18n="nav.manual">使用手册</span></a>
@@ -77,10 +77,12 @@
 
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/tour.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/monitor_status.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/analysis_start_guard.js') }}"></script>
 
     <footer class="text-center py-3 mt-5" style="border-top: 1px solid var(--border-card); color: var(--text-muted); font-size: 0.8rem;">
         <div class="container">
-            <p class="mb-1"><span data-i18n="footer.rights">MouseScope Desktop v3.4.0 © 2026 All Rights Reserved | 版权所有</span></p>
+            <p class="mb-1"><span data-i18n="footer.rights">MouseScope Desktop {{ app_version_tag }} © 2026 All Rights Reserved | 版权所有</span></p>
             <p class="mb-0"><span data-i18n="footer.academic">仅限学术研究使用 · 禁止商业用途 · 禁止二次分发</span>
                 <span class="mx-2">|</span>
                 <a href="{{ url_for('license_page') }}" style="color: var(--primary-color); text-decoration: none;" data-i18n="footer.viewlicense">查看完整许可协议</a>
@@ -189,6 +191,9 @@
     document.addEventListener('DOMContentLoaded', function() {
         const badge = document.getElementById('navTaskBadge');
         if (!badge) return;
+        // The first license page is intentionally unauthenticated. Do not fire
+        // a guaranteed 403 before the user has accepted the agreement.
+        if (!localStorage.getItem('mousescope_license_accepted')) return;
         fetch('/api/tasks?summary=1')
             .then(r => r.ok ? r.json() : null)
             .then(data => {

@@ -300,7 +300,7 @@ function fmtNum(value, digits = 2, empty = '-') {
     return Number.isFinite(n) ? n.toFixed(digits) : empty;
 }
 function updateStatus() {
-    fetch(`/api/status/${sessionId}`)
+    MouseScopeMonitor.fetchStatus(`/api/status/${sessionId}`)
         .then(r => {
             if (!r.ok) throw new Error('session');
             return r.json();

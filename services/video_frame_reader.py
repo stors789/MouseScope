@@ -2,54 +2,30 @@ from __future__ import annotations
 
 import os
 import subprocess
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from services.video_export import find_ffmpeg_exe
+from services.video_orientation import (
+    apply_orientation as _apply_orientation_meta,
+    normalise_orientation_degrees as _normalise_orientation_degrees,
+    open_video_capture,
+    resolve_video_orientation,
+)
 
 
 def _truthy_env(name: str) -> bool:
     return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _normalise_orientation_degrees(value) -> int:
-    try:
-        degrees = int(round(float(value))) % 360
-    except (TypeError, ValueError):
-        return 0
-    return degrees if degrees in {90, 180, 270} else 0
-
-
-@lru_cache(maxsize=128)
-def _opencv_orientation_meta(video_path: str) -> int:
-    orientation_prop = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
-    if orientation_prop is None:
-        return 0
-
-    cap = cv2.VideoCapture(str(video_path))
-    try:
-        if not cap.isOpened():
-            return 0
-        return _normalise_orientation_degrees(cap.get(orientation_prop))
-    finally:
-        cap.release()
-
-
-def _apply_orientation_meta(frame, orientation_degrees: int):
-    orientation = _normalise_orientation_degrees(orientation_degrees)
-    if orientation == 90:
-        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-    if orientation == 180:
-        return cv2.rotate(frame, cv2.ROTATE_180)
-    if orientation == 270:
-        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    return frame
-
-
-def _read_with_pyav(video_path: str | os.PathLike, frame_idx: int, fps: float | None = None):
+def _read_with_pyav(
+    video_path: str | os.PathLike,
+    frame_idx: int,
+    fps: float | None = None,
+    orientation_override=None,
+):
     if _truthy_env("MOUSESCOPE_DISABLE_PYAV_FRAME_READER"):
         return None
     try:
@@ -82,7 +58,8 @@ def _read_with_pyav(video_path: str | os.PathLike, frame_idx: int, fps: float | 
         if selected is None:
             return None
         frame = selected.to_ndarray(format="bgr24")
-        return _apply_orientation_meta(frame, _opencv_orientation_meta(str(video_path)))
+        orientation, _source = resolve_video_orientation(video_path, orientation_override=orientation_override)
+        return _apply_orientation_meta(frame, orientation)
     except Exception:
         return None
     finally:
@@ -93,7 +70,12 @@ def _read_with_pyav(video_path: str | os.PathLike, frame_idx: int, fps: float | 
                 pass
 
 
-def _read_with_ffmpeg(video_path: str | os.PathLike, frame_idx: int, fps: float | None = None):
+def _read_with_ffmpeg(
+    video_path: str | os.PathLike,
+    frame_idx: int,
+    fps: float | None = None,
+    orientation_override=None,
+):
     if _truthy_env("MOUSESCOPE_DISABLE_FFMPEG_FRAME_READER"):
         return None
     ffmpeg_exe = find_ffmpeg_exe()
@@ -112,6 +94,7 @@ def _read_with_ffmpeg(video_path: str | os.PathLike, frame_idx: int, fps: float 
         "-nostdin",
         "-ss",
         f"{timestamp:.6f}",
+        "-noautorotate",
         "-i",
         str(video_path),
         "-frames:v",
@@ -140,11 +123,15 @@ def _read_with_ffmpeg(video_path: str | os.PathLike, frame_idx: int, fps: float 
         return None
 
     data = np.frombuffer(proc.stdout, dtype=np.uint8)
-    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+    frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if frame is None:
+        return None
+    orientation, _source = resolve_video_orientation(video_path, orientation_override=orientation_override)
+    return _apply_orientation_meta(frame, orientation)
 
 
-def _read_with_opencv(video_path: str | os.PathLike, frame_idx: int):
-    cap = cv2.VideoCapture(str(video_path))
+def _read_with_opencv(video_path: str | os.PathLike, frame_idx: int, orientation_override=None):
+    cap = open_video_capture(video_path, orientation_override=orientation_override)
     try:
         if not cap.isOpened():
             return None
@@ -155,17 +142,22 @@ def _read_with_opencv(video_path: str | os.PathLike, frame_idx: int):
         cap.release()
 
 
-def read_video_frame(video_path: str | os.PathLike, frame_idx: int, fps: float | None = None):
+def read_video_frame(
+    video_path: str | os.PathLike,
+    frame_idx: int,
+    fps: float | None = None,
+    orientation_override=None,
+):
     path = Path(video_path)
     if not path.exists():
         return None
 
-    frame = _read_with_pyav(path, frame_idx, fps=fps)
+    frame = _read_with_pyav(path, frame_idx, fps=fps, orientation_override=orientation_override)
     if frame is not None:
         return frame
 
-    frame = _read_with_ffmpeg(path, frame_idx, fps=fps)
+    frame = _read_with_ffmpeg(path, frame_idx, fps=fps, orientation_override=orientation_override)
     if frame is not None:
         return frame
 
-    return _read_with_opencv(path, frame_idx)
+    return _read_with_opencv(path, frame_idx, orientation_override=orientation_override)

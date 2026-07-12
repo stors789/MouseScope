@@ -1,8 +1,8 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}上传视频 - MouseScope{% endblock %}
 {% block extra_css %}
 <style>
-.upload-shell { max-width: 1120px; margin: 0 auto; }
+.upload-shell { max-width: 1440px; margin: 0 auto; }
 .upload-panel .card-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -31,6 +31,32 @@
     background: rgba(255, 255, 255, 0.52);
     padding: 1rem;
 }
+.upload-next-step {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.upload-next-copy {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: min(100%, 320px);
+}
+.upload-next-icon {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    color: var(--primary-color);
+    background: rgba(201, 100, 66, 0.1);
+    border: 1px solid rgba(201, 100, 66, 0.16);
+}
+.upload-next-copy h6 { margin: 0 0 0.22rem; }
+.upload-next-copy p { margin: 0; color: var(--text-muted); font-size: 0.86rem; line-height: 1.55; }
 .upload-experiment-block {
     display: flex;
     flex-direction: column;
@@ -116,7 +142,7 @@
                             {% endif %}
                         </select>
                         <p class="upload-experiment-help" data-i18n="upload.exp.help" data-i18n-html>
-                            选择后进入对应配置流程；多视频会先进入批次页。
+                            选择实验并导入视频后，统一进入分析配置页。
                         </p>
                     </div>
 
@@ -158,40 +184,16 @@
 
                 <div id="fileList" class="mt-3"></div>
                 <div id="configSection" class="upload-config-panel mt-3" style="display: none;" data-tour-id="upload-config">
-                    <h6 class="cyber-text mb-3" data-i18n="upload.config.title">分析配置</h6>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label" data-i18n="upload.config.start">开始秒数（可选）</label>
-                            <input type="number" step="0.1" min="0" class="form-control" name="start_seconds" placeholder="0.0">
+                    <div class="upload-next-step">
+                        <div class="upload-next-copy">
+                            <span class="upload-next-icon" aria-hidden="true"><i class="fas fa-sliders"></i></span>
+                            <div>
+                                <h6 class="cyber-text" data-page-i18n="next.title">下一步：分析配置</h6>
+                                <p data-page-i18n="next.copy">起止时间、FPS、画面方向和输出目录将在下一页统一设置。</p>
+                            </div>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label" data-i18n="upload.config.end">结束秒数（可选）</label>
-                            <input type="number" step="0.1" min="0" class="form-control" name="end_seconds" placeholder="">
-                            <div class="form-text" data-i18n="upload.config.end.hint">填写则只分析该时间段</div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label" data-i18n="upload.config.fps">帧率 FPS（可选）</label>
-                            <input type="number" step="0.01" min="1" max="240" class="form-control" name="fps_override" placeholder="自动检测">
-                            <div class="form-text" data-i18n="upload.config.fps.hint">Bandicam等VFR视频建议手动填写</div>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" data-i18n="upload.config.outdir">输出文件夹（可选）</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control font-monospace" name="output_dir"
-                                id="outputDir" data-i18n="upload.config.outdir.ph"
-                                data-i18n-attr="placeholder" placeholder="留空则使用默认目录: data/results/">
-                            <button type="button" class="btn btn-outline-info" onclick="setDefaultOutputDir()">
-                                <i class="fas fa-undo me-1"></i><span data-i18n="upload.config.default">默认</span>
-                            </button>
-                        </div>
-                        <div class="form-text" data-i18n="upload.config.outdir.hint">
-                            桌面端专属：分析结果将直接保存到此文件夹，可用文件管理器直接查看
-                        </div>
-                    </div>
-                    <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" data-tour-id="upload-submit">
-                            <span data-i18n="upload.config.submit">开始分析配置</span>
+                            <i class="fas fa-arrow-right me-2"></i><span data-page-i18n="next.action">进入分析配置</span>
                         </button>
                     </div>
                 </div>
@@ -205,13 +207,19 @@
         const PAGE_I18N_UPLOAD = {
             zh: {
                 'hero.title': '快速分析',
-                'hero.copy': '选择实验模块，拖拽视频或粘贴本机路径，然后进入对应设置页。',
-                'panel.formats': '支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件'
+                'hero.copy': '选择实验模块并导入视频；起止时间、FPS 和画面方向将在下一页统一设置。',
+                'panel.formats': '支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件',
+                'next.title': '下一步：分析配置',
+                'next.copy': '起止时间、FPS、画面方向和输出目录将在下一页统一设置。',
+                'next.action': '进入分析配置'
             },
             en: {
                 'hero.title': 'Quick Analysis',
-                'hero.copy': 'Choose an experiment module, drop videos or paste local paths, then open the matching setup page.',
-                'panel.formats': 'Supports .mp4 .avi .mov .mkv .wmv, with multiple files at once'
+                'hero.copy': 'Choose an experiment module and import videos. Set timing, FPS, and orientation together on the next page.',
+                'panel.formats': 'Supports .mp4 .avi .mov .mkv .wmv, with multiple files at once',
+                'next.title': 'Next: Analysis Configuration',
+                'next.copy': 'Timing, FPS, orientation, and the output folder are configured together on the next page.',
+                'next.action': 'Open Analysis Configuration'
             }
         };
         function pageTrUpload(key, fallback) {
@@ -532,30 +540,9 @@
         if (localPathsInput) {
             localPathsInput.addEventListener('blur', function () {
                 this.value = normalizeManualPaths(this.value);
-                const outputDirInput = document.getElementById('outputDir');
-                if (outputDirInput && !outputDirInput.value.trim()) {
-                    const lines = this.value.trim().split('\n').filter(p => p.trim());
-                    if (lines.length > 0) {
-                        const firstPath = lines[0].trim();
-                        // 取第一个路径的父目录作为默认输出建议
-                        const parts = firstPath.replace(/\\/g, '/').split('/');
-                        parts.pop();
-                        const parentDir = parts.join('/');
-                        if (parentDir) {
-                            const prefix = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.suggest.prefix'] : '建议: ';
-                            outputDirInput.placeholder = prefix + parentDir + '/results/';
-                        }
-                    }
-                }
             });
         }
     });
-
-    function setDefaultOutputDir() {
-        const out = document.getElementById('outputDir');
-        out.value = '';
-        out.placeholder = (typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.config.outdir.ph'] : '留空则使用默认目录: data/results/';
-    }
 
     document.addEventListener('DOMContentLoaded', function () {
         if (!window.MouseScopeTour) return;

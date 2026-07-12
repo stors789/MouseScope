@@ -39,20 +39,25 @@ except Exception:  # pragma: no cover - optional runtime dependency
 
 
 def _order_quad(points: Sequence[Sequence[float]]) -> np.ndarray:
-    """Return 4 points ordered as TL, TR, BR, BL."""
+    """Return 4 corner points in a stable clockwise order."""
     pts = np.asarray(points, dtype=np.float32)
     if pts.shape != (4, 2):
         raise ValueError("Novel object recognition arena calibration requires exactly 4 points.")
 
-    s = pts.sum(axis=1)
-    diff = np.diff(pts, axis=1).reshape(-1)
+    center = np.mean(pts, axis=0)
+    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+    ordered = pts[np.argsort(angles)]
 
-    ordered = np.zeros((4, 2), dtype=np.float32)
-    ordered[0] = pts[np.argmin(s)]
-    ordered[2] = pts[np.argmax(s)]
-    ordered[1] = pts[np.argmin(diff)]
-    ordered[3] = pts[np.argmax(diff)]
-    return ordered
+    # Rotate to a deterministic first point.  The older sum/diff method can
+    # reuse the same vertex twice for diamond-shaped arenas where scores tie.
+    start = int(np.lexsort((ordered[:, 1], ordered[:, 0] + ordered[:, 1]))[0])
+    ordered = np.roll(ordered, -start, axis=0)
+
+    if len(np.unique(np.round(ordered, decimals=3), axis=0)) != 4:
+        raise ValueError("Novel object recognition arena calibration points must be distinct.")
+    if cv2.contourArea(ordered.astype(np.float32)) <= 1.0:
+        raise ValueError("Novel object recognition arena calibration points form a degenerate quadrilateral.")
+    return ordered.astype(np.float32)
 
 
 def _normalize_polygon(points: Optional[Sequence[Sequence[float]]], min_points: int = 3) -> Optional[np.ndarray]:

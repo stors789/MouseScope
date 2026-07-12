@@ -11,6 +11,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+from services.resource_policy import video_queue_capacity
 
 
 LogFn = Callable[[str], None]
@@ -303,6 +304,11 @@ class FfmpegVideoWriter:
                 stderr_text = self.process.stderr.read().decode("utf-8", errors="replace").strip()
             except Exception:
                 stderr_text = ""
+            finally:
+                try:
+                    self.process.stderr.close()
+                except OSError:
+                    pass
 
         if return_code != 0:
             self.failed = True
@@ -438,6 +444,9 @@ def create_annotated_video_writer(
     max_queue: int = 120,
 ):
     logger = logger or _noop_log
+    queue_capacity = video_queue_capacity(width, height, requested=max_queue)
+    if async_write and queue_capacity < int(max_queue or 0):
+        logger(f"{label} async queue limited to {queue_capacity} frames for {int(width)}x{int(height)} output")
     writer = None
     if os.environ.get("MOUSESCOPE_DISABLE_FFMPEG_WRITER", "").lower() not in {"1", "true", "yes"}:
         ffmpeg_exe = find_ffmpeg_exe()
@@ -455,7 +464,7 @@ def create_annotated_video_writer(
                 )
                 if writer.isOpened():
                     if async_write:
-                        return AsyncVideoWriter(writer, label=label, logger=logger, max_queue=max_queue)
+                        return AsyncVideoWriter(writer, label=label, logger=logger, max_queue=queue_capacity)
                     return writer
             except Exception as exc:
                 logger(f"{label} FFmpeg startup failed: {exc}")
@@ -464,5 +473,5 @@ def create_annotated_video_writer(
 
     writer = _open_opencv_writer(output_path, fps, width, height, label=label, logger=logger)
     if writer is not None and async_write:
-        return AsyncVideoWriter(writer, label=label, logger=logger, max_queue=max_queue)
+        return AsyncVideoWriter(writer, label=label, logger=logger, max_queue=queue_capacity)
     return writer

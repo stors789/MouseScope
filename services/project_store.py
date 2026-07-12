@@ -11,8 +11,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from services.version import APP_VERSION
 
-PROJECT_SCHEMA_VERSION = "3.4.0"
+PROJECT_SCHEMA_VERSION = APP_VERSION
 GROUP_COLOR_PALETTE = (
     "#c96442",
     "#2f8f65",

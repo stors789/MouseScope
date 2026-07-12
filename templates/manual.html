@@ -15,34 +15,75 @@
     padding: 0;
     box-shadow: none;
 }
-.manual-switch {
+.manual-top {
+    margin-bottom: 1rem;
+    padding: 1.15rem 1.3rem 0.9rem;
+    background: rgba(255, 252, 248, 0.94);
+    border: 1px solid var(--border-card);
+    border-radius: calc(var(--radius-card) + 2px);
+    box-shadow: var(--shadow-card);
+}
+.manual-page-head {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-bottom: 0.85rem;
+}
+.manual-switch {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem 1.1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(166, 110, 74, 0.14);
+}
+.manual-switch-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 132px;
+    padding: 0 0.35rem;
+}
+.manual-switch-icon {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    color: var(--primary-color);
+    background: rgba(201, 100, 66, 0.11);
 }
 .manual-switch-label {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+.manual-switch-hint {
+    margin-top: 0.12rem;
     color: var(--text-muted);
-    font-size: 0.92rem;
-    font-weight: 600;
+    font-size: 0.72rem;
+    white-space: nowrap;
 }
 .manual-switch-group {
-    display: inline-flex;
-    gap: 0.5rem;
-    padding: 0.35rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border-card);
-    border-radius: 999px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 0.15rem;
+    scrollbar-width: thin;
 }
 .manual-switch-btn {
+    flex: 0 0 auto;
     text-decoration: none;
     color: var(--text-secondary);
-    padding: 0.6rem 1rem;
-    border-radius: 999px;
+    padding: 0.55rem 0.82rem;
+    border: 1px solid transparent;
+    border-radius: 12px;
     font-weight: 700;
+    white-space: nowrap;
     transition: background 0.2s, color 0.2s, transform 0.2s;
 }
 .manual-switch-btn:hover {
@@ -51,19 +92,21 @@
     transform: translateY(-1px);
 }
 .manual-switch-btn.active {
-    background: linear-gradient(135deg, rgba(201, 100, 66, 0.14), rgba(228, 144, 108, 0.16));
-    color: var(--primary-color);
+    border-color: rgba(137, 76, 48, 0.22);
+    background: linear-gradient(135deg, #b86c48, #945238);
+    color: #fffaf6;
+    box-shadow: 0 6px 14px rgba(128, 75, 46, 0.18);
 }
 .manual-hero {
     background:
-        radial-gradient(circle at top right, rgba(228, 144, 108, 0.16), transparent 34%),
-        radial-gradient(circle at left bottom, rgba(201, 100, 66, 0.14), transparent 30%),
-        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(250, 241, 233, 0.95));
+        radial-gradient(circle at top right, rgba(228, 144, 108, 0.15), transparent 34%),
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(250, 241, 233, 0.93));
     border: 1px solid var(--border-card);
-    border-radius: calc(var(--radius-card) + 2px);
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--shadow-card);
+    border-bottom: 0;
+    border-radius: calc(var(--radius-card) + 2px) calc(var(--radius-card) + 2px) 0 0;
+    padding: 1.35rem 1.45rem 1.2rem;
+    margin-bottom: 0;
+    box-shadow: 0 12px 28px rgba(72, 47, 27, 0.07);
 }
 .manual-hero-top {
     display: flex;
@@ -89,24 +132,6 @@
     color: var(--text-secondary);
     max-width: 900px;
 }
-.manual-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: flex-start;
-}
-.manual-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.45rem 0.75rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(201, 100, 66, 0.16);
-    color: var(--text-secondary);
-    font-size: 0.88rem;
-    font-weight: 600;
-}
 .manual-hero-grid,
 .manual-card-grid,
 .manual-file-grid {
@@ -115,7 +140,13 @@
     gap: 1rem;
     margin-top: 1.25rem;
 }
-.manual-mini-card,
+.manual-mini-card {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    padding: 0.95rem 1rem;
+    box-shadow: 0 7px 16px rgba(72, 47, 27, 0.05);
+}
 .manual-file-card {
     background: rgba(255, 255, 255, 0.82);
     border: 1px solid var(--border-card);
@@ -139,11 +170,15 @@
     line-height: 1.65;
 }
 .manual-flow-card {
-    margin-bottom: 1.5rem;
-    border: 1px solid var(--border-card);
-    border-radius: var(--radius-card);
-    background: var(--bg-card);
-    box-shadow: var(--shadow-card);
+    margin-bottom: 1.35rem;
+    border: 1px solid var(--border-card) !important;
+    border-top-color: rgba(166, 110, 74, 0.13) !important;
+    border-radius: 0 0 calc(var(--radius-card) + 2px) calc(var(--radius-card) + 2px) !important;
+    background-color: rgba(255, 252, 248, 0.96) !important;
+    box-shadow: 0 12px 28px rgba(72, 47, 27, 0.07) !important;
+}
+.manual-flow-card > .card-body {
+    padding: 0.8rem 1rem 0.95rem !important;
 }
 .manual-section {
     background: var(--bg-card);
@@ -342,7 +377,7 @@
 }
 @media (max-width: 768px) {
     .manual-shell {
-        padding: 1rem;
+        padding: 0;
     }
     .manual-hero {
         padding: 1.15rem;
@@ -354,12 +389,9 @@
     }
     .manual-switch-group {
         width: 100%;
-        justify-content: center;
-        flex-wrap: wrap;
-        border-radius: var(--radius-card);
+        justify-content: flex-start;
     }
     .manual-switch-btn {
-        flex: 1 1 30%;
         text-align: center;
     }
     .manual-data-table {
@@ -368,13 +400,19 @@
         white-space: nowrap;
     }
 }
+@media (max-width: 992px) {
+    .manual-switch { grid-template-columns: 1fr; gap: 0.55rem; }
+    .manual-switch-heading { min-width: 0; }
+    .manual-switch-group { justify-content: flex-start; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="manual-page">
     <div class="manual-shell">
-        <section class="app-page-hero">
+        <div class="manual-top">
+        <header class="manual-page-head">
             <div class="app-page-title-group">
                 <span class="app-page-icon" aria-hidden="true"><i class="fas fa-book-open"></i></span>
                 <div>
@@ -382,41 +420,48 @@
                     <p class="app-page-subtitle" data-i18n="manual.subtitle">从视频采集到拿到结果，每一步该怎么做</p>
                 </div>
             </div>
-        </section>
+        </header>
 
         <div class="manual-switch">
-            <div class="manual-switch-label" data-i18n="manual.switch.label">实验手册</div>
-            <div class="manual-switch-group">
+            <div class="manual-switch-heading">
+                <span class="manual-switch-icon" aria-hidden="true"><i class="fas fa-flask"></i></span>
+                <div>
+                    <div class="manual-switch-label" data-i18n="manual.switch.label">选择实验</div>
+                    <div class="manual-switch-hint" data-i18n="manual.switch.hint">切换下方操作说明</div>
+                </div>
+            </div>
+            <nav class="manual-switch-group" aria-label="Experiment manual selector">
                 <a href="{{ url_for('manual', module='tst') }}" class="manual-switch-btn {% if manual_type == 'tst' %}active{% endif %}">
-                    <span data-i18n="manual.switch.tst">TST 手册</span>
+                    <span data-i18n="manual.switch.tst">TST</span>
                 </a>
                 <a href="{{ url_for('manual', module='fst') }}" class="manual-switch-btn {% if manual_type == 'fst' %}active{% endif %}">
-                    <span data-i18n="manual.switch.fst">FST 手册</span>
+                    <span data-i18n="manual.switch.fst">FST</span>
                 </a>
                 <a href="{{ url_for('manual', module='mwm') }}" class="manual-switch-btn {% if manual_type == 'mwm' %}active{% endif %}">
-                    <span data-i18n="manual.switch.mwm">MWM 手册</span>
+                    <span data-i18n="manual.switch.mwm">MWM</span>
                 </a>
                 <a href="{{ url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
-                    <span data-i18n="manual.switch.oft">OFT 手册</span>
+                    <span data-i18n="manual.switch.oft">OFT</span>
                 </a>
                 <a href="{{ url_for('manual', module='nor') }}" class="manual-switch-btn {% if manual_type == 'nor' %}active{% endif %}">
-                    <span data-i18n="manual.switch.nor">NOR 手册</span>
+                    <span data-i18n="manual.switch.nor">NOR</span>
                 </a>
                 <a href="{{ url_for('manual', module='epm') }}" class="manual-switch-btn {% if manual_type == 'epm' %}active{% endif %}">
-                    <span data-i18n="manual.switch.epm">EPM 手册</span>
+                    <span data-i18n="manual.switch.epm">EPM</span>
                 </a>
                 <a href="{{ url_for('manual', module='ymaze') }}" class="manual-switch-btn {% if manual_type == 'ymaze' %}active{% endif %}">
-                    <span data-i18n="manual.switch.ymaze">Y 迷宫手册</span>
+                    <span data-i18n="manual.switch.ymaze">Y 迷宫</span>
                 </a>
                 <a href="{{ url_for('manual', module='ldb') }}" class="manual-switch-btn {% if manual_type == 'ldb' %}active{% endif %}">
-                    <span data-i18n="manual.switch.ldb">LDB 手册</span>
+                    <span data-i18n="manual.switch.ldb">LDB</span>
                 </a>
                 {% if enable_three_chamber %}
                 <a href="{{ url_for('manual', module='three_chamber') }}" class="manual-switch-btn {% if manual_type == 'three_chamber' %}active{% endif %}">
-                    <span data-i18n="manual.switch.three_chamber">3CST 手册</span>
+                    <span data-i18n="manual.switch.three_chamber">3CST</span>
                 </a>
                 {% endif %}
-            </div>
+            </nav>
+        </div>
         </div>
 
         {% if manual_type == 'tst' %}

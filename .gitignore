@@ -55,6 +55,7 @@ backups/
 result/
 
 # Video files (use GIF for demos)
+*.zip
 *.mp4
 *.avi
 *.mov

@@ -20,6 +20,7 @@ def register_page_routes(app, ctx) -> None:
     UploadStorageError = ctx.UploadStorageError
     analysis_sessions = ctx.analysis_sessions
     project_store = getattr(ctx, "project_store", None)
+    experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
     BUNDLE_DIR = ctx.BUNDLE_DIR
     VALID_VIDEO_EXTS = ctx.VALID_VIDEO_EXTS
     _cleanup_session_artifacts = ctx._cleanup_session_artifacts
@@ -116,6 +117,12 @@ def register_page_routes(app, ctx) -> None:
     def visual_style_page():
         """Global visualization style settings."""
         return render_template('visual_style.html')
+
+
+    @app.route('/experiment-defaults')
+    def experiment_defaults_page():
+        """Global baseline configuration for every experiment module."""
+        return render_template('experiment_defaults.html')
 
 
     @app.route('/manual')
@@ -239,33 +246,8 @@ def register_page_routes(app, ctx) -> None:
         local_paths_raw = request.form.get('local_paths', '').strip()
         requested_experiment_type = request.form.get('experiment_type', 'tst')
         if is_experiment_release_hidden(requested_experiment_type):
-            return upload_error('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 403)
+            return upload_error('三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。', 403)
         experiment_type = normalize_experiment_type(requested_experiment_type)
-        output_dir = request.form.get('output_dir', '').strip().strip('"').strip("'")
-        fps_override_raw = request.form.get('fps_override', '').strip()
-
-        try:
-            start_seconds = _parse_optional_float(
-                request.form.get('start_seconds', ''),
-                '开始秒数',
-                min_value=0,
-            )
-            end_seconds = _parse_optional_float(
-                request.form.get('end_seconds', ''),
-                '结束秒数',
-                min_value=0,
-            )
-            _validate_time_window(start_seconds, end_seconds)
-            fps_override_value = _parse_optional_float(
-                fps_override_raw,
-                'FPS 覆盖值',
-                min_value=1,
-                max_value=240,
-            )
-        except ValueError as exc:
-            return upload_error(str(exc), 400)
-
-        resolved_output_dir = _resolve_result_dir(output_dir) if output_dir else None
 
         video_paths = []
         video_infos = []
@@ -315,12 +297,11 @@ def register_page_routes(app, ctx) -> None:
             return upload_error('请选择或输入至少一个视频文件')
 
         for info in video_infos:
-            _update_video_entry_info(info, fps_override=fps_override_value)
+            _update_video_entry_info(info)
 
         # 读取第一个视频的基本信息
         video_info_data = _extract_video_info_from_entry(
             video_infos[0],
-            fps_override=fps_override_value,
         )
 
         # 保存到会话
@@ -329,10 +310,10 @@ def register_page_routes(app, ctx) -> None:
             'video_paths': video_paths,
             'video_infos': video_infos,
             'video_info': video_info_data,
-            'start_seconds': start_seconds,
-            'end_seconds': end_seconds,
-            'output_dir': resolved_output_dir,
-            'fps_override': fps_override_value,
+            'start_seconds': None,
+            'end_seconds': None,
+            'output_dir': None,
+            'fps_override': None,
             'is_batch': len(video_paths) > 1,
             'draft_payload': None,
             'draft_updated_at': None,
@@ -341,10 +322,7 @@ def register_page_routes(app, ctx) -> None:
             'last_accessed_at': _now_ts(),
         }
 
-        if len(video_paths) > 1:
-            redirect_url = url_for('batch_workspace', session_id=session_id)
-        else:
-            redirect_url = url_for('calibrate', session_id=session_id)
+        redirect_url = url_for('analysis_config', session_id=session_id)
         if is_ajax_upload:
             return jsonify({'success': True, 'redirect_url': redirect_url})
         return redirect(redirect_url)
@@ -356,7 +334,7 @@ def register_page_routes(app, ctx) -> None:
             flash('会话不存在或已过期，请重新上传', 'error')
             return redirect(url_for('index'))
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            flash('三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
             return redirect(url_for('upload_page'))
 
         total_videos = len(sess.get('video_infos') or [])
@@ -392,23 +370,25 @@ def register_page_routes(app, ctx) -> None:
             experiment_spec=spec,
             current_video_index=video_idx,
             launch_mode=launch_mode,
-            batch_workspace_url=url_for('batch_workspace', session_id=session_id) if sess.get('is_batch') else None,
+            batch_workspace_url=url_for('analysis_config', session_id=session_id) if sess.get('is_batch') else None,
             draft_payload=sess.get('draft_payload'),
             project_context=project_context,
             project_subjects=project_subjects,
+            experiment_defaults=(
+                experiment_defaults_store.get_experiment_defaults(sess.get('experiment_type'))
+                if experiment_defaults_store is not None else {}
+            ),
         )
 
 
-    @app.route('/batch/<session_id>')
-    def batch_workspace(session_id):
+    @app.route('/analysis-config/<session_id>')
+    def analysis_config(session_id):
         sess = analysis_sessions.get(session_id)
         if not sess:
             flash('会话不存在或已过期，请重新上传', 'error')
             return redirect(url_for('index'))
-        if not sess.get('is_batch'):
-            return redirect(url_for('calibrate', session_id=session_id))
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            flash('三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
             return redirect(url_for('upload_page'))
         spec = get_experiment_spec(sess.get('experiment_type'))
         cards = summarize_batch_state(
@@ -431,7 +411,15 @@ def register_page_routes(app, ctx) -> None:
             output_dir=sess.get('output_dir'),
             fps_override=sess.get('fps_override'),
             batch_state_url=url_for('api_batch_state', session_id=session_id),
+            is_batch=bool(sess.get('is_batch')),
+            is_project_mode=bool(sess.get('project_context')),
         )
+
+
+    @app.route('/batch/<session_id>')
+    def batch_workspace(session_id):
+        """Compatibility redirect for saved links from older releases."""
+        return redirect(url_for('analysis_config', session_id=session_id))
 
 
     @app.route('/calibrate/<session_id>')
@@ -468,7 +456,7 @@ def register_page_routes(app, ctx) -> None:
             flash('Session expired. Please start again.', 'error')
             return redirect(url_for('index'))
         if is_experiment_release_hidden(sess.get('experiment_type')):
-            flash('三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
+            flash('三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。', 'warning')
             return redirect(url_for('upload_page'))
         spec = get_experiment_spec(sess.get('experiment_type'))
         return render_template(

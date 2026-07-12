@@ -10,7 +10,9 @@ from pathlib import Path
 
 from flask import jsonify, request, url_for
 
+from services.api_errors import build_api_error
 from services.experiment_registry import get_experiment_spec, is_experiment_release_hidden, normalize_experiment_type
+from services.output_runs import build_run_output_dir
 
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,15 @@ def register_project_api_routes(app, ctx) -> None:
         payload = request.get_json(silent=True)
         return payload if isinstance(payload, dict) else {}
 
-    def _error(message: str, status: int = 400):
-        return jsonify({"success": False, "error": message}), status
+    def _error(
+        message: str | None = None,
+        status: int = 400,
+        *,
+        code: str | None = None,
+        message_en: str | None = None,
+        **extra,
+    ):
+        return jsonify(build_api_error(message, code=code, message_en=message_en, **extra)), status
 
     def _sync_project_runs_from_history(project_id: str) -> None:
         terminal_statuses = {"completed", "error", "stopped", "interrupted"}
@@ -328,7 +337,14 @@ def register_project_api_routes(app, ctx) -> None:
                 errors.append({"path": str(path), "error": str(exc)})
 
         if not imported:
-            return jsonify({"success": False, "imported": imported, "errors": errors, "error": "没有成功导入的视频"}), 400
+            return _error(
+                "没有成功导入的视频",
+                400,
+                code="no_video_files",
+                message_en="No videos were imported successfully.",
+                imported=imported,
+                errors=errors,
+            )
         return jsonify({
             "success": True,
             "imported": imported,
@@ -369,7 +385,7 @@ def register_project_api_routes(app, ctx) -> None:
         payload = _json_payload()
         if "experiment_type" in payload:
             if is_experiment_release_hidden(payload.get("experiment_type")):
-                return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
+                return _error("三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
             payload["experiment_type"] = normalize_experiment_type(payload.get("experiment_type"))
         try:
             assignment = project_store.create_assignment(project_id, payload)
@@ -382,7 +398,7 @@ def register_project_api_routes(app, ctx) -> None:
         payload = _json_payload()
         if "experiment_type" in payload:
             if is_experiment_release_hidden(payload.get("experiment_type")):
-                return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
+                return _error("三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
             try:
                 assignment = project_store.update_assignment_experiment(
                     project_id,
@@ -395,7 +411,7 @@ def register_project_api_routes(app, ctx) -> None:
                 return _error("视频实验记录不存在", 404)
             return jsonify({"success": True, "assignment": assignment, "assignments": project_store.list_assignments(project_id)})
         if "subject_id" not in payload:
-            return _error("当前仅支持更新小鼠绑定")
+            return _error("此操作仅用于更新小鼠绑定")
         assignment = project_store.update_assignment_subject(project_id, assignment_id, payload.get("subject_id"))
         if not assignment:
             return _error("视频实验记录不存在", 404)
@@ -421,12 +437,39 @@ def register_project_api_routes(app, ctx) -> None:
         if len(assignments) != len(set(assignment_ids)):
             return _error("部分视频实验记录不存在", 404)
 
+        # Treat an existing, still-configurable run for the exact same
+        # assignment set as the same user action. This makes rapid double
+        # clicks and two browser tabs idempotent instead of creating competing
+        # project sessions whose latest_run_id values overwrite each other.
+        latest_run_ids = {
+            str(item.get("latest_run_id") or "").strip()
+            for item in assignments
+            if str(item.get("latest_run_id") or "").strip()
+        }
+        if len(latest_run_ids) == 1 and all(str(item.get("status") or "").lower() == "configured" for item in assignments):
+            existing_session_id = next(iter(latest_run_ids))
+            existing = analysis_sessions.get(existing_session_id)
+            context = existing.get("project_context") if isinstance(existing, dict) else None
+            if (
+                isinstance(context, dict)
+                and context.get("project_id") == project_id
+                and set(context.get("assignment_ids") or []) == set(assignment_ids)
+                and not analysis_sessions.has_active_analysis(existing_session_id)
+            ):
+                return jsonify({
+                    "success": True,
+                    "session_id": existing_session_id,
+                    "project_run_id": context.get("project_run_id"),
+                    "redirect_url": url_for("analysis_config", session_id=existing_session_id),
+                    "resumed": True,
+                })
+
         experiment_types = {item.get("experiment_type") for item in assignments}
         if len(experiment_types) != 1:
             return _error("一次项目分析只能包含同一种实验类型")
         requested_experiment_type = assignments[0].get("experiment_type")
         if is_experiment_release_hidden(requested_experiment_type):
-            return _error("三箱社交模块当前版本暂未开放；内部测试可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
+            return _error("三箱社交模块未开放；内部验证可设置 MOUSESCOPE_ENABLE_3CST=1。", 403)
         experiment_type = normalize_experiment_type(requested_experiment_type)
         spec = get_experiment_spec(experiment_type)
 
@@ -461,7 +504,13 @@ def register_project_api_routes(app, ctx) -> None:
             return _error(str(exc), 500)
 
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        output_dir = str(Path(project["project_dir"]) / "results" / experiment_type / stamp)
+        output_root_dir = str(Path(project["project_dir"]) / "results" / experiment_type)
+        output_dir = build_run_output_dir(
+            output_root_dir,
+            session_id=session_id,
+            experiment_type=experiment_type,
+            timestamp=stamp,
+        )
         project_run_id = f"prun_{secrets.token_hex(8)}"
         project_context = {
             "project_id": project_id,
@@ -480,6 +529,9 @@ def register_project_api_routes(app, ctx) -> None:
             "start_seconds": None,
             "end_seconds": None,
             "output_dir": output_dir,
+            "output_root_dir": output_root_dir,
+            "run_output_dir": output_dir,
+            "run_attempt": 1,
             "fps_override": None,
             "is_batch": len(video_paths) > 1,
             "draft_payload": None,
@@ -503,7 +555,7 @@ def register_project_api_routes(app, ctx) -> None:
         )
         project_store.set_assignments_status(project_id, project_context["assignment_ids"], "configured", latest_run_id=session_id)
 
-        redirect_url = url_for("batch_workspace", session_id=session_id) if len(video_paths) > 1 else url_for("calibrate", session_id=session_id)
+        redirect_url = url_for("analysis_config", session_id=session_id)
         return jsonify({
             "success": True,
             "session_id": session_id,

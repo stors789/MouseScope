@@ -158,7 +158,7 @@ const PAGE_I18N = {
         'table.waiting': '等待结果...',
         'table.note.struggling': '持续挣扎',
         'table.note.immobile': '当前判定为静止',
-        'table.note.pending': '新算法第一遍正在提取特征，最终标签会在阈值估计后更新',
+        'table.note.pending': '微小挣扎优化算法正在提取特征，最终标签会在阈值估计后更新',
         'download.title': '结果下载',
         'download.all': '全部下载',
         'download.video': '标注视频',
@@ -183,8 +183,8 @@ const PAGE_I18N = {
         'state.struggling': '挣扎',
         'state.immobile': '静止',
         'state.pending': '待判定',
-        'algorithm.lis': '微小挣扎优化逻辑',
-        'algorithm.legacy': '原本判断逻辑',
+        'algorithm.lis': '微小挣扎优化算法',
+        'algorithm.legacy': '经典行为算法',
         'alert.stop_sent': '已发送停止命令',
         'alert.folder_failed': '打开结果目录失败'
     },
@@ -236,8 +236,8 @@ const PAGE_I18N = {
         'state.struggling': 'Struggling',
         'state.immobile': 'Immobile',
         'state.pending': 'Pending',
-        'algorithm.lis': 'Subtle-struggle optimized logic',
-        'algorithm.legacy': 'Original decision logic',
+        'algorithm.lis': 'Subtle-struggle optimized algorithm',
+        'algorithm.legacy': 'Classic behavior algorithm',
         'alert.stop_sent': 'Stop command sent',
         'alert.folder_failed': 'Failed to open result folder'
     }
@@ -298,8 +298,8 @@ function stateNote(item) {
 
 function algorithmText(row) {
     return row && row.behavior_algorithm === 'tst_lis'
-        ? pageTr('algorithm.lis', 'Subtle-struggle optimized logic')
-        : pageTr('algorithm.legacy', 'Original decision logic');
+        ? pageTr('algorithm.lis', 'Subtle-struggle optimized algorithm')
+        : pageTr('algorithm.legacy', 'Classic behavior algorithm');
 }
 
 function renderTable(rows) {
@@ -361,7 +361,7 @@ function showDownloads() {
 }
 
 function updateStatus() {
-    fetch(`/api/status/${sessionId}`)
+    MouseScopeMonitor.fetchStatus(`/api/status/${sessionId}`)
         .then(r => {
             if (!r.ok) throw new Error('session');
             return r.json();

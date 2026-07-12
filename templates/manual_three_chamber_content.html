@@ -5,19 +5,18 @@
     const THREE_CHAMBER_MANUAL = {
         zh: {
             heroEyebrow: 'Three-Chamber Social Test / 3CST',
-            heroTitle: '三箱社交完整操作手册',
+            heroTitle: '三箱社交实验',
             heroSubtitle: '本手册覆盖完整流程与单阶段模式、三室和 cup 点标定、阶段时间轴、左右 cup 角色、interaction / exclusion 半径、主要参数、全部结果字段，以及批量模式下每个视频的独立配置方式。',
-            heroChips: ['左 / 中 / 右三室', '左右 cup 点', 'Full protocol timeline', 'Sociability / Social novelty', 'track / summary / phase_summary / bins'],
             heroCards: [
                 ['fas fa-people-arrows', '模块真正统计什么', '3CST 会统计测试鼠在左室、中室、右室的停留、进入和转换，左右 cup 附近的 interaction 时间，并根据阶段角色计算 sociability index 与 social novelty index。'],
                 ['fas fa-timeline', '为什么要时间轴', '完整流程视频通常包含中心室适应、三室适应、社交性、社交新奇和换鼠 / 开门等人工操作段。时间轴把可分析阶段和 ignore 间隔切开，避免把操作段混入行为统计。'],
                 ['fas fa-tags', '为什么角色很关键', '左右 cup 的身份不是固定的。每个阶段都要明确左 / 右是 empty、social stranger、familiar 还是 novel，否则社交性和社交新奇指标会被反向解释。'],
             ],
-            flow: ['视频采集要求', '上传与时间范围', '三室 + cup 标定', '阶段 / 角色 / 时间轴', '调参与预览', '结果字段复核'],
+            flow: ['视频采集要求', '导入与分析配置', '三室 + cup 标定', '阶段 / 角色 / 时间轴', '调参与预览', '结果字段复核'],
             nav: [
                 ['overview', '总览'],
                 ['recording', '采集要求'],
-                ['upload', '上传与时间范围'],
+                ['upload', '导入与分析配置'],
                 ['calibration', '标定 / 时间轴 / 角色'],
                 ['params', '参数字典'],
                 ['outputs', '结果字典'],
@@ -75,8 +74,8 @@
                     ]
                 },
                 upload: {
-                    title: '上传与时间范围',
-                    lead: '上传页定义视频、默认统计时间、FPS 覆盖和输出目录。三箱模块还会在标定页保存每个视频的流程模式、时间轴、角色表和 ROI 配置。',
+                    title: '导入与分析配置',
+                    lead: '导入页选择实验和视频；分析配置页逐视频设置外层统计时间、FPS、方向和输出目录。标定页继续保存流程模式、时间轴、角色表和 ROI。',
                     points: [
                         '完整流程模式下，<code>protocol_segments</code> 中的 start / end 秒数决定每个阶段统计范围。',
                         '单阶段模式下，<code>selected_phase</code> 决定当前视频按 habituation_center、habituation_all、sociability 或 social_novelty 哪一类解释。',
@@ -142,7 +141,7 @@
                     timeTable: {
                         headers: ['ROI 时间模式', '含义', '推荐场景'],
                         rows: [
-                            ['<code>global</code>', '跟随上传页全局时间范围。', '整条视频或时间轴已经在全局范围内。'],
+                            ['<code>global</code>', '跟随分析配置页中对应视频的时间范围。', '整条视频或时间轴已经包含在视频级范围内。'],
                             ['<code>precise</code>', '按视频绝对秒数设置 ROI 自己的开始 / 结束。', '不同 ROI 或不同装置需要不同统计片段。'],
                             ['<code>relative</code>', '按该 ROI 首次检测到测试鼠后的相对时间计算。', '配置数据支持该模式，适合特殊对齐需求。']
                         ]
@@ -260,7 +259,7 @@
                     title: '批量流程',
                     lead: '3CST 批量模式是每个视频独立完成流程、角色、ROI 和调参，然后统一运行。完整流程尤其不能跳过逐视频时间轴检查。',
                     steps: [
-                        '上传多个 3CST 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '导入多个 3CST 视频，在分析配置页逐视频设置时间范围、FPS、方向和输出目录。',
                         '逐个打开视频卡片，选择完整流程或单阶段模式。',
                         '如果是完整流程，核对每个 segment 的 phase、start、end 和 analyze 状态，把人工操作段设为 ignore。',
                         '核对 sociability 和 social_novelty 阶段左右 cup 角色，特别是做过左右平衡设计的批次。',
@@ -295,9 +294,8 @@
         },
         en: {
             heroEyebrow: 'Three-Chamber Social Test / 3CST',
-            heroTitle: 'Complete Three-Chamber Social Test Manual',
+            heroTitle: 'Three-Chamber Social Test',
             heroSubtitle: 'This manual covers full-protocol and single-phase modes, chamber and cup calibration, phase timeline, cup roles, interaction / exclusion radii, key parameters, result fields, and per-video batch setup.',
-            heroChips: ['Left / center / right chambers', 'Left and right cup points', 'Full protocol timeline', 'Sociability / social novelty', 'track / summary / phase_summary / bins'],
             heroCards: [
                 ['fas fa-people-arrows', 'What the module quantifies', '3CST measures chamber occupancy, entries, transitions, cup interaction time, and role-derived sociability and social novelty indices.'],
                 ['fas fa-timeline', 'Why timeline matters', 'Full recordings often contain habituation, sociability, social novelty, and manual handling gaps. The timeline separates analyzable phases from ignore intervals.'],
@@ -322,7 +320,7 @@
                         '<code>analysis_mode = full_protocol</code> is for continuous videos that contain multiple phases.',
                         '<code>analysis_mode = single_phase</code> is for videos already trimmed to one phase.',
                         '<code>sociability_index</code> compares social versus object sides, and <code>social_novelty_index</code> compares novel versus familiar sides.',
-                        'Interaction time currently represents proximity to the cup area, not manual frame-by-frame sniff annotation.'
+                        'Interaction time represents proximity to the cup area, not manual frame-by-frame sniff annotation.'
                     ],
                     callouts: [
                         ['warning', 'Cup roles are the most common source of mistakes', 'Do not assume the left side is always social or novel. Confirm <code>role_schedule</code> and the cup labels in the annotated video before interpreting indices.']
@@ -366,7 +364,7 @@
                 },
                 upload: {
                     title: 'Upload and Timing',
-                    lead: 'The upload page defines videos, default timing, FPS override, and output directory. The calibration page then stores mode, timeline, roles, and ROI geometry per video.',
+                    lead: 'Import selects the assay and videos. Analysis Configuration sets outer timing, FPS, orientation, and output per video; calibration then stores mode, timeline, roles, and ROI geometry.',
                     points: [
                         'In full-protocol mode, <code>protocol_segments</code> start and end seconds define each phase.',
                         'In single-phase mode, <code>selected_phase</code> tells MouseScope how to interpret the entire video.',
@@ -556,7 +554,7 @@
                         'Verify left and right cup roles for sociability and social_novelty, especially with counterbalanced designs.',
                         'Complete left / center / right chambers, cup points, optional door zones, and detection mask for each ROI.',
                         'Tune detection and interaction settings, then preview to ensure the stimulus mouse and cups are not misdetected.',
-                        'Save the video setup, return to the batch page, and start only after every video is complete.'
+                        'Save the video setup, return to Analysis Configuration, and start only after every video is complete.'
                     ],
                     rules: [
                         'Each video stores its own analysis_mode, timeline, role_schedule, ROIs, cup points, masks, and parameters.',
@@ -646,9 +644,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

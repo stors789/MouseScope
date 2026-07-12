@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable
@@ -93,10 +94,14 @@ from services.payload_geometry import (
 )
 from services.video_export import create_annotated_video_writer
 from services.video_metadata import probe_video_info
+from services.video_orientation import open_video_capture
 from services.video_timebase import build_video_timebase
+from services.resource_policy import batch_worker_count, current_resource_policy
 
 
 logger = logging.getLogger(__name__)
+_RESOURCE_POLICY = current_resource_policy()
+_VIDEO_WORKER_SEMAPHORE = threading.BoundedSemaphore(_RESOURCE_POLICY.max_parallel_videos)
 RESULT_DIR: Path | str | None = None
 HAS_PANDAS = False
 
@@ -304,7 +309,11 @@ def build_standard_processors(
             invert=vision_config.get('invert', False),
         )
     elif bg_method == 'static':
-        bg = create_static_background(video_path, num_frames=static_frames)
+        bg = create_static_background(
+            video_path,
+            num_frames=static_frames,
+            orientation_override=vision_config.get('orientation_override'),
+        )
         bg_rgb = cv2.cvtColor(bg, cv2.COLOR_GRAY2BGR) if len(bg.shape) == 2 else bg
         if analysis_size:
             target_w, target_h = int(analysis_size[0]), int(analysis_size[1])
@@ -561,8 +570,14 @@ class AnalysisSessionBase:
         summary['analysis_height_px'] = int(sampling.get('analysis_height', 0))
         return summary
 
-    def _build_timebase_for_video(self, video_path, fps, total_frames, *, label='Video'):
-        timebase = build_video_timebase(video_path, fps=fps, total_frames=total_frames, logger=self._log)
+    def _build_timebase_for_video(self, video_path, fps, total_frames, *, label='Video', prefer_pts=True):
+        timebase = build_video_timebase(
+            video_path,
+            fps=fps,
+            total_frames=total_frames,
+            prefer_pts=bool(prefer_pts),
+            logger=self._log,
+        )
         if int(total_frames or 0) <= 0 and timebase.frame_count > 0:
             total_frames = timebase.frame_count
         summary = timebase.summary()
@@ -577,7 +592,7 @@ class AnalysisSessionBase:
     def _time_range_to_frames(timebase, total_frames, start_sec=None, end_sec=None):
         total_frames = int(max(0, total_frames or 0))
         start_frame = timebase.frame_at_or_after(float(start_sec)) if start_sec is not None else 0
-        end_frame = timebase.frame_at_or_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
+        end_frame = timebase.frame_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
         start_frame = max(0, min(int(start_frame), max(total_frames - 1, 0)))
         end_frame = max(0, min(int(end_frame), max(total_frames - 1, 0)))
         if end_frame < start_frame:
@@ -666,8 +681,15 @@ class AnalysisSessionBase:
             self._status_sample_time = None
             self._status_sample_frames = None
             self._recent_processing_fps = 0.0
+            self.config.setdefault('resource_policy', _RESOURCE_POLICY.as_dict())
             thread = threading.Thread(target=_run_with_status_observer, args=(self,), daemon=True)
             self._thread = thread
+        self._log(
+            "Resource policy: "
+            f"{_RESOURCE_POLICY.max_parallel_videos} concurrent videos, "
+            f"{_RESOURCE_POLICY.opencv_threads} OpenCV threads, "
+            f"{_RESOURCE_POLICY.video_queue_target_mb} MB writer queue target."
+        )
         _notify_analysis_status(self)
         thread.start()
 
@@ -720,16 +742,15 @@ class AnalysisSessionBase:
     def _run(self):
         try:
             if len(self.video_paths) == 1:
-                self._analyze_single_video(self.video_paths[0], self.video_infos[0])
+                with self._video_worker_slot() as acquired:
+                    if acquired:
+                        self._analyze_single_video(self.video_paths[0], self.video_infos[0])
             else:
                 total = len(self.video_paths)
                 parallel_enabled = bool(self.config.get('parallel_videos', True))
                 requested_workers = self.config.get('batch_workers') or os.environ.get('MOUSESCOPE_BATCH_WORKERS')
-                try:
-                    worker_count = int(requested_workers) if requested_workers is not None else min(total, max(1, (os.cpu_count() or 2) // 2))
-                except Exception:
-                    worker_count = 1
-                worker_count = max(1, min(total, worker_count))
+                worker_count = batch_worker_count(total, requested_workers)
+                self.config.setdefault('resource_policy', _RESOURCE_POLICY.as_dict())['batch_workers'] = worker_count
                 aggregate_progress = parallel_enabled and worker_count > 1
                 self._begin_batch_progress(total, aggregate=aggregate_progress)
 
@@ -739,12 +760,15 @@ class AnalysisSessionBase:
                     def _worker(index, path, info):
                         if not self.is_running:
                             return
-                        self._log(self.batch_progress_template.format(
-                            index=index + 1,
-                            total=total,
-                            name=info.get('original_name', ''),
-                        ))
-                        self._analyze_single_video(path, info, batch_index=index)
+                        with self._video_worker_slot() as acquired:
+                            if not acquired or not self.is_running:
+                                return
+                            self._log(self.batch_progress_template.format(
+                                index=index + 1,
+                                total=total,
+                                name=info.get('original_name', ''),
+                            ))
+                            self._analyze_single_video(path, info, batch_index=index)
 
                     completed = 0
                     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix='MouseScopeBatch') as executor:
@@ -769,7 +793,10 @@ class AnalysisSessionBase:
                             total=total,
                             name=info.get('original_name', ''),
                         ))
-                        self._analyze_single_video(path, info, batch_index=i)
+                        with self._video_worker_slot() as acquired:
+                            if not acquired:
+                                break
+                            self._analyze_single_video(path, info, batch_index=i)
                         self.progress = int((i + 1) / total * 100)
 
                 if self.is_running:
@@ -810,10 +837,29 @@ class AnalysisSessionBase:
 
     def stop(self):
         with self._lock():
+            status = str(getattr(self, 'status', '') or '').lower()
+            if status in {'completed', 'error', 'stopped', 'interrupted'}:
+                return False
+            thread = getattr(self, '_thread', None)
+            thread_alive = bool(thread is not None and thread.is_alive())
+            if not self.is_running and not thread_alive and status not in {'waiting', 'analyzing', 'preprocessing'}:
+                return False
             self.is_running = False
             self.status = 'stopped'
             self.end_time = time.time()
         _notify_analysis_status(self)
+        return True
+
+    @contextmanager
+    def _video_worker_slot(self):
+        acquired = False
+        try:
+            while self.is_running and not acquired:
+                acquired = _VIDEO_WORKER_SEMAPHORE.acquire(timeout=0.25)
+            yield acquired
+        finally:
+            if acquired:
+                _VIDEO_WORKER_SEMAPHORE.release()
 
     def get_status(self):
         elapsed = 0

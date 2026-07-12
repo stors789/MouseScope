@@ -18,7 +18,7 @@ if str(CORE) not in sys.path:
 from core.light_dark_box import LightDarkBoxTracker, _render_tracker_template_canvas
 from core.file_utils import read_image_unicode, write_image_unicode
 from core.novel_object import NovelObjectTracker, render_novel_object_trackmap
-from core.open_field import render_open_field_image_grid
+from core.open_field import OpenFieldTracker, render_open_field_image_grid
 from core.spatial_render import append_heatmap_legend, classic_heatmap
 from core.three_chamber import ThreeChamberTracker
 from core.visual_style import DEFAULT_VISUAL_STYLE, normalize_visual_style
@@ -183,6 +183,30 @@ class NewAssayTrackerTests(unittest.TestCase):
         title_band = image[:40, :]
         red_pixels = (title_band[:, :, 2] > 180) & (title_band[:, :, 0] < 80) & (title_band[:, :, 1] < 80)
         self.assertGreater(int(np.count_nonzero(red_pixels)), 0)
+
+    def test_open_field_diamond_arena_ordering_keeps_four_corners(self):
+        tracker = OpenFieldTracker(
+            arena_points=[
+                [300, 300],
+                [500, 100],
+                [700, 300],
+                [500, 500],
+            ],
+            arena_side_cm=50,
+        )
+
+        expected = np.array(
+            [
+                [500, 100],
+                [700, 300],
+                [500, 500],
+                [300, 300],
+            ],
+            dtype=np.float32,
+        )
+        np.testing.assert_allclose(tracker.arena_points, expected)
+        self.assertEqual(len(np.unique(np.round(tracker.arena_points, decimals=3), axis=0)), 4)
+        self.assertGreater(cv2.contourArea(tracker.get_center_polygon_px().astype(np.float32)), 1.0)
 
     def test_visual_style_preview_uses_real_renderers(self):
         payload = render_visual_style_preview(

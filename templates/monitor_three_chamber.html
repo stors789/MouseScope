@@ -42,7 +42,7 @@
 {% endblock %}
 {% block scripts %}
 <script>
-const sessionId='{{ session_id }}'; let updateInterval=null; let lastRows=[]; let lastLogs=[]; let lastStatus='waiting';
+const sessionId='{{ session_id }}'; const fetch=MouseScopeMonitor.routeFetch; let updateInterval=null; let lastRows=[]; let lastLogs=[]; let lastStatus='waiting';
 const PAGE_I18N = {
     zh: {
         'header.title':'三箱社交实时监控',

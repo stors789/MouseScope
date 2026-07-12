@@ -1,9 +1,93 @@
 {% extends "base.html" %}
-{% block title %}批次页面 - MouseScope{% endblock %}
+{% block title %}分析配置 - MouseScope{% endblock %}
 
 {% block extra_css %}
 <style>
 .batch-shell { max-width: 1440px; margin: 0 auto; }
+.analysis-config-hero .app-page-title-group { align-items: center; }
+.analysis-config-kicker {
+    margin-bottom: 0.3rem;
+    color: var(--primary-color);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+.analysis-session-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.analysis-session-card,
+.bulk-config-card {
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-card);
+}
+.analysis-session-head,
+.bulk-config-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+}
+.analysis-session-head h2,
+.bulk-config-head h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 800;
+}
+.analysis-session-head p,
+.bulk-config-head p {
+    margin: 0.28rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.55;
+}
+.analysis-output-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+    align-items: end;
+}
+.analysis-scope-flow {
+    display: grid;
+    gap: 0.58rem;
+}
+.scope-step {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: center;
+    padding: 0.68rem 0.75rem;
+    border: 1px solid var(--border-card);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.56);
+}
+.scope-step i {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    color: var(--primary-color);
+    background: rgba(201, 100, 66, 0.1);
+}
+.scope-step strong { display: block; color: var(--text-primary); font-size: 0.86rem; }
+.scope-step span { color: var(--text-muted); font-size: 0.78rem; line-height: 1.45; }
+.bulk-config-card { margin-bottom: 1rem; background: rgba(250, 247, 241, 0.96); }
+.bulk-config-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+    gap: 0.65rem;
+    align-items: end;
+}
+.bulk-config-grid label { display: grid; gap: 0.28rem; color: #785b47; font-size: 0.8rem; font-weight: 700; }
 .batch-hero {
     display: grid;
     grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
@@ -178,6 +262,42 @@
     flex-wrap: wrap;
     gap: 0.6rem;
 }
+.video-settings {
+    margin-top: 0.9rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(133, 102, 77, 0.16);
+    border-radius: 16px;
+    background: rgba(250, 244, 238, 0.72);
+}
+.video-settings-title {
+    margin-bottom: 0.65rem;
+    color: #5f432f;
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+.video-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 0.65rem;
+    align-items: end;
+}
+.video-settings-grid label {
+    display: grid;
+    gap: 0.28rem;
+    color: #785b47;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.video-settings-grid .form-control,
+.video-settings-grid .form-select {
+    min-width: 0;
+}
+.video-settings-note {
+    margin-top: 0.6rem;
+    color: #896b56;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
 .side-panel {
     padding: 1.1rem;
     display: grid;
@@ -210,54 +330,65 @@
     color: #8a6a55;
 }
 @media (max-width: 1180px) {
-    .batch-hero, .workspace-grid { grid-template-columns: 1fr; }
+    .batch-hero, .workspace-grid, .analysis-session-grid { grid-template-columns: 1fr; }
+    .bulk-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 780px) {
     .summary-row { grid-template-columns: 1fr; }
+    .video-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .analysis-output-row, .bulk-config-grid { grid-template-columns: 1fr; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="batch-shell" data-session-id="{{ session_id }}">
-    <section class="batch-hero">
-        <div class="hero-panel">
-            <div class="hero-kicker" id="workspaceKicker">
-                <i class="fas fa-layer-group"></i>
-                <span>Batch Overview</span>
-            </div>
-            <h1 class="hero-title" id="workspaceTitle">{{ experiment_spec.label }}</h1>
-            <p class="hero-copy" id="workspaceCopy">
-                多视频模式下，先在这里检查整批视频的完成度，再逐条进入对应视频完成 ROI 与参数设置。全部就绪后，再统一开始分析。
-            </p>
-            <div class="hero-actions">
-                <button class="btn btn-primary btn-lg" id="startBatchBtn" onclick="startBatchAnalysis()">
-                    <i class="fas fa-play me-2"></i><span id="startBatchText">开始整批分析</span>
-                </button>
-                <button class="btn btn-outline-primary" onclick="copyFirstReadyToPending()">
-                    <i class="fas fa-copy me-2"></i><span id="copyPendingText">复制首个已完成配置到未完成视频</span>
-                </button>
-                <button class="btn btn-outline-secondary" onclick="refreshBatchState()">
-                    <i class="fas fa-arrows-rotate me-2"></i><span id="refreshText">刷新状态</span>
-                </button>
+<div class="batch-shell" data-session-id="{{ session_id }}" data-tour-page="analysis-config">
+    <section class="app-page-hero analysis-config-hero" data-tour-id="analysis-config-overview">
+        <div class="app-page-title-group">
+            <span class="app-page-icon" aria-hidden="true"><i class="fas fa-sliders"></i></span>
+            <div>
+                <div class="analysis-config-kicker" id="workspaceKicker">{{ experiment_spec.label }}</div>
+                <h1 class="app-page-title" id="workspaceTitle">分析配置</h1>
+                <p class="app-page-subtitle" id="workspaceCopy">先设置每个视频的有效分析范围、FPS 和画面方向，再进入 ROI 与参数配置。</p>
             </div>
         </div>
-        <aside class="hero-aside">
-            <div class="side-card">
-                <h3 id="batchInfoTitle">批次信息</h3>
-                <p><strong id="batchOutputLabel">输出目录:</strong> <span class="font-monospace">{{ output_dir or 'data/results/' }}</span></p>
-                <p><strong id="batchWindowLabel">全局时间窗:</strong> <span id="batchWindowValue" data-start-seconds="{{ start_seconds if start_seconds is not none else '0' }}" data-end-seconds="{{ end_seconds if end_seconds is not none else '' }}">{{ start_seconds or '0' }}s ~ {{ end_seconds or '视频结束' }}</span></p>
-                <p><strong id="batchFpsLabel">FPS 覆盖:</strong> <span id="batchFpsValue" data-fps-override="{{ fps_override if fps_override is not none else '' }}">{{ fps_override or '自动检测' }}</span></p>
+        <div class="app-page-actions">
+            <button class="btn btn-primary" id="startBatchBtn" onclick="startBatchAnalysis()">
+                <i class="fas fa-play me-2"></i><span id="startBatchText">开始分析</span>
+            </button>
+            {% if is_batch %}
+            <button class="btn btn-outline-primary" id="copyReadyBtn" onclick="copyFirstReadyToPending()">
+                <i class="fas fa-copy me-2"></i><span id="copyPendingText">复制已完成配置</span>
+            </button>
+            {% endif %}
+            <button class="btn btn-outline-secondary" onclick="refreshBatchState()">
+                <i class="fas fa-arrows-rotate me-2"></i><span id="refreshText">刷新状态</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="analysis-session-grid">
+        <div class="analysis-session-card" data-tour-id="analysis-config-output">
+            <div class="analysis-session-head">
+                <div><h2 id="outputConfigTitle">结果保存位置</h2><p id="outputConfigHint">快速分析可在此指定输出目录；留空时使用软件默认结果目录。</p></div>
             </div>
-            <div class="side-card">
-                <h3 id="batchRuleTitle">使用规则</h3>
-                <ul>
-                    <li id="ruleOne">每张卡片对应一个视频，点进去只编辑该视频。</li>
-                    <li id="ruleTwo">当前设置会自动保存，重新打开后可以继续编辑。</li>
-                    <li id="ruleThree">只有全部视频满足必填项后，才允许开始整批分析。</li>
-                </ul>
+            <div class="analysis-output-row">
+                <label class="w-100">
+                    <span class="form-label" id="outputInputLabel">输出目录</span>
+                    <input class="form-control font-monospace" id="analysisOutputDir" value="{{ output_dir or '' }}" placeholder="data/results/" {% if is_project_mode %}readonly{% endif %}>
+                </label>
+                {% if not is_project_mode %}
+                <button class="btn btn-outline-primary" id="saveOutputBtn" type="button" onclick="saveSessionConfig()"><i class="fas fa-floppy-disk me-2"></i><span id="saveOutputText">保存目录</span></button>
+                {% endif %}
             </div>
-        </aside>
+        </div>
+        <div class="analysis-session-card" data-tour-id="analysis-config-window-rule">
+            <div class="analysis-session-head"><div><h2 id="windowRuleTitle">时间范围规则</h2><p id="windowRuleHint">视频级时间窗控制读取范围，ROI 时间窗只在该范围内进一步细化。</p></div></div>
+            <div class="analysis-scope-flow">
+                <div class="scope-step"><i class="fas fa-film"></i><div><strong id="videoScopeTitle">视频级范围</strong><span id="videoScopeText">排除准备和结束后的无效画面，并限制整体计算范围。</span></div></div>
+                <div class="scope-step"><i class="fas fa-draw-polygon"></i><div><strong id="roiScopeTitle">ROI 独立范围</strong><span id="roiScopeText">最终统计范围为视频级范围与 ROI 时间窗的交集。</span></div></div>
+            </div>
+        </div>
     </section>
 
     <div class="summary-row">
@@ -282,10 +413,24 @@
         <div class="card-panel">
             <div class="panel-head">
                 <div>
-                    <h2 class="panel-title" id="videoPanelTitle">视频卡片</h2>
-                    <div class="panel-subtitle" id="videoPanelSubtitle">状态清晰、入口固定、支持逐条配置与快速复制</div>
+                    <h2 class="panel-title" id="videoPanelTitle">逐视频配置</h2>
+                    <div class="panel-subtitle" id="videoPanelSubtitle">每个视频先确认外层分析范围，再进入 ROI、场地标定和检测参数设置。</div>
                 </div>
             </div>
+            {% if is_batch %}
+            <section class="bulk-config-card" data-tour-id="analysis-config-bulk">
+                <div class="bulk-config-head">
+                    <div><h3 id="bulkConfigTitle">批量应用视频设置</h3><p id="bulkConfigHint">适合拍摄条件一致的视频；应用后仍可在单个视频卡片中修改。</p></div>
+                </div>
+                <div class="bulk-config-grid">
+                    <label><span id="bulkStartLabel">起始时间（秒）</span><input class="form-control" id="bulkStart" type="number" step="0.001" min="0" placeholder="0"></label>
+                    <label><span id="bulkEndLabel">结束时间（秒）</span><input class="form-control" id="bulkEnd" type="number" step="0.001" min="0" placeholder="视频结束"></label>
+                    <label><span id="bulkFpsLabel">FPS（可选）</span><input class="form-control" id="bulkFps" type="number" step="0.001" min="0.001" max="1000" placeholder="自动检测"></label>
+                    <label><span id="bulkOrientationLabel">画面方向</span><select class="form-select" id="bulkOrientation"><option value="auto">自动检测</option><option value="0">原始画面（0°）</option><option value="90">顺时针 90°</option><option value="180">旋转 180°</option><option value="270">逆时针 90°</option></select></label>
+                    <button class="btn btn-outline-primary" type="button" id="applyAllBtn" onclick="applySettingsToAll()"><i class="fas fa-wand-magic-sparkles me-2"></i><span id="applyAllText">应用到全部视频</span></button>
+                </div>
+            </section>
+            {% endif %}
             <div class="video-card-list" id="videoCardList">
                 {% for card in cards %}
                 <article class="video-card {{ 'ready' if card.complete else '' }}" data-video-index="{{ card.index }}">
@@ -311,8 +456,8 @@
                         {% endif %}
                     </div>
                     <div class="card-actions">
-                        <a class="btn btn-primary" href="{{ url_for('calibrate_video', session_id=session_id, video_idx=card.index) }}">
-                            <i class="fas fa-pen-ruler me-2"></i>{{ '继续编辑' if card.complete else '进入配置' }}
+                        <a class="btn btn-primary" href="{{ url_for('calibrate_video', session_id=session_id, video_idx=card.index) if is_batch else url_for('calibrate', session_id=session_id) }}">
+                            <i class="fas fa-pen-ruler me-2"></i>{{ '继续编辑 ROI 与参数' if card.complete else '进入 ROI 与参数配置' }}
                         </a>
                         {% if card.index > 0 %}
                         <button class="btn btn-outline-secondary" onclick="copyPreviousConfig({{ card.index }})">
@@ -353,6 +498,9 @@
 <script>
 const sessionId = {{ session_id|tojson }};
 const batchStateUrl = {{ batch_state_url|tojson }};
+const isBatch = {{ is_batch|tojson }};
+const isProjectMode = {{ is_project_mode|tojson }};
+const experimentLabel = {{ experiment_spec.label|tojson }};
 let latestBatchState = {
     cards: {{ cards|tojson }},
     complete_count: {{ complete_count|tojson }},
@@ -360,101 +508,106 @@ let latestBatchState = {
     can_start: {{ (complete_count == total_videos and total_videos > 0)|tojson }},
     draft_updated_at: {{ draft_updated_at|tojson }},
 };
+let isBatchStarting = false;
+let workspaceMutationActive = false;
+let videoInputsReadyForPreservation = false;
+
+function applyWorkspaceBusyState() {
+    if (!workspaceMutationActive) return;
+    document.querySelectorAll('.batch-shell button, .batch-shell input, .batch-shell select, .batch-shell textarea, .batch-shell a.btn').forEach(control => {
+        if (control.dataset.workspacePrevDisabled === undefined) {
+            control.dataset.workspacePrevDisabled = control.disabled ? '1' : '0';
+            control.dataset.workspacePrevPointerEvents = control.style.pointerEvents || '';
+        }
+        if ('disabled' in control) control.disabled = true;
+        control.setAttribute('aria-disabled', 'true');
+        control.style.pointerEvents = 'none';
+    });
+}
+
+function beginWorkspaceMutation() {
+    if (workspaceMutationActive) return false;
+    workspaceMutationActive = true;
+    applyWorkspaceBusyState();
+    return true;
+}
+
+function endWorkspaceMutation() {
+    workspaceMutationActive = false;
+    document.querySelectorAll('[data-workspace-prev-disabled]').forEach(control => {
+        if ('disabled' in control) control.disabled = control.dataset.workspacePrevDisabled === '1';
+        control.style.pointerEvents = control.dataset.workspacePrevPointerEvents || '';
+        control.removeAttribute('aria-disabled');
+        delete control.dataset.workspacePrevDisabled;
+        delete control.dataset.workspacePrevPointerEvents;
+    });
+    renderSummary(latestBatchState);
+}
 
 const BATCH_I18N = {
     zh: {
-        kicker: '批次总览',
-        titleCopy: '多视频模式下，先在这里检查整批视频的完成度，再逐条进入对应视频完成 ROI 与参数设置。全部就绪后，再统一开始分析。',
-        start: '开始整批分析',
-        copyPending: '复制首个已完成配置到未完成视频',
-        refresh: '刷新状态',
-        batchInfo: '批次信息',
-        output: '输出目录:',
-        window: '全局时间窗:',
-        fps: 'FPS 覆盖:',
-        rules: '使用规则',
-        ruleOne: '每张卡片对应一个视频，点进去只编辑该视频。',
-        ruleTwo: '当前设置会自动保存，重新打开后可以继续编辑。',
-        ruleThree: '只有全部视频满足必填项后，才允许开始整批分析。',
-        videos: '视频总数',
-        videosNote: '当前批次中的待处理视频数量',
-        done: '已完成配置',
-        doneNote: '完成 ROI、时间窗与关键参数设置的视频数',
-        draft: '最近一次保存',
-        draftNone: '尚未保存',
-        draftSaved: '已保存',
-        draftHint: '进入视频设置页保存后会在这里更新',
-        panelTitle: '视频卡片',
-        panelSubtitle: '状态清晰、入口固定、支持逐条配置与快速复制',
-        statusReady: '已完成',
-        statusPending: '待配置',
-        readyHint: '该视频的必填配置已完成，可以直接参与批量分析。',
-        pendingHint: '还没有完成必要配置。',
-        edit: '进入配置',
-        editContinue: '继续编辑',
-        copyPrev: '复制上一条',
-        reset: '重置本视频',
-        checks: '开始前检查',
-        checkOne: '确认所有卡片都显示为“已完成”。',
-        checkTwo: '随机抽查 1 到 2 个视频的 ROI 与时间窗是否正确。',
-        checkThree: '如拍摄条件相似，可先复制已完成配置，再回到各视频微调。',
-        manualTitle: '手册与说明',
-        manualText: '如果需要回看实验逻辑、ROI 规则或结果指标，建议从这里打开对应模块手册，再返回继续配置。',
-        manualBtn: '打开当前模块手册',
-        startBlocked: '还有视频未完成配置，暂时不能开始整批分析。',
-        startFailed: '启动批量分析失败',
-        copyFailed: '复制配置失败',
-        resetFailed: '重置配置失败',
-        noReadySource: '当前没有可复制的已完成配置。',
-        confirmReset: '确认要清空这个视频当前保存的设置吗？',
-        frames: '帧',
+        titleCopy: '先设置每个视频的有效分析范围、FPS 和画面方向，再进入 ROI 与参数配置。',
+        start: '开始分析', copyPending: '复制已完成配置', refresh: '刷新状态',
+        outputTitle: '结果保存位置', outputHint: '快速分析可在此指定输出目录；留空时使用软件默认结果目录。',
+        outputProjectHint: '项目分析结果由项目工作台按实验和运行时间自动管理。', outputLabel: '输出目录', saveOutput: '保存目录',
+        outputSaved: '输出目录已保存。', outputFailed: '保存输出目录失败',
+        windowRuleTitle: '时间范围规则', windowRuleHint: '视频级时间窗控制读取范围，ROI 时间窗只在该范围内进一步细化。',
+        videoScopeTitle: '视频级范围', videoScopeText: '排除准备和结束后的无效画面，并限制整体计算范围。',
+        roiScopeTitle: 'ROI 独立范围', roiScopeText: '最终统计范围为视频级范围与 ROI 时间窗的交集。',
+        videos: '视频总数', videosNote: '本次分析配置中的视频数量', done: '已完成配置',
+        doneNote: '已经完成 ROI、时间范围与关键参数的视频数', draft: '最近一次保存', draftNone: '尚未保存', draftSaved: '已保存',
+        draftHint: '保存视频设置或 ROI 配置后会在这里更新', panelTitle: '逐视频配置',
+        panelSubtitle: '每个视频先确认外层分析范围，再进入 ROI、场地标定和检测参数设置。',
+        statusReady: '已完成', statusPending: '待配置', readyHint: '该视频的必填配置已完成，可以参与分析。',
+        pendingHint: '还需要完成 ROI 或实验参数配置。', edit: '进入 ROI 与参数配置', editContinue: '继续编辑 ROI 与参数',
+        copyPrev: '复制上一条', reset: '重置本视频', checks: '配置顺序',
+        checkOne: '先确认每个视频的起止时间、FPS 和画面方向。', checkTwo: '再进入每个视频完成 ROI、场地标定和检测参数。',
+        checkThree: '所有视频显示“已完成”后，即可从本页开始分析。', manualTitle: '手册与说明',
+        manualText: '需要回看实验逻辑、ROI 规则或结果指标时，可打开对应模块手册。', manualBtn: '打开当前模块手册',
+        startBlocked: '还有视频未完成 ROI 或实验参数配置，暂时不能开始分析。', startFailed: '启动分析失败',
+        copyFailed: '复制配置失败', resetFailed: '重置配置失败', noReadySource: '当前没有可复制的已完成配置。',
+        confirmReset: '确认要清空这个视频当前保存的设置吗？', frames: '帧', videoSettings: '视频级分析范围',
+        startSec: '起始时间（秒）', endSec: '结束时间（秒）', fpsOverride: 'FPS（可选）', orientation: '画面方向',
+        autoOrientation: '自动（检测到 {0}°）', originalOrientation: '原始画面（0°）', rotate90: '顺时针 90°',
+        rotate180: '旋转 180°', rotate270: '逆时针 90°', saveSettings: '保存本视频设置',
+        settingsHint: '视频级时间窗是外层读取范围；ROI 独立时间窗只能在其中进一步缩小。FPS 留空时自动检测。',
+        settingsSaved: '已保存本视频设置。', confirmRecalibrate: '改变画面方向会清空该视频已有 ROI 与标定。是否继续？',
+        settingsFailed: '保存视频设置失败', bulkTitle: '批量应用视频设置',
+        bulkHint: '适合拍摄条件一致的视频；应用后仍可在单个视频卡片中修改。', applyAll: '应用到全部视频',
+        applyAllDone: '已应用到全部视频。', applyAllFailed: '批量应用视频设置失败',
+        bulkRecalibrate: '部分视频已有 ROI。批量改变画面方向会清空这些视频的 ROI 与标定，是否继续？',
     },
     en: {
-        kicker: 'Batch Overview',
-        titleCopy: 'Review the whole batch here first, then open each video to finish ROI and parameter setup. Start analysis only after every card is ready.',
-        start: 'Start Batch Analysis',
-        copyPending: 'Copy First Ready Config to Pending Videos',
-        refresh: 'Refresh State',
-        batchInfo: 'Batch Info',
-        output: 'Output Folder:',
-        window: 'Global Time Window:',
-        fps: 'FPS Override:',
-        rules: 'Usage Rules',
-        ruleOne: 'Each card represents one video and opens a dedicated editor for that video.',
-        ruleTwo: 'Current settings are saved automatically so you can come back and continue editing.',
-        ruleThree: 'Batch analysis only starts after every video satisfies the required fields.',
-        videos: 'Total Videos',
-        videosNote: 'Number of videos in the current batch',
-        done: 'Configured',
-        doneNote: 'Videos with ROI, time-window, and key-parameter setup completed',
-        draft: 'Latest Save',
-        draftNone: 'Not Saved Yet',
-        draftSaved: 'Saved',
-        draftHint: 'This will update after you save from any video setup page',
-        panelTitle: 'Video Cards',
-        panelSubtitle: 'Clear status, fixed entry points, and quick-copy support',
-        statusReady: 'Ready',
-        statusPending: 'Pending',
-        readyHint: 'This video already satisfies the required setup and can join batch analysis.',
-        pendingHint: 'Required setup is still incomplete.',
-        edit: 'Open Setup',
-        editContinue: 'Continue Editing',
-        copyPrev: 'Copy Previous',
-        reset: 'Reset Video',
-        checks: 'Preflight Checklist',
-        checkOne: 'Make sure every card is marked as ready.',
-        checkTwo: 'Spot-check one or two videos for ROI and time-window correctness.',
-        checkThree: 'If acquisition conditions are similar, copy a finished setup first and then fine-tune per video.',
-        manualTitle: 'Manuals & Notes',
-        manualText: 'Open the assay manual here whenever you need to revisit protocol logic, ROI rules, or exported metrics.',
-        manualBtn: 'Open Manual for This Assay',
-        startBlocked: 'Some videos are still incomplete, so batch analysis cannot start yet.',
-        startFailed: 'Failed to start batch analysis',
-        copyFailed: 'Failed to copy configuration',
-        resetFailed: 'Failed to reset configuration',
-        noReadySource: 'No completed configuration is available to copy.',
-        confirmReset: 'Are you sure you want to clear the saved setup for this video?',
-        frames: 'frames',
+        titleCopy: "Set each video's analysis range, FPS, and orientation before opening ROI and assay parameters.",
+        start: 'Start Analysis', copyPending: 'Copy Ready Configuration', refresh: 'Refresh State',
+        outputTitle: 'Result Location', outputHint: 'Quick Analysis can use a custom output folder here; leave it blank to use the application default.',
+        outputProjectHint: 'Project results are organized automatically by assay and run time inside the project workspace.', outputLabel: 'Output Folder', saveOutput: 'Save Folder',
+        outputSaved: 'Output folder saved.', outputFailed: 'Failed to save output folder',
+        windowRuleTitle: 'Time-Range Rule', windowRuleHint: 'The video window limits frame reading; an ROI window can only narrow that range.',
+        videoScopeTitle: 'Video-Level Range', videoScopeText: 'Excludes setup and trailing footage and limits the overall processing range.',
+        roiScopeTitle: 'ROI-Specific Range', roiScopeText: 'The final statistics window is the intersection of the video and ROI ranges.',
+        videos: 'Total Videos', videosNote: 'Number of videos in this analysis configuration', done: 'Configured',
+        doneNote: 'Videos with ROI, time-range, and key parameters completed', draft: 'Latest Save', draftNone: 'Not Saved Yet', draftSaved: 'Saved',
+        draftHint: 'Updates after video settings or ROI configuration are saved', panelTitle: 'Per-Video Configuration',
+        panelSubtitle: 'Confirm the outer video range first, then configure ROI, calibration, and detection parameters.',
+        statusReady: 'Ready', statusPending: 'Pending', readyHint: 'This video satisfies the required setup and can be analyzed.',
+        pendingHint: 'ROI or assay parameters still need configuration.', edit: 'Open ROI & Parameters', editContinue: 'Continue ROI & Parameters',
+        copyPrev: 'Copy Previous', reset: 'Reset Video', checks: 'Configuration Order',
+        checkOne: 'Confirm start/end time, FPS, and orientation for each video first.', checkTwo: 'Then finish ROI, arena calibration, and detection parameters for each video.',
+        checkThree: 'Start analysis here after every video is marked ready.', manualTitle: 'Manuals & Notes',
+        manualText: 'Open the assay manual whenever you need protocol logic, ROI rules, or exported metrics.', manualBtn: 'Open Manual for This Assay',
+        startBlocked: 'Some videos still need ROI or assay configuration, so analysis cannot start yet.', startFailed: 'Failed to start analysis',
+        copyFailed: 'Failed to copy configuration', resetFailed: 'Failed to reset configuration', noReadySource: 'No completed configuration is available to copy.',
+        confirmReset: 'Are you sure you want to clear the saved setup for this video?', frames: 'frames', videoSettings: 'Video-Level Analysis Range',
+        startSec: 'Start time (s)', endSec: 'End time (s)', fpsOverride: 'FPS (optional)', orientation: 'Frame orientation',
+        autoOrientation: 'Auto (detected {0}°)', originalOrientation: 'Original frame (0°)', rotate90: '90° clockwise',
+        rotate180: '180°', rotate270: '90° counterclockwise', saveSettings: 'Save Video Settings',
+        settingsHint: 'The video range is the outer frame-reading limit; an ROI window can only narrow it. Leave FPS blank for auto-detection.',
+        settingsSaved: 'Video settings saved.', confirmRecalibrate: 'Changing orientation clears this video’s saved ROI and calibration. Continue?',
+        settingsFailed: 'Failed to save video settings', bulkTitle: 'Apply Video Settings in Bulk',
+        bulkHint: 'Best for videos recorded under the same conditions; each card remains editable afterward.', applyAll: 'Apply to All Videos',
+        applyAllDone: 'Settings applied to all videos.', applyAllFailed: 'Failed to apply video settings in bulk',
+        bulkRecalibrate: 'Some videos already have ROI calibration. Changing orientation in bulk clears those ROI settings. Continue?',
     }
 };
 
@@ -469,6 +622,10 @@ function t(key) {
 
 function uiText(zh, en) {
     return pageLang() === 'en' ? en : zh;
+}
+
+function formatText(template, ...values) {
+    return String(template).replace(/\{(\d+)\}/g, (_match, index) => String(values[Number(index)] ?? ''));
 }
 
 function formatWindowValue() {
@@ -528,6 +685,8 @@ function formatDraftUpdated(value) {
 }
 
 function cardDurationText(info) {
+    const duration = Number(info && info.duration_seconds) || 0;
+    if (duration > 0) return `${duration.toFixed(1)}s`;
     const fps = Number(info && info.fps) || 0;
     const frames = Number(info && info.total_frames) || 0;
     if (!fps || !frames) return `${frames} ${t('frames')}`;
@@ -535,36 +694,60 @@ function cardDurationText(info) {
     return `${frames} ${t('frames')} | ${seconds.toFixed(1)}s`;
 }
 
+function compactNumber(value, digits = 3) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '';
+    return number.toFixed(digits).replace(/\.?0+$/, '');
+}
+
+function setText(id, value) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = value;
+}
+
 function applyStaticText() {
-    document.getElementById('workspaceKicker').lastElementChild.textContent = t('kicker');
-    document.getElementById('workspaceCopy').textContent = t('titleCopy');
-    document.getElementById('startBatchText').textContent = t('start');
-    document.getElementById('copyPendingText').textContent = t('copyPending');
-    document.getElementById('refreshText').textContent = t('refresh');
-    document.getElementById('batchInfoTitle').textContent = t('batchInfo');
-    document.getElementById('batchOutputLabel').textContent = t('output');
-    document.getElementById('batchWindowLabel').textContent = t('window');
-    formatWindowValue();
-    document.getElementById('batchFpsLabel').textContent = t('fps');
-    formatFpsOverrideValue();
-    document.getElementById('batchRuleTitle').textContent = t('rules');
-    document.getElementById('ruleOne').textContent = t('ruleOne');
-    document.getElementById('ruleTwo').textContent = t('ruleTwo');
-    document.getElementById('ruleThree').textContent = t('ruleThree');
-    document.getElementById('summaryVideosLabel').textContent = t('videos');
-    document.getElementById('summaryVideosNote').textContent = t('videosNote');
-    document.getElementById('summaryCompletedLabel').textContent = t('done');
-    document.getElementById('summaryCompletedNote').textContent = t('doneNote');
-    document.getElementById('summaryDraftLabel').textContent = t('draft');
-    document.getElementById('videoPanelTitle').textContent = t('panelTitle');
-    document.getElementById('videoPanelSubtitle').textContent = t('panelSubtitle');
-    document.getElementById('statusGuideTitle').textContent = t('checks');
-    document.getElementById('statusGuideOne').textContent = t('checkOne');
-    document.getElementById('statusGuideTwo').textContent = t('checkTwo');
-    document.getElementById('statusGuideThree').textContent = t('checkThree');
-    document.getElementById('manualGuideTitle').textContent = t('manualTitle');
-    document.getElementById('manualGuideText').textContent = t('manualText');
-    document.getElementById('manualButtonText').textContent = t('manualBtn');
+    setText('workspaceKicker', experimentLabel);
+    setText('workspaceTitle', uiText('分析配置', 'Analysis Configuration'));
+    setText('workspaceCopy', t('titleCopy'));
+    setText('startBatchText', t('start'));
+    setText('copyPendingText', t('copyPending'));
+    setText('refreshText', t('refresh'));
+    setText('outputConfigTitle', t('outputTitle'));
+    setText('outputConfigHint', isProjectMode ? t('outputProjectHint') : t('outputHint'));
+    setText('outputInputLabel', t('outputLabel'));
+    setText('saveOutputText', t('saveOutput'));
+    setText('windowRuleTitle', t('windowRuleTitle'));
+    setText('windowRuleHint', t('windowRuleHint'));
+    setText('videoScopeTitle', t('videoScopeTitle'));
+    setText('videoScopeText', t('videoScopeText'));
+    setText('roiScopeTitle', t('roiScopeTitle'));
+    setText('roiScopeText', t('roiScopeText'));
+    setText('summaryVideosLabel', t('videos'));
+    setText('summaryVideosNote', t('videosNote'));
+    setText('summaryCompletedLabel', t('done'));
+    setText('summaryCompletedNote', t('doneNote'));
+    setText('summaryDraftLabel', t('draft'));
+    setText('videoPanelTitle', t('panelTitle'));
+    setText('videoPanelSubtitle', t('panelSubtitle'));
+    setText('statusGuideTitle', t('checks'));
+    setText('statusGuideOne', t('checkOne'));
+    setText('statusGuideTwo', t('checkTwo'));
+    setText('statusGuideThree', t('checkThree'));
+    setText('manualGuideTitle', t('manualTitle'));
+    setText('manualGuideText', t('manualText'));
+    setText('manualButtonText', t('manualBtn'));
+    setText('bulkConfigTitle', t('bulkTitle'));
+    setText('bulkConfigHint', t('bulkHint'));
+    setText('bulkStartLabel', t('startSec'));
+    setText('bulkEndLabel', t('endSec'));
+    setText('bulkFpsLabel', t('fpsOverride'));
+    setText('bulkOrientationLabel', t('orientation'));
+    setText('applyAllText', t('applyAll'));
+    const bulkOrientation = document.getElementById('bulkOrientation');
+    if (bulkOrientation) {
+        const labels = [formatText(t('autoOrientation'), 0), t('originalOrientation'), t('rotate90'), t('rotate180'), t('rotate270')];
+        Array.from(bulkOrientation.options).forEach((option, index) => { option.textContent = labels[index] || option.textContent; });
+    }
 }
 
 function renderSummary(state) {
@@ -573,7 +756,12 @@ function renderSummary(state) {
     const draftInfo = formatDraftUpdated(state.draft_updated_at);
     document.getElementById('draftUpdatedValue').textContent = draftInfo.value;
     document.getElementById('summaryDraftNote').textContent = draftInfo.note;
-    document.getElementById('startBatchBtn').disabled = !state.can_start;
+    document.getElementById('startBatchBtn').disabled = isBatchStarting || !state.can_start;
+    const copyButton = document.getElementById('copyReadyBtn');
+    if (copyButton) {
+        const cards = state.cards || [];
+        copyButton.disabled = !cards.some(card => card.complete) || !cards.some(card => !card.complete);
+    }
 }
 
 function renderCards(cards) {
@@ -583,6 +771,16 @@ function renderCards(cards) {
         return;
     }
     container.innerHTML = cards.map(card => {
+        const settings = card.settings || {};
+        const detectedOrientation = Number(settings.detected_orientation_degrees ?? card.video_info?.metadata_orientation_degrees ?? 0) || 0;
+        const orientationOverride = settings.orientation_override;
+        const selectedOrientation = orientationOverride === null || orientationOverride === undefined || orientationOverride === ''
+            ? 'auto'
+            : String(Number(orientationOverride));
+        const startValue = settings.start_sec === null || settings.start_sec === undefined ? '' : String(settings.start_sec);
+        const endValue = settings.end_sec === null || settings.end_sec === undefined ? '' : String(settings.end_sec);
+        const fpsValue = settings.fps_override === null || settings.fps_override === undefined ? '' : String(settings.fps_override);
+        const detectedFpsText = compactNumber(card.video_info?.detected_fps || card.video_info?.fps, 3);
         const statusText = card.complete ? t('statusReady') : t('statusPending');
         const statusIcon = card.complete ? 'fa-circle-check' : 'fa-hourglass-half';
         const missingText = card.complete
@@ -604,8 +802,35 @@ function renderCards(cards) {
                     </span>
                 </div>
                 <div class="missing-list">${escapeHtml(missingText)}</div>
+                <section class="video-settings" aria-label="${escapeHtml(t('videoSettings'))}" data-tour-id="analysis-config-video-settings">
+                    <div class="video-settings-title"><i class="fas fa-sliders me-2"></i>${escapeHtml(t('videoSettings'))}</div>
+                    <div class="video-settings-grid">
+                        <label>${escapeHtml(t('startSec'))}
+                            <input class="form-control" id="video-start-${card.index}" type="number" step="0.001" min="0" value="${escapeHtml(startValue)}" placeholder="0">
+                        </label>
+                        <label>${escapeHtml(t('endSec'))}
+                            <input class="form-control" id="video-end-${card.index}" type="number" step="0.001" min="0" value="${escapeHtml(endValue)}" placeholder="${escapeHtml(cardDurationText(card.video_info || {}))}">
+                        </label>
+                        <label>${escapeHtml(t('fpsOverride'))}
+                            <input class="form-control" id="video-fps-${card.index}" type="number" step="0.001" min="0.001" max="1000" value="${escapeHtml(fpsValue)}" placeholder="${escapeHtml(detectedFpsText)}">
+                        </label>
+                        <label>${escapeHtml(t('orientation'))}
+                            <select class="form-select" id="video-orientation-${card.index}">
+                                <option value="auto" ${selectedOrientation === 'auto' ? 'selected' : ''}>${escapeHtml(formatText(t('autoOrientation'), detectedOrientation))}</option>
+                                <option value="0" ${selectedOrientation === '0' ? 'selected' : ''}>${escapeHtml(t('originalOrientation'))}</option>
+                                <option value="90" ${selectedOrientation === '90' ? 'selected' : ''}>${escapeHtml(t('rotate90'))}</option>
+                                <option value="180" ${selectedOrientation === '180' ? 'selected' : ''}>${escapeHtml(t('rotate180'))}</option>
+                                <option value="270" ${selectedOrientation === '270' ? 'selected' : ''}>${escapeHtml(t('rotate270'))}</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="video-settings-note">${escapeHtml(t('settingsHint'))}</div>
+                    <div class="card-actions mt-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="saveVideoSettings(${card.index})"><i class="fas fa-floppy-disk me-2"></i>${escapeHtml(t('saveSettings'))}</button>
+                    </div>
+                </section>
                 <div class="card-actions">
-                    <a class="btn btn-primary" href="/calibrate/${encodeURIComponent(sessionId)}/video/${card.index}">
+                    <a class="btn btn-primary" data-tour-id="analysis-config-roi" href="${isBatch ? `/calibrate/${encodeURIComponent(sessionId)}/video/${card.index}` : `/calibrate/${encodeURIComponent(sessionId)}`}" onclick="return openCalibration(event, ${card.index}, this.href)">
                         <i class="fas fa-pen-ruler me-2"></i>${card.complete ? t('editContinue') : t('edit')}
                     </a>
                     ${card.index > 0 ? `<button class="btn btn-outline-secondary" onclick="copyPreviousConfig(${card.index})"><i class="fas fa-copy me-2"></i>${t('copyPrev')}</button>` : ''}
@@ -625,25 +850,101 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
-function refreshUI() {
+function captureVisibleVideoInputs() {
+    const captured = new Map();
+    for (const card of (latestBatchState.cards || [])) {
+        // The server-rendered first paint contains summary cards only; the
+        // editable inputs are inserted by renderCards(). Do not manufacture
+        // blank values before those inputs exist, or the first language event
+        // after a reload would overwrite the saved settings shown by JS.
+        if (!document.getElementById(`video-start-${card.index}`)) continue;
+        captured.set(card.index, readVideoSettingsPayload(card.index));
+    }
+    return captured;
+}
+
+function restoreVisibleVideoInputs(captured) {
+    if (!(captured instanceof Map)) return;
+    for (const [index, payload] of captured.entries()) {
+        const start = document.getElementById(`video-start-${index}`);
+        const end = document.getElementById(`video-end-${index}`);
+        const fps = document.getElementById(`video-fps-${index}`);
+        const orientation = document.getElementById(`video-orientation-${index}`);
+        if (start) start.value = payload.start_sec;
+        if (end) end.value = payload.end_sec;
+        if (fps) fps.value = payload.fps_override;
+        if (orientation) orientation.value = payload.orientation_override;
+    }
+}
+
+function syncVisibleVideoInputsFromState() {
+    for (const card of (latestBatchState.cards || [])) {
+        const settings = card.settings || {};
+        const start = document.getElementById(`video-start-${card.index}`);
+        const end = document.getElementById(`video-end-${card.index}`);
+        const fps = document.getElementById(`video-fps-${card.index}`);
+        const orientation = document.getElementById(`video-orientation-${card.index}`);
+        if (start) start.value = settings.start_sec == null ? '' : String(settings.start_sec);
+        if (end) end.value = settings.end_sec == null ? '' : String(settings.end_sec);
+        if (fps) fps.value = settings.fps_override == null ? '' : String(settings.fps_override);
+        if (orientation) orientation.value = settings.orientation_override == null ? 'auto' : String(settings.orientation_override);
+    }
+}
+
+function refreshUI(preserveVideoInputs = false) {
+    const captured = preserveVideoInputs && videoInputsReadyForPreservation
+        ? captureVisibleVideoInputs()
+        : null;
     applyStaticText();
     renderSummary(latestBatchState);
     renderCards(latestBatchState.cards || []);
+    if (captured) restoreVisibleVideoInputs(captured);
+    else syncVisibleVideoInputsFromState();
+    applyWorkspaceBusyState();
 }
 
-async function refreshBatchState() {
+async function refreshBatchState(preserveVideoInputs = false) {
     const response = await fetch(batchStateUrl);
     const data = await response.json();
     if (!response.ok || data.error) {
-        throw new Error(data.error || 'Failed to load batch state');
+        throw new Error(apiErrorText(data, t('loadFailed')));
     }
     latestBatchState = data;
-    refreshUI();
+    refreshUI(preserveVideoInputs);
     return data;
 }
 
-async function startBatchAnalysis() {
+async function saveSessionConfig(showMessage = true) {
+    if (isProjectMode) return true;
+    const output = document.getElementById('analysisOutputDir');
     try {
+        const response = await fetch(`/api/analysis_config/${sessionId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({output_dir: output ? output.value.trim() : ''}),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(apiErrorText(data, t('outputFailed')));
+        if (output) output.value = data.output_dir || '';
+        if (showMessage) alert(t('outputSaved'));
+        return true;
+    } catch (error) {
+        alert(error.message || t('outputFailed'));
+        return false;
+    }
+}
+
+async function startBatchAnalysis() {
+    if (isBatchStarting || !beginWorkspaceMutation()) return;
+    isBatchStarting = true;
+    // Do not rebuild the cards before reading them: users commonly edit a
+    // window and click Start directly, and renderCards() would erase that
+    // unsaved DOM value. Only update the start-button state here.
+    renderSummary(latestBatchState);
+    let navigationStarted = false;
+    try {
+        if (!(await saveAllVisibleVideoSettings())) return;
+        if (!(await saveSessionConfig(false))) return;
         const state = await refreshBatchState();
         if (!state.can_start) {
             alert(t('startBlocked'));
@@ -656,15 +957,213 @@ async function startBatchAnalysis() {
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
-            throw new Error(data.error || t('startFailed'));
+            throw new Error(apiErrorText(data, t('startFailed')));
         }
+        navigationStarted = true;
         window.location.href = `/monitor/${sessionId}`;
     } catch (error) {
         alert(error.message || t('startFailed'));
+    } finally {
+        if (!navigationStarted) {
+            isBatchStarting = false;
+            endWorkspaceMutation();
+        }
+    }
+}
+
+function readVideoSettingsPayload(index, resetConfiguration = false) {
+    const start = document.getElementById(`video-start-${index}`);
+    const end = document.getElementById(`video-end-${index}`);
+    const fps = document.getElementById(`video-fps-${index}`);
+    const orientation = document.getElementById(`video-orientation-${index}`);
+    return {
+        video_index: index,
+        start_sec: start ? start.value.trim() : '',
+        end_sec: end ? end.value.trim() : '',
+        fps_override: fps ? fps.value.trim() : '',
+        orientation_override: orientation ? orientation.value : 'auto',
+        reset_configuration: resetConfiguration,
+    };
+}
+
+function applyVideoSettingsResponse(data, refresh = true) {
+    latestBatchState = {
+        ...latestBatchState,
+        cards: data.cards || latestBatchState.cards,
+        draft_updated_at: data.draft_updated_at,
+    };
+    latestBatchState.complete_count = (latestBatchState.cards || []).filter(card => card.complete).length;
+    latestBatchState.total_videos = (latestBatchState.cards || []).length;
+    latestBatchState.can_start = latestBatchState.complete_count === latestBatchState.total_videos && latestBatchState.total_videos > 0;
+    if (refresh) refreshUI(true);
+}
+
+async function submitVideoSettingsPayload(payload, refresh = true) {
+    try {
+        const response = await fetch(`/api/video_settings/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (response.status === 409 && data.requires_recalibration) {
+            if (window.confirm(t('confirmRecalibrate'))) {
+                return submitVideoSettingsPayload({...payload, reset_configuration: true}, refresh);
+            }
+            return false;
+        }
+        if (!response.ok || !data.success) {
+            throw new Error(apiErrorText(data, t('settingsFailed')));
+        }
+        applyVideoSettingsResponse(data, refresh);
+        return true;
+    } catch (error) {
+        alert(error.message || t('settingsFailed'));
+        return false;
+    }
+}
+
+async function saveVideoSettings(index, resetConfiguration = false) {
+    if (!beginWorkspaceMutation()) return false;
+    try {
+        return await submitVideoSettingsPayload(readVideoSettingsPayload(index, resetConfiguration), true);
+    } finally {
+        endWorkspaceMutation();
+    }
+}
+
+async function preflightVideoSettingsPayload(payload, confirmOnRecalibration = true) {
+    let prepared = {...payload};
+    while (true) {
+        const response = await fetch(`/api/video_settings/${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({...prepared, validate_only: true}),
+        });
+        const data = await response.json();
+        if (response.status === 409 && data.requires_recalibration && !prepared.reset_configuration) {
+            if (!confirmOnRecalibration || !window.confirm(t('confirmRecalibrate'))) return null;
+            prepared = {...prepared, reset_configuration: true};
+            continue;
+        }
+        if (!response.ok || !data.success) {
+            throw new Error(apiErrorText(data, t('settingsFailed')));
+        }
+        return prepared;
+    }
+}
+
+async function saveAllVisibleVideoSettings() {
+    // Capture every visible value before the first request. A successful save
+    // refreshes card markup, which must not erase unsaved edits in later cards.
+    const payloads = (latestBatchState.cards || []).map(card => readVideoSettingsPayload(card.index));
+    try {
+        const preparedPayloads = [];
+        for (const payload of payloads) {
+            const prepared = await preflightVideoSettingsPayload(payload, true);
+            if (!prepared) return false;
+            preparedPayloads.push(prepared);
+        }
+        for (const payload of preparedPayloads) {
+            if (!(await submitVideoSettingsPayload(payload, false))) {
+                await refreshBatchState(true).catch(() => {});
+                return false;
+            }
+        }
+        refreshUI();
+        return true;
+    } catch (error) {
+        alert(error.message || t('settingsFailed'));
+        await refreshBatchState(true).catch(() => {});
+        return false;
+    }
+}
+
+async function openCalibration(event, index, href) {
+    event.preventDefault();
+    if (!beginWorkspaceMutation()) return false;
+    let navigationStarted = false;
+    // Navigating away discards every unsaved DOM value, not just the card that
+    // was clicked. Save the whole visible set before opening any ROI page.
+    try {
+        if (!(await saveAllVisibleVideoSettings())) return false;
+        if (!(await saveSessionConfig(false))) return false;
+        navigationStarted = true;
+        window.location.href = href;
+        return false;
+    } finally {
+        if (!navigationStarted) endWorkspaceMutation();
+    }
+}
+
+function normalizedOrientation(value) {
+    if (value === null || value === undefined || value === '' || value === 'auto') return 'auto';
+    return String(Number(value));
+}
+
+async function applySettingsToAll() {
+    const cards = latestBatchState.cards || [];
+    if (!cards.length) return;
+    const values = {
+        start_sec: document.getElementById('bulkStart')?.value.trim() || '',
+        end_sec: document.getElementById('bulkEnd')?.value.trim() || '',
+        fps_override: document.getElementById('bulkFps')?.value.trim() || '',
+        orientation_override: document.getElementById('bulkOrientation')?.value || 'auto',
+    };
+    const orientationChangedWithRoi = cards.some(card =>
+        card.has_existing_calibration && normalizedOrientation(card.settings?.orientation_override) !== normalizedOrientation(values.orientation_override)
+    );
+    if (orientationChangedWithRoi && !window.confirm(t('bulkRecalibrate'))) return;
+    if (!beginWorkspaceMutation()) return;
+    const button = document.getElementById('applyAllBtn');
+    if (button) button.disabled = true;
+    try {
+        const payloads = [];
+        for (const card of cards) {
+            const orientationChanged = normalizedOrientation(card.settings?.orientation_override) !== normalizedOrientation(values.orientation_override);
+            payloads.push({
+                video_index: card.index,
+                ...values,
+                reset_configuration: Boolean(card.has_existing_calibration && orientationChanged && orientationChangedWithRoi),
+            });
+        }
+        // Validate the complete set before changing the first video. This
+        // prevents a later invalid duration/FPS value from leaving only the
+        // earlier cards updated.
+        for (const payload of payloads) {
+            const prepared = await preflightVideoSettingsPayload(payload, false);
+            if (!prepared) return;
+        }
+        let latestData = null;
+        for (const payload of payloads) {
+            const response = await fetch(`/api/video_settings/${sessionId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(apiErrorText(data, t('applyAllFailed')));
+            latestData = data;
+        }
+        if (latestData) {
+            latestBatchState = {...latestBatchState, cards: latestData.cards, draft_updated_at: latestData.draft_updated_at};
+            latestBatchState.complete_count = latestData.cards.filter(card => card.complete).length;
+            latestBatchState.total_videos = latestData.cards.length;
+            latestBatchState.can_start = latestBatchState.complete_count === latestBatchState.total_videos && latestBatchState.total_videos > 0;
+            refreshUI();
+        }
+        alert(t('applyAllDone'));
+    } catch (error) {
+        alert(error.message || t('applyAllFailed'));
+        await refreshBatchState(true).catch(() => {});
+    } finally {
+        if (button) button.disabled = false;
+        endWorkspaceMutation();
     }
 }
 
 async function copyPreviousConfig(index) {
+    if (!beginWorkspaceMutation()) return;
     try {
         const response = await fetch(`/api/draft_action/${sessionId}`, {
             method: 'POST',
@@ -673,7 +1172,7 @@ async function copyPreviousConfig(index) {
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
-            throw new Error(data.error || t('copyFailed'));
+            throw new Error(apiErrorText(data, t('copyFailed')));
         }
         latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
         latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
@@ -681,18 +1180,21 @@ async function copyPreviousConfig(index) {
         refreshUI();
     } catch (error) {
         alert(error.message || t('copyFailed'));
+    } finally {
+        endWorkspaceMutation();
     }
 }
 
 async function copyFirstReadyToPending() {
-    const state = await refreshBatchState();
-    const source = (state.cards || []).find(card => card.complete);
-    const targets = (state.cards || []).filter(card => !card.complete).map(card => card.index);
-    if (!source || !targets.length) {
-        alert(t('noReadySource'));
-        return;
-    }
+    if (!beginWorkspaceMutation()) return;
     try {
+        const state = await refreshBatchState();
+        const source = (state.cards || []).find(card => card.complete);
+        const targets = (state.cards || []).filter(card => !card.complete).map(card => card.index);
+        if (!source || !targets.length) {
+            alert(t('noReadySource'));
+            return;
+        }
         const response = await fetch(`/api/draft_action/${sessionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -700,7 +1202,7 @@ async function copyFirstReadyToPending() {
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
-            throw new Error(data.error || t('copyFailed'));
+            throw new Error(apiErrorText(data, t('copyFailed')));
         }
         latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
         latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
@@ -708,11 +1210,14 @@ async function copyFirstReadyToPending() {
         refreshUI();
     } catch (error) {
         alert(error.message || t('copyFailed'));
+    } finally {
+        endWorkspaceMutation();
     }
 }
 
 async function resetVideoConfig(index) {
     if (!window.confirm(t('confirmReset'))) return;
+    if (!beginWorkspaceMutation()) return;
     try {
         const response = await fetch(`/api/draft_action/${sessionId}`, {
             method: 'POST',
@@ -721,7 +1226,7 @@ async function resetVideoConfig(index) {
         });
         const data = await response.json();
         if (!response.ok || !data.success) {
-            throw new Error(data.error || t('resetFailed'));
+            throw new Error(apiErrorText(data, t('resetFailed')));
         }
         latestBatchState = { ...latestBatchState, cards: data.cards, draft_updated_at: data.draft_updated_at };
         latestBatchState.complete_count = data.cards.filter(card => card.complete).length;
@@ -729,10 +1234,38 @@ async function resetVideoConfig(index) {
         refreshUI();
     } catch (error) {
         alert(error.message || t('resetFailed'));
+    } finally {
+        endWorkspaceMutation();
     }
 }
 
-document.addEventListener('DOMContentLoaded', refreshUI);
-document.addEventListener('mousescope:langchange', refreshUI);
+MouseScopeTour.register('analysis-config', {
+    version: 'v1',
+    autoStart: false,
+    steps: [
+        {target: '[data-tour-id="analysis-config-overview"]', title: {zh: '分析配置', en: 'Analysis Configuration'}, body: {zh: '快速分析和项目模式都会先经过这里；单视频和多视频采用同一套设置逻辑。', en: 'Quick Analysis and project runs both pass through this page, using the same flow for one or many videos.'}},
+        {target: '[data-tour-id="analysis-config-output"]', title: {zh: '结果保存位置', en: 'Result Location'}, body: {zh: '快速分析可以修改输出目录；项目模式由项目工作台自动管理结果目录。', en: 'Quick Analysis may change the output folder; project runs manage it automatically inside the project workspace.'}},
+        {target: '[data-tour-id="analysis-config-window-rule"]', title: {zh: '两层时间范围', en: 'Two-Level Time Range'}, body: {zh: '视频级范围是外层读取边界；ROI 独立范围只能在其中进一步缩小。', en: 'The video range is the outer reading boundary; an ROI range can only narrow it.'}},
+        {target: '[data-tour-id="analysis-config-video-settings"]', title: {zh: '逐视频设置', en: 'Per-Video Settings'}, body: {zh: '为每个视频设置起止时间、FPS 和画面方向。多视频还可以先批量应用，再逐条微调。', en: 'Set start/end time, FPS, and orientation per video. For multiple videos, apply shared values first and fine-tune afterward.'}},
+        {target: '[data-tour-id="analysis-config-roi"]', title: {zh: '进入 ROI 与参数配置', en: 'Open ROI & Parameters'}, body: {zh: '保存视频设置后进入实验模块页面，完成场地、ROI 和检测参数。', en: 'Save video settings, then open the assay page to finish arena, ROI, and detection parameters.'}},
+    ],
+});
+
+// Event listeners receive an Event object. Pass false explicitly so that the
+// initial render never mistakes that object for the preserve-inputs flag.
+document.addEventListener('DOMContentLoaded', () => {
+    refreshUI(false);
+});
+// Edge restores form-control properties between DOMContentLoaded and
+// pageshow. Reapply saved state after that phase on a normal navigation; a
+// back/forward-cache restore keeps the user's live form values instead.
+window.addEventListener('pageshow', event => {
+    if (!event.persisted) refreshUI(false);
+    window.setTimeout(() => {
+        if (!event.persisted) syncVisibleVideoInputsFromState();
+        videoInputsReadyForPreservation = true;
+    }, 0);
+});
+document.addEventListener('mousescope:langchange', () => refreshUI(true));
 </script>
 {% endblock %}

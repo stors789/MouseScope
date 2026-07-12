@@ -38,8 +38,8 @@
 <div class="tc-shell" data-calibration-module="three_chamber">
     {% if launch_mode == 'workspace' %}
     <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-        <div><strong data-page-i18n="workspace.title">批量单视频编辑模式</strong><div class="small mt-1" data-page-i18n="workspace.note">保存当前设置后返回批次页面，再统一启动整批分析。</div></div>
-        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}"><i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回批次页面</span></a>
+        <div><strong data-page-i18n="workspace.title">逐视频配置模式</strong><div class="small mt-1" data-page-i18n="workspace.note">保存设置后返回分析配置页，再统一开始分析。</div></div>
+        <a class="btn btn-outline-primary" href="{{ batch_workspace_url }}"><i class="fas fa-layer-group me-2"></i><span data-page-i18n="workspace.back">返回分析配置</span></a>
     </div>
     {% endif %}
     <div class="tc-header">
@@ -122,7 +122,7 @@
             <div class="preview-grid mb-4"><div class="canvas-wrap"><canvas id="previewOriginal"></canvas></div><div class="canvas-wrap"><canvas id="previewResult"></canvas></div></div>
             <div class="grid-2">
                 <div class="panel mb-0"><h6 data-page-i18n="detect.title">检测参数</h6><div class="grid-2"><div><label class="form-label" data-page-i18n="detect.method">检测方法</label><select class="form-select" id="bgMethod" onchange="updatePreview()"><option value="threshold">Threshold</option><option value="static">Static BG</option></select></div><div><label class="form-label" data-page-i18n="detect.bg_type">背景类型</label><select class="form-select" id="bgType" onchange="updatePreview()"><option value="light" data-page-i18n="detect.light">浅色背景/深色鼠</option><option value="dark" data-page-i18n="detect.dark">深色背景/浅色鼠</option></select></div><div><label class="form-label" data-page-i18n="detect.gray">灰度阈值</label><input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncLabel('grayThreshold'); updatePreview();"><div class="mini-note" id="grayThresholdLabel">127</div></div><div><label class="form-label" data-page-i18n="detect.min_area">最小面积</label><input type="range" class="form-range" id="minArea" min="20" max="5000" value="120" oninput="syncLabel('minArea'); updatePreview();"><div class="mini-note" id="minAreaLabel">120</div></div></div></div>
-                <div class="panel mb-0"><h6 data-page-i18n="stats.title">统计参数</h6><div class="grid-2"><div><label class="form-label" data-page-i18n="stats.interaction">交互半径 (cm)</label><input class="form-control" id="interactionRadius" type="number" min="0.1" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.cup_exclusion">Cup 排除半径 (cm)</label><input class="form-control" id="cupExclusionRadius" type="number" min="0" step="0.1" value="1.5"></div><div><label class="form-label" data-page-i18n="stats.dwell">转换稳定时间 (s)</label><input class="form-control" id="transitionDwell" type="number" min="0" step="0.01" value="0.12"></div><div><label class="form-label" data-page-i18n="stats.move">运动阈值 (cm/s)</label><input class="form-control" id="movementThreshold" type="number" min="0" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.bin">分箱时长 (s)</label><input class="form-control" id="binSeconds" type="number" min="1" step="1" value="60"></div><div class="d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" id="generateVideo" type="checkbox" checked><label class="form-check-label" for="generateVideo" data-page-i18n="stats.video">生成标注视频</label></div></div></div><div class="status-strip mt-3"><div class="pill" id="previewStatus" data-page-i18n="preview.waiting">等待预览</div></div></div>
+                <div class="panel mb-0"><h6 data-page-i18n="stats.title">统计参数</h6><div class="grid-2"><div><label class="form-label" data-page-i18n="stats.interaction">交互半径 (cm)</label><input class="form-control" id="interactionRadius" type="number" min="0.1" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.cup_exclusion">Cup 排除半径 (cm)</label><input class="form-control" id="cupExclusionRadius" type="number" min="0" step="0.1" value="1.5"></div><div><label class="form-label" data-page-i18n="stats.dwell">转换稳定时间 (s)</label><input class="form-control" id="transitionDwell" type="number" min="0" step="0.01" value="0.12"></div><div><label class="form-label" data-page-i18n="stats.move">运动阈值 (cm/s)</label><input class="form-control" id="movementThreshold" type="number" min="0" step="0.1" value="2"></div><div><label class="form-label" data-page-i18n="stats.bin">分箱时长 (s)</label><input class="form-control" id="binSeconds" type="number" min="1" step="1" value="60"></div><div class="d-flex align-items-end"><div class="form-check form-switch"><input class="form-check-input" id="generateVideo" type="checkbox"{% if experiment_defaults.get('generate_video', true) %} checked{% endif %}><label class="form-check-label" for="generateVideo" data-page-i18n="stats.video">生成标注视频</label></div></div></div><div class="status-strip mt-3"><div class="pill" id="previewStatus" data-page-i18n="preview.waiting">等待预览</div></div></div>
             </div>
         </div>
     </div>
@@ -139,14 +139,15 @@ const launchMode = {{ launch_mode | tojson }};
 const currentVideoIndexFromServer = {{ current_video_index | tojson }};
 const batchWorkspaceUrl = {{ batch_workspace_url | tojson }};
 const initialDraftPayload = {{ draft_payload | tojson }};
+const experimentDefaults = {{ experiment_defaults | tojson }};
 const projectContext = {{ (project_context or {}) | tojson }};
 const projectSubjects = {{ (project_subjects or []) | tojson }};
 const isProjectMode = Boolean(projectContext && projectContext.project_id);
 const PAGE_I18N = {
     zh: {
-        'workspace.title':'批量单视频编辑模式',
-        'workspace.note':'保存当前设置后返回批次页面，再统一启动整批分析。',
-        'workspace.back':'返回批次页面',
+        'workspace.title':'逐视频配置模式',
+        'workspace.note':'保存设置后返回分析配置页，再统一开始分析。',
+        'workspace.back':'返回分析配置',
         'header.title':'三箱社交配置',
         'header.subtitle':'支持完整流程视频和单阶段视频；完整流程可设置人工操作空白段。',
         'header.manual':'3CST 使用手册',
@@ -202,7 +203,7 @@ const PAGE_I18N = {
         'btn.back':'返回标定',
         'btn.refresh':'刷新预览',
         'btn.start':'开始 3CST 分析',
-        'btn.save_return':'保存设置并返回批次页面',
+        'btn.save_return':'保存设置并返回分析配置',
         'roi.title':'ROI 列表',
         'roi.hint':'每个 ROI 需要左/中/右三室和左右 cup 点。项目模式下还要绑定小鼠。',
         'project.subject_required':'项目模式下，每个完整 ROI 都必须选择项目中已有小鼠。',
@@ -226,8 +227,8 @@ const PAGE_I18N = {
     },
     en: {
         'workspace.title':'Batch single-video edit mode',
-        'workspace.note':'Save this setup, return to the batch page, then start the whole batch together.',
-        'workspace.back':'Back to Batch Page',
+        'workspace.note':'Save this setup, return to Analysis Configuration, then start when all videos are ready.',
+        'workspace.back':'Back to Analysis Configuration',
         'header.title':'Three-Chamber Social Test Setup',
         'header.subtitle':'Supports full-protocol videos and single-phase videos. Full protocol can include manual-operation gap segments.',
         'header.manual':'3CST Manual',
@@ -283,7 +284,7 @@ const PAGE_I18N = {
         'btn.back':'Back to Calibration',
         'btn.refresh':'Refresh Preview',
         'btn.start':'Start 3CST Analysis',
-        'btn.save_return':'Save Setup and Return to Batch Page',
+        'btn.save_return':'Save Setup and Return to Analysis Configuration',
         'roi.title':'ROI List',
         'roi.hint':'Each ROI needs left, center, and right chambers plus left and right cup points. Project mode also requires animal binding.',
         'project.subject_required':'In project mode, every complete ROI must be linked to a registered animal.',
@@ -325,7 +326,7 @@ function escAttr(value){ return escapeHtml(value).replace(/`/g, '&#96;'); }
 function clone(value){ return JSON.parse(JSON.stringify(value)); }
 function defaultSegments(){ return [{id:'habituation_center',phase:'habituation_center',start_s:0,end_s:300,analyze:true},{id:'gap_1',phase:'ignore',start_s:300,end_s:420,analyze:false},{id:'habituation_all',phase:'habituation_all',start_s:420,end_s:1020,analyze:true},{id:'gap_2',phase:'ignore',start_s:1020,end_s:1140,analyze:false},{id:'sociability',phase:'sociability',start_s:1140,end_s:1740,analyze:true},{id:'gap_3',phase:'ignore',start_s:1740,end_s:1860,analyze:false},{id:'social_novelty',phase:'social_novelty',start_s:1860,end_s:2460,analyze:true}]; }
 function defaultRoles(){ return {habituation_center:{left:'',right:''}, habituation_all:{left:'empty_object',right:'empty_object'}, sociability:{left:'social_stranger_1',right:'empty_object'}, social_novelty:{left:'familiar_stranger_1',right:'novel_stranger_2'}}; }
-function defaultConfig(){ return {analysis_mode:'full_protocol', selected_phase:'sociability', protocol_segments:defaultSegments(), role_schedule:defaultRoles(), bg_method:'threshold', bg_type:'light', gray_threshold:127, erosion_kernel:3, erosion_iter:1, dilation_kernel:5, dilation_iter:2, min_area:120, arena_width_cm:60, arena_height_cm:40, interaction_radius_cm:2, cup_exclusion_radius_cm:1.5, use_head_direction:false, head_angle_threshold_deg:60, head_confidence_threshold:0.35, transition_min_dwell_s:0.12, center_reset_s:0.2, movement_threshold_cm_s:2, bin_seconds:60, rois:[]}; }
+function defaultConfig(){ return {...{analysis_mode:'full_protocol', selected_phase:'sociability', protocol_segments:defaultSegments(), role_schedule:defaultRoles(), bg_method:'threshold', bg_type:'light', gray_threshold:127, erosion_kernel:3, erosion_iter:1, dilation_kernel:5, dilation_iter:2, min_area:120, arena_width_cm:60, arena_height_cm:40, interaction_radius_cm:2, cup_exclusion_radius_cm:1.5, use_head_direction:false, head_angle_threshold_deg:60, head_confidence_threshold:0.35, transition_min_dwell_s:0.12, center_reset_s:0.2, movement_threshold_cm_s:2, bin_seconds:60}, ...experimentDefaults, rois:[]}; }
 function normalizeConfigs(){ const count = Math.max(1, (videoInfoList || []).length); const raw = (initialDraftPayload && Array.isArray(initialDraftPayload.per_video_configs)) ? initialDraftPayload.per_video_configs : []; videoConfigs = Array.from({length:count}, (_, i) => Object.assign(defaultConfig(), clone(raw[i] || {}))); }
 function currentConfig(){ return videoConfigs[currentVideoIdx] || defaultConfig(); }
 function totalFrames(){ const info = videoInfoList[currentVideoIdx] || videoInfo || {}; return Number(info.total_frames || 0); }
@@ -371,9 +372,9 @@ function onFrameChange(value){ currentFrameIdx=Number(value||0); loadFrame(); }
 function onVideoChange(value){ persistCurrent(); currentVideoIdx=Number(value||0); loadCurrent(); loadFrame(); }
 function validateTimeline(){ if(document.getElementById('analysisMode').value !== 'full_protocol') return true; const sorted=clone(protocolSegments).sort((a,b)=>Number(a.start_s)-Number(b.start_s)); for(let i=0;i<sorted.length;i++){ if(Number(sorted[i].end_s)<=Number(sorted[i].start_s)){ alert(lang()==='en'?'A timeline segment ends before its start time.':'时间轴存在结束时间早于起始时间的段。'); return false; } if(i>0 && Number(sorted[i].start_s)<Number(sorted[i-1].end_s)){ alert(lang()==='en'?'Timeline segments overlap.':'时间轴存在重叠段。'); return false; } } const hasAnalyzed = sorted.some(s=>s.phase!=='ignore' && s.analyze); if(!hasAnalyzed) alert(lang()==='en'?'At least one non-gap segment must be analyzed.':'至少需要一个参与统计的非空白段。'); return hasAnalyzed; }
 function buildPayload(){ persistCurrent(); const cfg=Object.assign(defaultConfig(),currentConfig()); cfg.rois=getCompletePayloadRois(true); collectParams(cfg); videoConfigs[currentVideoIdx]=clone(cfg); return Object.assign({},cfg,{generate_video:document.getElementById('generateVideo').checked,per_video_configs:clone(videoConfigs),video:currentVideoIdx}); }
-async function saveDraft(redirect=false){ const body=buildPayload(); body._selected_video_idx=currentVideoIdx; const response=await fetch(`/api/draft/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(data.error||'save failed'); if(redirect&&batchWorkspaceUrl) window.location.href=batchWorkspaceUrl; return data; }
-async function updatePreview(){ if(!validateProjectSubjects() || !validateTimeline()) return; const status=document.getElementById('previewStatus'); status.textContent=lang()==='en'?'Previewing...':'正在预览...'; try{ const response=await fetch(`/api/debug_preview/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'preview failed'); drawImageToCanvas('previewOriginal',data.original); drawImageToCanvas('previewResult',data.result); status.textContent=`${lang()==='en'?'Detections':'检测数'}: ${data.detections||0}`; } catch(err){ status.textContent=err.message; } }
-async function startAnalysis(){ if(!rois.some(isComplete)){ alert(lang()==='en'?'Please complete at least one ROI.':'请至少完成一个 ROI。'); return; } if(!validateProjectSubjects()||!validateTimeline()) return; document.getElementById('loading').style.display='flex'; try{ await saveDraft(false); const response=await fetch(`/api/start_analysis/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(data.error||'start failed'); window.location.href=`/monitor/${sessionId}`; } catch(err){ document.getElementById('loading').style.display='none'; alert(err.message); } }
+async function saveDraft(redirect=false){ const body=buildPayload(); body._selected_video_idx=currentVideoIdx; const response=await fetch(`/api/draft/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(apiErrorText(data,lang()==='en'?'Failed to save current setup':'保存当前设置失败')); if(redirect&&batchWorkspaceUrl) window.location.href=batchWorkspaceUrl; return data; }
+async function updatePreview(){ if(!validateProjectSubjects() || !validateTimeline()) return; const status=document.getElementById('previewStatus'); status.textContent=lang()==='en'?'Previewing...':'正在预览...'; try{ const response=await fetch(`/api/debug_preview/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok) throw new Error(apiErrorText(data,lang()==='en'?'Preview failed':'预览失败')); drawImageToCanvas('previewOriginal',data.original); drawImageToCanvas('previewResult',data.result); status.textContent=`${lang()==='en'?'Detections':'检测数'}: ${data.detections||0}`; } catch(err){ status.textContent=err.message; } }
+async function startAnalysis(){ if(!rois.some(isComplete)){ alert(lang()==='en'?'Please complete at least one ROI.':'请至少完成一个 ROI。'); return; } if(!validateProjectSubjects()||!validateTimeline()) return; document.getElementById('loading').style.display='flex'; try{ await saveDraft(false); const response=await fetch(`/api/start_analysis/${sessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(apiErrorText(data,lang()==='en'?'Failed to start analysis':'启动分析失败')); window.location.href=`/monitor/${sessionId}`; } catch(err){ document.getElementById('loading').style.display='none'; alert(err.message); } }
 function goToStep(step){ if(step===2 && (!rois.some(isComplete)||!validateProjectSubjects()||!validateTimeline())) return; document.querySelectorAll('.step-pane').forEach(p=>p.classList.remove('active')); document.getElementById('step'+step).classList.add('active'); document.querySelectorAll('.step-btn').forEach(b=>b.classList.remove('active')); document.getElementById('stepNav'+step).classList.add('active'); if(step===2) updatePreview(); }
 function applyThreeChamberI18n(){
     if (typeof applyPageI18n === 'function') applyPageI18n(PAGE_I18N);
@@ -381,7 +382,7 @@ function applyThreeChamberI18n(){
     renderTimeline();
     if (Array.isArray(rois)) renderAll();
     const startText = document.querySelector('[data-page-i18n="btn.start"]');
-    if (launchMode === 'workspace' && startText) startText.textContent = tr('btn.save_return', '保存设置并返回批次页面');
+    if (launchMode === 'workspace' && startText) startText.textContent = tr('btn.save_return', '保存设置并返回分析配置');
 }
 document.getElementById('drawCanvas').addEventListener('click', onCanvasClick);
 document.addEventListener('mousescope:langchange', applyThreeChamberI18n);

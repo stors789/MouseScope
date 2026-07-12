@@ -5,19 +5,18 @@
     const LDB_MANUAL = {
         zh: {
             heroEyebrow: 'Light-Dark Box / LDB',
-            heroTitle: '明暗箱完整操作手册',
+            heroTitle: '明暗箱实验',
             heroSubtitle: '本手册覆盖明室 / 暗室 / 可选门缝忽略带、暗箱不可见模式、检测遮罩、开门延迟、转换稳定规则、核心结果字段，以及批量模式下每个视频的独立配置方式。',
-            heroChips: ['明室 + 暗室手动画区', '暗箱不可见模式', '首次入明室潜伏期', '转换次数', '辅助运动学可选'],
             heroCards: [
                 ['fas fa-lightbulb', '模块真正统计什么', 'LDB 用小鼠在明亮区域和暗区之间的探索冲突来量化行为。MouseScope 的核心统计是明室时间、暗室时间、明室进入次数、两室转换和首次进入明室潜伏期。'],
-                ['fas fa-door-open', '门区现在怎么用', '门区不是必须的防抖条件。转换防抖主要由稳定停留时间完成；门区更适合在门口黑线、门缝或硬边缘被误检时，作为窄的忽略带。'],
+                ['fas fa-door-open', '门区的用途', '门区是可选的窄排除带，适合圈住容易被误检的门口黑线、门缝或硬边缘。转换防抖主要由稳定停留时间控制，不依赖门区。'],
                 ['fas fa-check-double', '最重要的质控点', '正式统计前要看结果视频里的 zone 标签和 transition_event。明室 / 暗室边界、检测率、开门延迟和门缝误检都会直接影响核心指标。距离和速度只作为辅助 QC。'],
             ],
-            flow: ['视频采集要求', '上传与时间范围', '明暗室画区', '调参与预览', '结果字段复核', '批量分析'],
+            flow: ['视频采集要求', '导入与分析配置', '明暗室画区', '调参与预览', '结果字段复核', '批量分析'],
             nav: [
                 ['overview', '总览'],
                 ['recording', '采集要求'],
-                ['upload', '上传与时间范围'],
+                ['upload', '导入与分析配置'],
                 ['calibration', '画区 / 遮罩 / 时间窗'],
                 ['params', '参数字典'],
                 ['outputs', '结果字典'],
@@ -75,10 +74,10 @@
                     ]
                 },
                 upload: {
-                    title: '上传与时间范围',
-                    lead: '上传页定义视频、默认统计时间、FPS 覆盖和输出目录。之后每个 ROI 还可以保存自己的时间窗配置。',
+                    title: '导入与分析配置',
+                    lead: '导入页选择实验和视频；分析配置页逐视频设置外层统计时间、FPS、方向和输出目录。每个 ROI 还可以保存自己的时间窗。',
                     points: [
-                        '上传页的全局开始 / 结束时间是默认统计窗口；ROI 若使用 <code>global</code> 模式，会直接沿用这里的时间范围。',
+                        '分析配置页的视频开始 / 结束时间是外层统计窗口；ROI 若使用 <code>global</code> 模式，会直接沿用对应视频的范围。',
                         '如果视频 FPS 元数据不可靠，建议手动覆盖 FPS，因为距离、速度、稳定停留时间和潜伏期都依赖时间轴。',
                         '批量分析时，每个视频可以独立保存 ROI、遮罩、时间窗和调参参数。'
                     ],
@@ -88,7 +87,7 @@
                 },
                 calibration: {
                     title: '画区、检测遮罩与时间窗',
-                    lead: '暗箱可见时，每个 ROI 至少包含明室 light 和暗室 dark 两个多边形。doorway 门区可选；默认检测使用 light + dark，并会避开已画 doorway，适合排除门缝黑线误检。暗箱不可见时需要画 light 明室，doorway 仍可选，用来把门口探头和门缝像素排除出检测。',
+                    lead: '暗箱可见时，每个 ROI 至少包含明室 light 和暗室 dark 两个多边形。doorway 门区可选；默认检测使用 light + dark，并会避开已画 doorway，适合排除门缝黑线误检。暗箱不可见时需要画 light 明室，也可用 doorway 排除门口探头和门缝像素。',
                     blocks: [
                         {
                             title: '明室和暗室',
@@ -130,7 +129,7 @@
                     timeTable: {
                         headers: ['模式', '含义', '推荐场景'],
                         rows: [
-                            ['<code>global</code>', '跟随上传页全局开始 / 结束时间。', '同一视频内所有箱体使用统一实验时长。'],
+                            ['<code>global</code>', '跟随分析配置页中对应视频的开始 / 结束时间。', '同一视频内所有箱体使用统一实验时长。'],
                             ['<code>precise</code>', '按视频绝对时间设置 ROI 自己的开始 / 结束秒数。', '只分析固定片段，或不同 ROI 需要不同统计窗口。'],
                             ['<code>relative</code>', '按该 ROI 首次检测到鼠体后的相对时间计算。', '配置数据支持该模式；适合以首次出现为对齐点的特殊视频。']
                         ]
@@ -233,7 +232,7 @@
                     title: '批量流程',
                     lead: 'LDB 批量模式是每个视频独立配置，然后统一运行。不要只配置第一个视频就直接整批开始。',
                     steps: [
-                        '上传多个 LDB 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '导入多个 LDB 视频，在分析配置页逐视频设置时间范围、FPS、方向和输出目录。',
                         '逐个打开视频卡片，确认该视频的明室、暗室、可选门区和检测遮罩；如果需要导出距离 / 速度，再确认可选底面尺度。',
                         '为每个 ROI 命名，并设置需要的时间模式或精确时间窗。',
                         '在调参与预览中检查两室检测是否稳定，尤其关注暗室和门口。',
@@ -266,12 +265,11 @@
         },
         en: {
             heroEyebrow: 'Light-Dark Box / LDB',
-            heroTitle: 'Complete Light-Dark Box Manual',
+            heroTitle: 'Light-Dark Box',
             heroSubtitle: 'This manual covers light / dark / optional doorway drawing, visible or invisible dark boxes, chamber dimensions, shared-edge length, transition stability, core result fields, and batch setup.',
-            heroChips: ['Manual light + dark zones', 'Optional doorway', 'First-light latency', 'Transition count', 'Optional locomotion QC'],
             heroCards: [
                 ['fas fa-lightbulb', 'What the module quantifies', 'LDB measures how the mouse distributes time between the bright and dark compartments. The core MouseScope metrics are light time, dark time, light entries, chamber transitions, and first-light latency.'],
-                ['fas fa-door-open', 'How doorway is used now', 'Doorway is an optional ignore band excluded from detection. It helps with dark seams in visible-dark videos and prevents head peeks at the passage from becoming premature light entries in invisible-dark videos.'],
+                ['fas fa-door-open', 'Doorway purpose', 'Doorway is an optional narrow ignore band for dark seams, passage edges, or other hard boundaries that may be falsely detected. Transition debounce is controlled primarily by stable dwell time.'],
                 ['fas fa-check-double', 'Most important QC check', 'Before using the numbers, inspect zone labels and transition_event in the annotated video. Zone boundaries, detection rate, door delay, and door-seam false positives affect core metrics. Distance and speed are auxiliary QC fields.']
             ],
             flow: ['Recording', 'Upload and timing', 'Zone drawing', 'Preview and tuning', 'Review outputs', 'Batch analysis'],
@@ -337,7 +335,7 @@
                 },
                 upload: {
                     title: 'Upload and Timing',
-                    lead: 'The upload page defines the video set, default analysis window, FPS override, and output folder. Each ROI can then keep its own time-window configuration.',
+                    lead: 'Import selects the assay and videos. Analysis Configuration sets the outer window, FPS, orientation, and output folder per video; each ROI can then narrow its own window.',
                     points: [
                         'The global start and end times define the default analysis window. ROIs using <code>global</code> inherit that range.',
                         'Override FPS when metadata is unreliable, because timing windows, dwell rules, latency, and auxiliary speed all depend on the time base.',
@@ -497,7 +495,7 @@
                         'Open each video card and confirm the light zone, dark zone, optional doorway, and detection mask. If distance / speed exports are needed, also confirm the optional floor scale.',
                         'Name each ROI and set any precise time window needed.',
                         'Tune detection and preview both compartments, especially the dark chamber and dark passage seams.',
-                        'Save the current video setup and return to the batch page before moving to the next video.',
+                        'Save the video setup and return to Analysis Configuration before moving to the next video.',
                         'Start batch analysis only after all video cards are complete.'
                     ],
                     rules: [
@@ -587,9 +585,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

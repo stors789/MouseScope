@@ -375,6 +375,78 @@ small.text-muted,
     flex-wrap: wrap;
 }
 
+.settings-page-hero {
+    align-items: flex-start;
+}
+
+.settings-page-hero .app-page-title-group {
+    flex: 1 1 560px;
+    align-items: center;
+    min-height: 130px;
+}
+
+.settings-page-hero .app-page-actions {
+    margin-top: 0.05rem;
+}
+
+.settings-page-hero .app-page-icon {
+    margin-top: 0;
+}
+
+.settings-kicker {
+    margin-bottom: 0.32rem;
+    color: var(--primary-color);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.settings-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem !important;
+    padding: 0.35rem;
+    border: 1px solid rgba(166, 110, 74, 0.18);
+    border-radius: 18px;
+    background: rgba(255, 250, 245, 0.82);
+    box-shadow: 0 10px 24px rgba(105, 72, 47, 0.07);
+}
+
+.settings-tabs .nav-link {
+    border: 1px solid transparent;
+    border-radius: 13px;
+    color: #765842;
+    font-weight: 800;
+    padding: 0.55rem 0.85rem;
+    transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.settings-tabs .nav-link:hover {
+    color: #70452f;
+    background: rgba(178, 104, 68, 0.1);
+}
+
+.settings-tabs .nav-link.active,
+.settings-tabs .show > .nav-link {
+    border-color: rgba(137, 76, 48, 0.26);
+    background: linear-gradient(135deg, #b86c48, #945238);
+    color: #fffaf6;
+    box-shadow: 0 7px 16px rgba(128, 75, 46, 0.2);
+}
+
+.settings-tabs-in-hero {
+    width: 100%;
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    margin-top: 0.05rem;
+    padding: 0.78rem 0 0;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
 .app-surface {
     background: var(--bg-card);
     border: 1px solid var(--border-card);
@@ -754,6 +826,16 @@ body .status-pill {
     .app-page-actions {
         width: 100%;
         justify-content: flex-start;
+    }
+    .settings-page-hero .app-page-title-group {
+        min-height: 0;
+    }
+    .settings-tabs-in-hero {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    .settings-tabs-in-hero .nav-link {
+        white-space: nowrap;
     }
     .stat-value {
         font-size: 1.25rem !important;

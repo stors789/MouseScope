@@ -3,7 +3,7 @@
 
 {% block extra_css %}
 <style>
-.visual-style-shell { max-width: 1480px; margin: 0 auto; }
+.visual-style-shell { max-width: 1440px; margin: 0 auto; }
 .style-actions { display:flex; gap:.55rem; flex-wrap:wrap; }
 .style-layout { display:grid; grid-template-columns:minmax(360px, 500px) minmax(0, 1fr); gap:1rem; align-items:start; }
 .settings-panel,
@@ -139,10 +139,11 @@
 
 {% block content %}
 <div class="visual-style-shell" data-tour-page="visual-style">
-    <section class="app-page-hero" data-tour-id="visual-style-overview">
+    <section class="app-page-hero settings-page-hero" data-tour-id="visual-style-overview">
         <div class="app-page-title-group">
             <span class="app-page-icon" aria-hidden="true"><i class="fas fa-palette"></i></span>
             <div>
+                <div class="settings-kicker" data-i18n="nav.global_settings">全局设置</div>
                 <h1 class="app-page-title" data-i18n="visual_style.title">图像样式</h1>
                 <p class="app-page-subtitle" data-i18n="visual_style.subtitle">统一设置后续实验导出的轨迹图、热力图和图例颜色。</p>
             </div>
@@ -155,6 +156,10 @@
                 <i class="fas fa-rotate-left me-2"></i><span data-i18n="visual_style.action.reset">恢复默认</span>
             </button>
         </div>
+        <nav class="nav nav-pills settings-tabs settings-tabs-in-hero" aria-label="Global settings" data-tour-id="global-settings-tabs">
+            <a class="nav-link active" href="{{ url_for('visual_style_page') }}"><i class="fas fa-palette me-2"></i><span data-i18n="settings.tab.visual_style">图像样式</span></a>
+            <a class="nav-link" href="{{ url_for('experiment_defaults_page') }}"><i class="fas fa-sliders me-2"></i><span data-i18n="settings.tab.experiment_defaults">实验默认配置</span></a>
+        </nav>
     </section>
 
     <div id="styleStatus" class="alert" role="status"></div>
@@ -659,10 +664,11 @@
     document.addEventListener('DOMContentLoaded', loadStyle);
 
     MouseScopeTour.register('visual-style', {
-        version: 'v1',
+        version: 'v2',
         autoStart: false,
         steps: [
             {target: '[data-tour-id="visual-style-overview"]', titleKey: 'tour.visual_style.overview.title', bodyKey: 'tour.visual_style.overview.body'},
+            {target: '[data-tour-id="global-settings-tabs"]', titleKey: 'tour.global_settings.tabs.title', bodyKey: 'tour.global_settings.tabs.body'},
             {target: '[data-tour-id="visual-style-experiment"]', titleKey: 'tour.visual_style.experiment.title', bodyKey: 'tour.visual_style.experiment.body'},
             {target: '[data-tour-id="visual-style-track"]', titleKey: 'tour.visual_style.track.title', bodyKey: 'tour.visual_style.track.body'},
             {target: '[data-tour-id="visual-style-grid"]', titleKey: 'tour.visual_style.grid.title', bodyKey: 'tour.visual_style.grid.body'},

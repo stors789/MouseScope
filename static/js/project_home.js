@@ -5,6 +5,7 @@ let projectState = {project: {}, groups: [], subjects: [], videos: [], assignmen
 let uploadedProjectFiles = [];
 let projectVideoUploading = false;
 let projectRefreshTimer = null;
+let projectAnalysisStarting = false;
 
 function currentLang() {
     return typeof getLang === 'function' ? getLang() : (localStorage.getItem('mousescope_lang') || 'zh');
@@ -79,7 +80,7 @@ function uploadProjectVideoFiles(files) {
     fetch('/api/upload_files', {method: 'POST', body: formData})
         .then(r => r.json().then(data => ({ok: r.ok, data})))
         .then(({ok, data}) => {
-            if (!ok || !data.success) throw new Error(data.error || tr('project.videos.upload_failed', '视频上传失败'));
+            if (!ok || !data.success) throw new Error(apiErrorText(data, tr('project.videos.upload_failed', '视频上传失败')));
             const paths = data.paths || [];
             const names = data.names || [];
             paths.forEach((path, index) => {
@@ -94,7 +95,7 @@ function uploadProjectVideoFiles(files) {
 
 function api(path, options = {}) {
     return fetch(path, options).then(r => r.json()).then(data => {
-        if (!data.success) throw new Error(data.error || tr('project.error.default', '操作失败'));
+        if (!data.success) throw new Error(apiErrorText(data, tr('project.error.default', '操作失败')));
         return data;
     });
 }
@@ -509,7 +510,7 @@ function setVideoExperiment(videoId, experimentType) {
     }).then(loadProject).catch(error => alertBox(error.message || String(error), 'danger'));
 }
 
-function startSelectedAssignments() {
+async function startSelectedAssignments() {
     const selected = selectedAssignmentItems();
     const ids = selected.map(item => item.assignment_id);
     if (!ids.length) { alert(tr('project.select_assignments', '请先选择要分析的视频实验记录。')); return; }
@@ -518,13 +519,27 @@ function startSelectedAssignments() {
         alert(tr('project.analysis.mixed_types', '一次项目分析只能选择同一种实验类型，请取消多余记录后再开始。'));
         return;
     }
-    api(`/api/projects/${encodeURIComponent(projectId)}/analysis/start`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({assignment_ids: ids})
-    }).then(data => {
+    if (projectAnalysisStarting) return;
+    projectAnalysisStarting = true;
+    const button = document.getElementById('projectStartAnalysisBtn');
+    if (button) button.disabled = true;
+    let navigationStarted = false;
+    try {
+        const data = await api(`/api/projects/${encodeURIComponent(projectId)}/analysis/start`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({assignment_ids: ids})
+        });
+        navigationStarted = true;
         window.location.href = data.redirect_url;
-    }).catch(error => alert(error.message || String(error)));
+    } catch (error) {
+        alert(error.message || String(error));
+    } finally {
+        if (!navigationStarted) {
+            projectAnalysisStarting = false;
+            if (button) button.disabled = false;
+        }
+    }
 }
 
 document.getElementById('groupForm').addEventListener('submit', event => {

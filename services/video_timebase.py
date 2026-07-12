@@ -310,6 +310,17 @@ class VideoTimebase:
         idx = int(np.searchsorted(self.times, float(seconds), side="right")) - 1
         return max(0, min(idx, self.times.size - 1))
 
+    def frame_before(self, seconds: float | int | None) -> int:
+        """Return the last frame strictly before an exclusive end time."""
+        if self.times.size == 0:
+            if seconds is None:
+                return 0
+            return max(0, int(np.ceil(float(seconds) * self.fallback_fps)) - 1)
+        if seconds is None:
+            return self.times.size - 1
+        idx = int(np.searchsorted(self.times, float(seconds), side="left")) - 1
+        return max(0, min(idx, self.times.size - 1))
+
     def summary(self) -> dict[str, float | int | str]:
         if self.times.size <= 1:
             return {
@@ -323,13 +334,14 @@ class VideoTimebase:
         diffs = np.diff(self.times)
         positive = diffs[diffs > 0]
         median_dt = float(np.median(positive)) if positive.size else self.nominal_dt
+        long_gap_count = 0 if self.source == "uniform" else int(np.sum(positive > 0.050))
         return {
             "source": self.source,
             "frame_count": int(self.times.size),
             "pts_frame_count": int(self.pts_frame_count),
             "median_dt": median_dt,
             "max_dt": float(np.max(positive)) if positive.size else median_dt,
-            "long_gap_gt_50ms": int(np.sum(positive > 0.050)),
+            "long_gap_gt_50ms": long_gap_count,
         }
 
 

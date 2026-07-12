@@ -447,6 +447,17 @@ function statusLabel(status) {
     return labels[status] || status || t('tasks.status.unknown', '未知');
 }
 
+function reproducibilityLabel(status) {
+    const labels = {
+        consistent: t('tasks.repro.consistent', '复现一致'),
+        different: t('tasks.repro.different', '复现结果有差异'),
+        reference_unavailable: t('tasks.repro.reference_unavailable', '原结果摘要不可用'),
+        no_comparable_results: t('tasks.repro.no_results', '没有可比较的统计文件'),
+        report_unreadable: t('tasks.repro.report_unreadable', '复现报告无法读取')
+    };
+    return labels[status] || '';
+}
+
 function formatTime(value) {
     const n = Number(value || 0);
     if (!n) return t('tasks.time.none', '未记录');
@@ -524,6 +535,9 @@ function actionButton(task, kind) {
     if (kind === 'stop' && task.stop_url) {
         return `<button class="btn btn-danger btn-sm" data-stop-url="${task.stop_url}" title="${t('tasks.action.stop', '停止')}"><i class="fas fa-stop me-1"></i>${t('tasks.action.stop', '停止')}</button>`;
     }
+    if (kind === 'replay' && task.replay_url) {
+        return `<button class="btn btn-outline-primary btn-sm" data-replay-url="${task.replay_url}" title="${t('tasks.action.replay', '按原配置重跑')}"><i class="fas fa-rotate-right me-1"></i>${t('tasks.action.replay', '按原配置重跑')}</button>`;
+    }
     if (kind === 'download' && task.download_all_url) {
         return `<a class="btn btn-outline-primary btn-sm" href="${task.download_all_url}" title="${t('tasks.action.download', '下载')}"><i class="fas fa-file-archive me-1"></i>${t('tasks.action.download', '下载')}</a>`;
     }
@@ -570,10 +584,16 @@ function renderTask(task) {
         actionButton(task, 'monitor'),
         actionButton(task, 'configure'),
         actionButton(task, 'stop'),
+        actionButton(task, 'replay'),
         actionButton(task, 'folder'),
         actionButton(task, 'download'),
         actionButton(task, 'delete')
     ].filter(Boolean).join('');
+    const reproStatus = String(task.reproducibility_status || '').toLowerCase();
+    const reproText = reproducibilityLabel(reproStatus);
+    const reproClass = reproStatus === 'consistent'
+        ? 'bg-success'
+        : (reproStatus === 'different' || reproStatus === 'report_unreadable' ? 'bg-danger' : 'bg-warning text-dark');
 
     return `
         <article class="task-card status-${escapeHtml(status)} ${selected ? 'is-selected' : ''}">
@@ -586,6 +606,7 @@ function renderTask(task) {
                     ${projectScoped && task.project_name ? `<span class="badge bg-light text-dark">${escapeHtml(t('tasks.meta.project', '项目'))}: ${escapeHtml(task.project_name)}</span>` : ''}
                     <span class="badge bg-light text-dark">${escapeHtml(task.experiment_short_label || task.experiment_type || '')}</span>
                     <span class="badge bg-light text-dark">${escapeHtml(batchText)}</span>
+                    ${reproText ? `<span class="badge ${reproClass}"><i class="fas fa-flask-vial me-1"></i>${escapeHtml(reproText)}</span>` : ''}
                     ${moreCount ? `<span class="badge bg-light text-dark">+${moreCount}</span>` : ''}
                 </div>
                 <h2 class="task-title">${escapeHtml(taskTitle)}</h2>
@@ -665,7 +686,7 @@ function loadTasks() {
     fetch(`/api/tasks${suffix ? '?' + suffix : ''}`, { signal: taskAbort.signal })
         .then(r => r.json())
         .then(data => {
-            if (!data.success) throw new Error(data.error || 'failed');
+            if (!data.success) throw new Error(apiErrorText(data, t('tasks.alert.load_failed', '任务读取失败')));
             updateCounts(data.counts || {});
             const tasks = data.tasks || [];
             currentTasks = tasks;
@@ -722,7 +743,7 @@ function bulkDeleteSelectedTasks() {
     })
         .then(r => r.json().then(data => ({ ok: r.ok, data })))
         .then(({ ok, data }) => {
-            if (!ok || !data.success) throw new Error(data.error || t('tasks.alert.bulk_delete_failed', '批量删除失败'));
+            if (!ok || !data.success) throw new Error(apiErrorText(data, t('tasks.alert.bulk_delete_failed', '批量删除失败')));
             selectedTaskIds.clear();
             const skipped = Number(data.skipped_count || 0);
             if (skipped > 0) {
@@ -734,6 +755,34 @@ function bulkDeleteSelectedTasks() {
 }
 
 document.addEventListener('click', function(event) {
+    const replayBtn = event.target.closest('[data-replay-url]');
+    if (replayBtn) {
+        if (!window.confirm(t('tasks.confirm.replay', '将校验原视频并使用运行时最终配置创建一个新任务，原结果不会被覆盖。是否继续？'))) return;
+        const replayUrl = replayBtn.getAttribute('data-replay-url');
+        replayBtn.disabled = true;
+        replayBtn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>${escapeHtml(t('tasks.action.replay_starting', '正在重建'))}`;
+        fetch(replayUrl, { method: 'POST' })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || !data.success) throw new Error(apiErrorText(data, t('tasks.alert.replay_failed', '无法按原配置重跑')));
+                return fetch(data.start_url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ use_saved_draft: true })
+                }).then(r => r.json().then(startData => ({ ok: r.ok, startData, monitorUrl: data.monitor_url })));
+            })
+            .then(({ ok, startData, monitorUrl }) => {
+                if (!ok || !startData.success) throw new Error(apiErrorText(startData, t('tasks.alert.replay_failed', '无法按原配置重跑')));
+                window.location.href = monitorUrl;
+            })
+            .catch(err => {
+                replayBtn.disabled = false;
+                replayBtn.innerHTML = `<i class="fas fa-rotate-right me-1"></i>${escapeHtml(t('tasks.action.replay', '按原配置重跑'))}`;
+                alert(err.message || t('tasks.alert.replay_failed', '无法按原配置重跑'));
+                loadTasks();
+            });
+        return;
+    }
     const stopBtn = event.target.closest('[data-stop-url]');
     if (stopBtn) {
         fetch(stopBtn.getAttribute('data-stop-url'), { method: 'POST' })
@@ -744,7 +793,7 @@ document.addEventListener('click', function(event) {
     if (folderBtn) {
         fetch(folderBtn.getAttribute('data-open-url'), { method: 'POST' })
             .then(r => r.json())
-            .then(data => { if (!data.success) alert(data.error || t('tasks.alert.folder_failed', '打开目录失败')); });
+            .then(data => { if (!data.success) alert(apiErrorText(data, t('tasks.alert.folder_failed', '打开目录失败'))); });
         return;
     }
     const deleteBtn = event.target.closest('[data-delete-url]');
@@ -753,7 +802,7 @@ document.addEventListener('click', function(event) {
         fetch(deleteBtn.getAttribute('data-delete-url'), { method: 'DELETE' })
             .then(r => r.json().then(data => ({ ok: r.ok, data })))
             .then(({ ok, data }) => {
-                if (!ok || !data.success) throw new Error(data.error || t('tasks.alert.delete_failed', '删除记录失败'));
+                if (!ok || !data.success) throw new Error(apiErrorText(data, t('tasks.alert.delete_failed', '删除记录失败')));
                 loadTasks();
             })
             .catch(err => alert(err.message || t('tasks.alert.delete_failed', '删除记录失败')));

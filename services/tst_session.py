@@ -2,6 +2,7 @@ import math
 
 from services.analysis_runtime import *
 from services.video_timebase import build_video_timebase
+from services.resource_policy import video_queue_capacity
 from tst_legacy import TSTLegacyMouseTracker, TSTLegacyOpticalFlowAnalyzer
 from tst_lis import TSTLISConfig, TSTLISFeatureTracker, apply_tst_lis_labels
 
@@ -379,7 +380,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
             except Exception:
                 continue
 
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"Unable to reopen video for optimized TST rendering: {video_path}")
             return False
@@ -500,7 +501,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         final_output_path = f"{output_info['final_base']}_analyzed.mp4"
         generate_video = bool(vision_config.get('generate_video', True))
 
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"❌ 无法打开视频: {video_path}")
             raise RuntimeError(f"Unable to open video: {video_path}")
@@ -517,7 +518,13 @@ class VisionAnalysisSession(AnalysisSessionBase):
         else:
             self._log(f"视频信息: {width}x{height}, {fps:.1f}fps, {total_frames}帧")
 
-        timebase = build_video_timebase(video_path, fps=fps, total_frames=total_frames, logger=self._log)
+        timebase = build_video_timebase(
+            video_path,
+            fps=fps,
+            total_frames=total_frames,
+            prefer_pts=not bool(fps_override),
+            logger=self._log,
+        )
         if total_frames <= 0 and timebase.frame_count > 0:
             total_frames = timebase.frame_count
         timebase_summary = timebase.summary()
@@ -546,7 +553,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
         start_frame = timebase.frame_at_or_after(float(start_sec)) if start_sec is not None else 0
-        end_frame = timebase.frame_at_or_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
+        end_frame = timebase.frame_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
         start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
         end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
         if end_frame < start_frame:
@@ -564,7 +571,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
             raise ValueError("No valid ROI configuration.")
 
         if bool(vision_config.get('auto_behavior_threshold', False)):
-            self._log("新算法使用按 ROI 自适应阈值；原本逻辑的自动阈值扫描已跳过。")
+            self._log("微小挣扎优化算法使用按 ROI 自适应阈值；经典行为算法的自动阈值设置不参与计算。")
         processors = self._build_processors(video_path, vision_config, sampling)
         trackers = self._build_tst_lis_trackers(
             roi_configs,
@@ -685,7 +692,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         self._set_tst_lis_realtime_from_logs(logs)
         for roi_id, thresholds in thresholds_by_roi.items():
             self._log(
-                f"ROI {roi_id} 新算法阈值: "
+                f"ROI {roi_id} 微小挣扎优化算法阈值: "
                 f"residual {thresholds.get('residual_low', 0):.4f}/{thresholds.get('residual_high', 0):.4f}, "
                 f"peripheral high {thresholds.get('peripheral_high', 0):.4f}, "
                 f"shape high {thresholds.get('shape_high', 0):.4f}"
@@ -836,7 +843,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         generate_video = vision_config.get('generate_video', True)
 
         # 打开视频
-        cap = cv2.VideoCapture(video_path)
+        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
         if not cap.isOpened():
             self._log(f"❌ 无法打开视频: {video_path}")
             raise RuntimeError(f"Unable to open video: {video_path}")
@@ -854,7 +861,13 @@ class VisionAnalysisSession(AnalysisSessionBase):
         else:
             self._log(f"视频信息: {width}x{height}, {fps:.1f}fps, {total_frames}帧")
 
-        timebase = build_video_timebase(video_path, fps=fps, total_frames=total_frames, logger=self._log)
+        timebase = build_video_timebase(
+            video_path,
+            fps=fps,
+            total_frames=total_frames,
+            prefer_pts=not bool(fps_override),
+            logger=self._log,
+        )
         if total_frames <= 0 and timebase.frame_count > 0:
             total_frames = timebase.frame_count
         timebase_summary = timebase.summary()
@@ -901,7 +914,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
         start_frame = timebase.frame_at_or_after(float(start_sec)) if start_sec is not None else 0
-        end_frame = timebase.frame_at_or_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
+        end_frame = timebase.frame_before(float(end_sec)) if end_sec is not None else (total_frames - 1)
         start_frame = max(0, min(start_frame, max(total_frames - 1, 0)))
         end_frame = max(0, min(end_frame, max(total_frames - 1, 0)))
         if end_frame < start_frame:
@@ -943,7 +956,7 @@ class VisionAnalysisSession(AnalysisSessionBase):
                     writer.release()
                 return
             cap.release()
-            cap = cv2.VideoCapture(video_path)
+            cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
             if not cap.isOpened():
                 self._log(f"Unable to reopen video after threshold scan: {video_path}")
                 if writer is not None:
@@ -975,7 +988,9 @@ class VisionAnalysisSession(AnalysisSessionBase):
 
         # 异步视频写入（独立线程，避免编码阻塞分析）
         from queue import Queue
-        write_queue = Queue(maxsize=120)  # 最多缓存120帧
+        write_queue_capacity = video_queue_capacity(width, height, requested=120)
+        write_queue = Queue(maxsize=write_queue_capacity)
+        self._log(f"TST video writer queue: {write_queue_capacity} frames")
         write_done = threading.Event()
 
         def _video_writer_thread():

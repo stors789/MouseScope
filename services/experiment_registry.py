@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from services.analysis_windows import effective_video_duration_seconds, optional_finite_float
+
 
 def _points_count(points) -> int:
     return len(points or [])
@@ -493,6 +495,9 @@ def summarize_batch_state(
     cards: list[dict[str, Any]] = []
     for idx, info in enumerate(video_infos):
         config = per_video_configs[idx] if idx < len(per_video_configs) else {}
+        fps_override = optional_finite_float(config.get("fps_override"))
+        effective_fps = fps_override or optional_finite_float(info.get("fps")) or optional_finite_float(info.get("detected_fps"))
+        effective_duration = effective_video_duration_seconds(info, fps_override)
         complete, missing_items = spec.validator(config)
         subject_missing = _project_subject_binding_missing(config, valid_subject_ids)
         if subject_missing:
@@ -503,11 +508,25 @@ def summarize_batch_state(
                 "index": idx,
                 "name": info.get("original_name") or f"Video {idx + 1}",
                 "video_info": {
-                    "fps": info.get("fps"),
+                    "fps": effective_fps,
+                    "detected_fps": info.get("detected_fps"),
                     "width": info.get("width"),
                     "height": info.get("height"),
                     "total_frames": info.get("total_frames"),
+                    "duration_seconds": effective_duration,
+                    "detected_duration_seconds": info.get("duration_seconds"),
+                    "orientation_degrees": info.get("orientation_degrees", 0),
+                    "orientation_source": info.get("orientation_source", "none"),
+                    "metadata_orientation_degrees": info.get("metadata_orientation_degrees", info.get("orientation_degrees", 0)),
                 },
+                "settings": {
+                    "start_sec": config.get("start_sec"),
+                    "end_sec": config.get("end_sec"),
+                    "fps_override": config.get("fps_override"),
+                    "orientation_override": config.get("orientation_override"),
+                    "detected_orientation_degrees": info.get("metadata_orientation_degrees", info.get("orientation_degrees", 0)),
+                },
+                "has_existing_calibration": bool(config.get("rois")),
                 "complete": bool(complete),
                 "missing_items": missing_items,
             }

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any
+
+from services.video_orientation import orientation_override_degrees
+from services.experiment_defaults import merge_experiment_defaults
 
 
 def _base_session_fields(sess: dict[str, Any]) -> dict[str, Any]:
@@ -18,8 +22,35 @@ def _iter_video_configs(sess: dict[str, Any], data: dict[str, Any], builder) -> 
     raw_per_video_configs = data.get("per_video_configs", []) if isinstance(data, dict) else []
     for idx, _ in enumerate(sess.get("video_infos", [])):
         raw_cfg = raw_per_video_configs[idx] if idx < len(raw_per_video_configs) and isinstance(raw_per_video_configs[idx], dict) else {}
-        per_video_configs.append(builder(raw_cfg))
+        config = builder(raw_cfg)
+        runtime_keys = {"start_sec", "end_sec", "fps_override", "orientation_override"}
+        if any(key in raw_cfg for key in runtime_keys):
+            config.update(_per_video_runtime_settings(raw_cfg))
+        per_video_configs.append(config)
     return per_video_configs
+
+
+def _optional_finite_float(value: Any) -> float | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _per_video_runtime_settings(raw_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Keep batch-only timing/FPS/orientation overrides across all assays."""
+    start_sec = _optional_finite_float(raw_cfg.get("start_sec"))
+    end_sec = _optional_finite_float(raw_cfg.get("end_sec"))
+    fps_override = _optional_finite_float(raw_cfg.get("fps_override"))
+    return {
+        "start_sec": max(0.0, start_sec) if start_sec is not None else None,
+        "end_sec": max(0.0, end_sec) if end_sec is not None else None,
+        "fps_override": fps_override if fps_override and 0.001 <= fps_override <= 1000.0 else None,
+        "orientation_override": orientation_override_degrees(raw_cfg.get("orientation_override")),
+    }
 
 
 def _coerce_bool(value: Any, default: bool = True) -> bool:
@@ -579,9 +610,13 @@ def build_three_chamber_config(sess: dict[str, Any], data: dict[str, Any]) -> di
 
 def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     def _resolve_lis_primary(raw_cfg: dict[str, Any], default: bool = True) -> bool:
+        if "use_tst_lis_primary" in raw_cfg:
+            return bool(raw_cfg.get("use_tst_lis_primary"))
+        if "enable_tst_lis" in raw_cfg:
+            return bool(raw_cfg.get("enable_tst_lis"))
         if "use_tst_legacy_primary" in raw_cfg:
             return not bool(raw_cfg.get("use_tst_legacy_primary", False))
-        return bool(raw_cfg.get("use_tst_lis_primary", default))
+        return bool(default)
 
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
@@ -591,6 +626,7 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
     default_dilation_kernel = int(data.get("dilation_kernel", 5))
     default_dilation_iter = int(data.get("dilation_iter", 3))
     default_min_area = int(data.get("min_area", 100))
+    default_max_area = int(data.get("max_area", 50000))
     default_behavior_threshold_sensitivity = float(data.get("behavior_threshold_sensitivity", 0.0))
     default_use_tst_lis_primary = _resolve_lis_primary(data, False)
     default_use_tst_legacy_primary = not default_use_tst_lis_primary
@@ -615,6 +651,7 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
             "dilation_kernel": int(raw_cfg.get("dilation_kernel", default_dilation_kernel)),
             "dilation_iter": int(raw_cfg.get("dilation_iter", default_dilation_iter)),
             "min_area": int(raw_cfg.get("min_area", default_min_area)),
+            "max_area": int(raw_cfg.get("max_area", default_max_area)),
             "auto_behavior_threshold": auto_behavior_threshold,
             "behavior_threshold_sensitivity": float(raw_cfg.get("behavior_threshold_sensitivity", default_behavior_threshold_sensitivity)),
             "use_tst_lis_primary": use_tst_lis_primary,
@@ -639,6 +676,7 @@ def build_tst_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, An
         "dilation_kernel": default_dilation_kernel,
         "dilation_iter": default_dilation_iter,
         "min_area": default_min_area,
+        "max_area": default_max_area,
         "auto_behavior_threshold": default_auto_behavior_threshold,
         "behavior_threshold_sensitivity": default_behavior_threshold_sensitivity,
         "use_tst_lis_primary": default_use_tst_lis_primary,
@@ -845,8 +883,14 @@ def build_water_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[
     }
 
 
-def build_analysis_config(experiment_type: str | None, sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+def build_analysis_config(
+    experiment_type: str | None,
+    sess: dict[str, Any],
+    data: dict[str, Any],
+    global_defaults: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     exp = str(experiment_type or "").strip().lower()
+    data = merge_experiment_defaults(exp, data, global_defaults)
     if exp == "open_field":
         return build_open_field_config(sess, data)
     if exp == "novel_object":

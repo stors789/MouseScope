@@ -3,15 +3,8 @@
         <div class="manual-hero-top">
             <div>
                 <div class="manual-eyebrow">Elevated Plus Maze / EPM</div>
-                <h2>高架十字迷宫完整操作手册</h2>
+                <h2>高架十字迷宫</h2>
                 <p>本手册覆盖实验逻辑、采集要求、5 区手动画区、检测遮罩、时间窗、主要参数，以及 EPM 结果字段的解释方式。</p>
-            </div>
-            <div class="manual-chip-row">
-                <span class="manual-chip">5 区手动画区</span>
-                <span class="manual-chip">开放臂 / 封闭臂时间</span>
-                <span class="manual-chip">入臂深度判定</span>
-                <span class="manual-chip">检测遮罩可选</span>
-                <span class="manual-chip">track / summary / bins</span>
             </div>
         </div>
         <div class="manual-hero-grid">
@@ -20,7 +13,7 @@
                 <p>分别统计开放臂、封闭臂和中心区时间，并输出开放臂时间比例、开放臂进入比例、潜伏期、距离和速度。</p>
             </div>
             <div class="manual-mini-card">
-                <h4><i class="fas fa-draw-polygon" style="color: var(--primary-color);"></i><span>为什么改成手动画区</span></h4>
+                <h4><i class="fas fa-draw-polygon" style="color: var(--primary-color);"></i><span>为什么需要手动画区</span></h4>
                 <p>每个 ROI 都显式画出中心区、两条开放臂和两条封闭臂，避免自动推导整套迷宫带来的边界偏差。</p>
             </div>
             <div class="manual-mini-card">
@@ -34,7 +27,7 @@
         <div class="card-body py-3">
             <div class="flow-steps justify-content-center">
                 <span class="flow-step">1. 采集要求</span><i class="fas fa-chevron-right flow-arrow"></i>
-                <span class="flow-step">2. 上传与时间范围</span><i class="fas fa-chevron-right flow-arrow"></i>
+                <span class="flow-step">2. 导入与分析配置</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">3. 5 区画区</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">4. 调参与预览</span><i class="fas fa-chevron-right flow-arrow"></i>
                 <span class="flow-step">5. 结果复核</span>
@@ -47,7 +40,7 @@
             <div class="nav-sidebar list-group sticky-top" style="top: 20px; z-index: 1;">
                 <a href="#epm-overview-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">1</span><span>总览</span></a>
                 <a href="#epm-recording-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">2</span><span>采集要求</span></a>
-                <a href="#epm-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>上传与时间范围</span></a>
+                <a href="#epm-upload-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">3</span><span>导入与分析配置</span></a>
                 <a href="#epm-calibration-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">4</span><span>5 区画区与时间窗</span></a>
                 <a href="#epm-params-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">5</span><span>参数字典</span></a>
                 <a href="#epm-outputs-zh" class="list-group-item list-group-item-action"><span class="step-number" style="width:26px;height:26px;font-size:0.8rem;">6</span><span>结果字典</span></a>
@@ -94,12 +87,12 @@
             </section>
 
             <section class="manual-section" id="epm-upload-zh">
-                <h3><span class="step-number">3</span><span>上传与时间范围</span></h3>
-                <p>上传页定义默认统计时间、FPS 覆盖和输出目录。ROI 设为“跟随全局”时，会直接沿用这里的时间窗口。</p>
+                <h3><span class="step-number">3</span><span>导入与分析配置</span></h3>
+                <p>分析配置页逐视频设置外层统计时间、FPS、方向和输出目录。ROI 设为“跟随视频”时，会直接沿用对应视频的时间窗口。</p>
                 <ul class="manual-list">
-                    <li>如果只想分析视频中的一段，可先在上传页设置全局开始和结束时间。</li>
+                    <li>如果只想分析视频中的一段，请在分析配置页设置该视频的开始和结束时间。</li>
                     <li>FPS 元数据不可靠时建议手动覆盖，否则速度、距离和潜伏期可能受影响。</li>
-                    <li>多视频模式下会先进入批次页面，再逐条完成每个视频的 EPM 设置。</li>
+                    <li>单视频和多视频都会先进入分析配置页；多视频再逐条完成每个视频的 EPM 设置。</li>
                 </ul>
             </section>
 
@@ -131,7 +124,7 @@
                 <table class="manual-data-table">
                     <thead><tr><th>模式</th><th>含义</th><th>推荐场景</th></tr></thead>
                     <tbody>
-                        <tr><td><code>global</code></td><td>跟随上传页的全局开始 / 结束时间。</td><td>大多数标准 EPM 分析。</td></tr>
+                        <tr><td><code>global</code></td><td>跟随分析配置页中对应视频的开始 / 结束时间。</td><td>大多数标准 EPM 分析。</td></tr>
                         <tr><td><code>precise</code></td><td>按视频绝对时间指定开始 / 结束秒数。</td><td>只分析固定片段，例如前 300 s。</td></tr>
                     </tbody>
                 </table>
@@ -195,7 +188,7 @@
                         <tr><td><code>open_entries</code> / <code>closed_entries</code> / <code>total_arm_entries</code></td><td>入臂次数。</td><td>总入臂数很低时应谨慎解释比例。</td></tr>
                         <tr><td><code>open_entry_percent</code></td><td>开放臂进入占比。</td><td>常与开放臂时间比例配合报告。</td></tr>
                         <tr><td><code>first_open_entry_latency_s</code></td><td>首次进入开放臂潜伏期。</td><td>若始终未进入开放臂，可能为空。</td></tr>
-                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，当前默认为约 0.2 s。</td></tr>
+                        <tr><td><code>entry_reset_center_s</code></td><td>同一臂解锁前需要稳定回到中心区的时长。</td><td>用于追溯入臂容错规则，默认值约为 0.2 s。</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -204,9 +197,9 @@
                 <h3><span class="step-number">7</span><span>批量流程</span></h3>
                 <p>EPM 的批量模式是“每个视频各自配置，再统一运行”。不要只画第一个视频就直接开始整批分析。</p>
                 <ol class="manual-step-list">
-                    <li>上传多个 EPM 视频，并设置全局时间窗、FPS 覆盖和输出目录。</li>
+                    <li>导入多个 EPM 视频，在分析配置页逐视频设置时间窗、FPS、方向和输出目录。</li>
                     <li>逐条打开视频卡片，完成当前视频的 5 区画区、检测遮罩、时间窗和参数设置。</li>
-                    <li>保存当前设置并返回批次页面，再继续处理下一条视频。</li>
+                    <li>保存该视频设置并返回分析配置页，再继续处理下一条视频。</li>
                     <li>确认所有卡片都显示为已完成后，再统一开始批量分析。</li>
                 </ol>
             </section>
@@ -234,15 +227,8 @@
         <div class="manual-hero-top">
             <div>
                 <div class="manual-eyebrow">Elevated Plus Maze / EPM</div>
-                <h2>Complete Elevated Plus Maze Manual</h2>
+                <h2>Elevated Plus Maze</h2>
                 <p>This manual covers assay logic, recording requirements, five-zone drawing, detection masks, time windows, key parameters, and EPM result interpretation.</p>
-            </div>
-            <div class="manual-chip-row">
-                <span class="manual-chip">5 manual zones</span>
-                <span class="manual-chip">Open / closed arm time</span>
-                <span class="manual-chip">Entry-depth gating</span>
-                <span class="manual-chip">Optional mask</span>
-                <span class="manual-chip">track / summary / bins</span>
             </div>
         </div>
         <div class="manual-hero-grid">
@@ -312,7 +298,7 @@
                 <ul class="manual-list">
                     <li>Use global start and end time if you only want a specific segment of the video.</li>
                     <li>Override FPS if metadata is unreliable, because speed, distance, and latency depend on it.</li>
-                    <li>Multi-video sessions open the batch page first so each video can be configured independently.</li>
+                    <li>Single- and multi-video sessions both open Analysis Configuration first; multi-video runs then configure each video independently.</li>
                 </ul>
             </section>
 
@@ -362,7 +348,7 @@
                 <ol class="manual-step-list">
                     <li>Upload multiple EPM videos and define global timing, FPS override, and output folder.</li>
                     <li>Open each video card and finish five-zone drawing, masks, timing, and tuning for that video.</li>
-                    <li>Save the current setup and return to the batch page before moving to the next video.</li>
+                    <li>Save the video setup and return to Analysis Configuration before moving to the next video.</li>
                     <li>Only start analysis after all cards are marked complete.</li>
                 </ol>
             </section>

@@ -27,7 +27,7 @@
             <span class="app-page-icon" aria-hidden="true"><i class="fas fa-layer-group"></i></span>
             <div>
                 <h1 class="app-page-title" data-i18n="projects.title">项目工作台</h1>
-                <p class="app-page-subtitle" data-i18n="projects.subtitle">按课题组织组别、小鼠、视频和分析结果。快速分析入口仍然保留，项目模式用于正式实验和长期数据整理。</p>
+                <p class="app-page-subtitle" data-i18n="projects.subtitle">按课题组织组别、小鼠、视频和分析结果。项目模式用于正式实验和长期数据整理。</p>
             </div>
         </div>
     </section>
@@ -139,7 +139,7 @@ function loadProjects() {
     fetch(`/api/projects${showArchived ? '?include_archived=1' : ''}`)
         .then(r => r.json())
         .then(data => {
-            if (!data.success) throw new Error(data.error || tr('projects.load_failed', '读取失败'));
+            if (!data.success) throw new Error(apiErrorText(data, tr('projects.load_failed', '读取失败')));
             const projects = data.projects || [];
             renderProjects(showArchived ? projects.filter(project => project.archived) : projects);
         })
@@ -153,7 +153,7 @@ function setProjectArchived(projectId, archived) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({archived})
     }).then(r => r.json()).then(data => {
-        if (!data.success) throw new Error(data.error || (archived ? tr('projects.archive_failed', '归档失败') : tr('projects.restore_failed', '恢复失败')));
+        if (!data.success) throw new Error(apiErrorText(data, archived ? tr('projects.archive_failed', '归档失败') : tr('projects.restore_failed', '恢复失败')));
         loadProjects();
     }).catch(error => alert(error.message || String(error)));
 }
@@ -174,7 +174,7 @@ document.getElementById('createProjectForm').addEventListener('submit', event =>
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
     }).then(r => r.json()).then(data => {
-        if (!data.success) throw new Error(data.error || tr('projects.create_failed', '创建失败'));
+        if (!data.success) throw new Error(apiErrorText(data, tr('projects.create_failed', '创建失败')));
         window.location.href = data.project_url;
     }).catch(error => alert(error.message || String(error)));
 });

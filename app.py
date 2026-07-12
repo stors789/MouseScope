@@ -43,10 +43,13 @@ _configure_http_access_logging()
 
 # ==================== 性能环境变量（必须在 import numpy/cv2 之前） ====================
 # 让底层 BLAS/OpenMP 库充分利用所有 CPU 核心
-_cpu_count = str(os.cpu_count() or 4)
-os.environ.setdefault('OMP_NUM_THREADS', _cpu_count)
-os.environ.setdefault('OPENBLAS_NUM_THREADS', _cpu_count)
-os.environ.setdefault('MKL_NUM_THREADS', _cpu_count)
+from services.resource_policy import current_resource_policy
+
+_startup_resource_policy = current_resource_policy()
+_native_thread_count = str(_startup_resource_policy.opencv_threads)
+os.environ.setdefault('OMP_NUM_THREADS', _native_thread_count)
+os.environ.setdefault('OPENBLAS_NUM_THREADS', _native_thread_count)
+os.environ.setdefault('MKL_NUM_THREADS', _native_thread_count)
 
 import secrets
 import cv2
@@ -93,6 +96,10 @@ from services.experiment_registry import (
 from services.analysis_sessions import configure_analysis_runtime
 from services.debug_preview import cleanup_debug_preview_cache
 from services.visual_style_store import VisualStyleStore
+from services.experiment_defaults_store import ExperimentDefaultsStore
+from services.reproducibility import finalize_reproducibility_artifacts
+from services.version import APP_VERSION, APP_VERSION_TAG
+from services.app_paths import resolve_application_data_directory
 
 try:
     import pandas as pd
@@ -103,7 +110,8 @@ except ImportError:
 
 # ==================== 配置 ====================
 # PyInstaller 打包兼容：资源文件路径
-if getattr(sys, 'frozen', False):
+IS_FROZEN = bool(getattr(sys, 'frozen', False))
+if IS_FROZEN:
     # 打包后的 exe 运行环境
     BUNDLE_DIR = Path(sys._MEIPASS)          # 资源解压目录（templates, static 等）
     BASE_DIR = Path(sys.executable).parent   # exe 所在目录（用于存放用户数据）
@@ -111,7 +119,7 @@ else:
     BUNDLE_DIR = Path(__file__).parent
     BASE_DIR = BUNDLE_DIR
 
-DATA_DIR = BASE_DIR / 'data'
+DATA_DIR = resolve_application_data_directory(BASE_DIR, frozen=IS_FROZEN)
 UPLOAD_DIR = DATA_DIR / 'uploads'
 RESULT_DIR = DATA_DIR / 'results'
 WORK_DIR = RESULT_DIR / '_work'
@@ -482,24 +490,46 @@ def _write_dataframe_csv(rows, path):
     return os.path.exists(path)
 
 
-def _probe_video_info(video_path, fps_override=None):
-    return probe_video_info(video_path, fps_override=fps_override)
+def _probe_video_info(video_path, fps_override=None, orientation_override=None):
+    return probe_video_info(
+        video_path,
+        fps_override=fps_override,
+        orientation_override=orientation_override,
+    )
 
 
 def _extract_video_info_from_entry(video_info, fps_override=None):
     info = dict(video_info or {})
-    fallback = _probe_video_info(info.get('path', ''), fps_override=fps_override)
+    fallback = _probe_video_info(
+        info.get('path', ''),
+        fps_override=fps_override,
+        orientation_override=info.get('orientation_override'),
+    )
     return {
-        'fps': float(info.get('fps', fallback['fps'])),
-        'detected_fps': float(info.get('detected_fps', fallback['detected_fps'])),
-        'width': int(info.get('width', fallback['width'])),
-        'height': int(info.get('height', fallback['height'])),
-        'total_frames': int(info.get('total_frames', fallback['total_frames'])),
+        'fps': float(info.get('fps') or fallback['fps']),
+        'detected_fps': float(info.get('detected_fps') or fallback['detected_fps']),
+        # Geometry is always re-probed so sessions saved by an older version
+        # (which stored coded rather than display dimensions) are corrected.
+        'width': int(fallback.get('width') or info.get('width') or 0),
+        'height': int(fallback.get('height') or info.get('height') or 0),
+        'total_frames': int(fallback.get('total_frames') or info.get('total_frames') or 0),
+        'duration_seconds': fallback.get('duration_seconds') or info.get('duration_seconds'),
+        'orientation_degrees': int(fallback.get('orientation_degrees') or info.get('orientation_degrees') or 0),
+        'orientation_source': fallback.get('orientation_source') or info.get('orientation_source', 'none'),
+        'metadata_orientation_degrees': int(fallback.get('metadata_orientation_degrees') or info.get('metadata_orientation_degrees') or 0),
+        'metadata_orientation_source': fallback.get('metadata_orientation_source') or info.get('metadata_orientation_source', 'none'),
+        'orientation_override': info.get('orientation_override'),
     }
 
 
 def _update_video_entry_info(video_info, fps_override=None):
-    video_info.update(_probe_video_info(video_info.get('path', ''), fps_override=fps_override))
+    video_info.update(
+        _probe_video_info(
+            video_info.get('path', ''),
+            fps_override=fps_override,
+            orientation_override=video_info.get('orientation_override'),
+        )
+    )
     return video_info
 
 
@@ -645,6 +675,13 @@ analysis_sessions = SessionStore(
     error_ttl_seconds=SESSION_ERROR_TTL_SECONDS,
     now_fn=_now_ts,
 )
+if analysis_sessions.restored_session_ids:
+    logging.getLogger(__name__).info(
+        "Restored %d pending analysis configuration session(s).",
+        len(analysis_sessions.restored_session_ids),
+    )
+for restore_error in analysis_sessions.restore_errors:
+    logging.getLogger(__name__).warning("Session snapshot recovery: %s", restore_error)
 
 analysis_history = AnalysisHistoryStore(
     db_path=HISTORY_DIR / 'analysis_history.sqlite',
@@ -653,6 +690,7 @@ analysis_history = AnalysisHistoryStore(
 )
 analysis_history.mark_interrupted_running()
 visual_style_store = VisualStyleStore(DATA_DIR / 'visual_style.json')
+experiment_defaults_store = ExperimentDefaultsStore(DATA_DIR / 'experiment_defaults.json')
 
 project_store = ProjectStore(
     projects_root=PROJECTS_DIR,
@@ -665,6 +703,17 @@ def _analysis_status_observer(analysis):
     if not session_id:
         return
     sess = analysis_sessions.get(session_id)
+    # A task can finish just after the user deletes its record. Never recreate
+    # deleted history/project state from the late worker callback.
+    if sess is None:
+        return
+    try:
+        finalize_reproducibility_artifacts(analysis, sess)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to finalize reproducibility artifacts for session %s.",
+            session_id,
+        )
     record = analysis_history.upsert_runtime(session_id, sess, analysis=analysis)
     project_context = sess.get('project_context') if isinstance(sess, dict) and isinstance(sess.get('project_context'), dict) else None
     if project_context:
@@ -862,6 +911,8 @@ def inject_navigation_context():
         manual_nav_rel = 'noopener noreferrer' if manual_nav_target else None
 
     return {
+        'app_version': APP_VERSION,
+        'app_version_tag': APP_VERSION_TAG,
         'enable_three_chamber': is_three_chamber_enabled(),
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
@@ -893,11 +944,13 @@ from routes.projects import register_project_page_routes
 from routes.project_api import register_project_api_routes
 
 route_context = SimpleNamespace(
+    APP_VERSION=APP_VERSION,
     UploadStorageError=UploadStorageError,
     analysis_sessions=analysis_sessions,
     analysis_history=analysis_history,
     project_store=project_store,
     visual_style_store=visual_style_store,
+    experiment_defaults_store=experiment_defaults_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
     _cleanup_session_artifacts=_cleanup_session_artifacts,

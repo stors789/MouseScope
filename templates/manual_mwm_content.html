@@ -5,9 +5,8 @@
     const COPY = {
         zh: {
             heroEyebrow: 'Morris Water Maze / MWM',
-            heroTitle: '水迷宫完整操作手册',
+            heroTitle: 'Morris 水迷宫',
             heroSubtitle: '覆盖视频采集、泳池/平台椭圆标定、标准圆形坐标校正、探测试次指标、搜索策略、批量配置、结果文件和质量控制。',
-            heroChips: ['PPT 式椭圆编辑', '标准圆形轨迹图', 'ROI 坐标轴', '平台穿越', '目标象限', '搜索策略'],
             heroCards: [
                 ['fa-video', '固定视角优先', '水迷宫最适合固定俯视或近俯视视频；相机、焦距、泳池位置在一个试次内不要改变。'],
                 ['fa-circle-nodes', '椭圆校正到标准圆', '原视频里泳池可以呈椭圆；每个 ROI 的坐标轴、象限和平台会一起映射到标准圆后再计算指标。'],
@@ -52,7 +51,7 @@
                         ]],
                         ['fa-clock', '时间与帧率', [
                             '试次起止时间尽量清晰；需要只分析部分片段时，在 ROI 卡片中设置精确时间窗。',
-                            '可变帧率视频建议在上传页填写手动 FPS 或先转码，避免时间轴偏差。'
+                            '可变帧率视频建议在分析配置页填写手动 FPS 或先转码，避免时间轴偏差。'
                         ]]
                     ]
                 },
@@ -83,7 +82,7 @@
                     timeTable: {
                         headers: ['时间模式', '用途', '说明'],
                         rows: [
-                            ['跟随全局', '大多数单试次视频', '使用上传页或视频配置中的全局开始/结束时间。'],
+                            ['跟随视频', '大多数单试次视频', '使用分析配置页中对应视频的开始/结束时间。'],
                             ['精确时间窗', '同一视频含多个阶段或需要裁剪', '只统计该 ROI 的指定秒数范围；开始/结束留空时回退到全局设置。']
                         ]
                     },
@@ -201,9 +200,8 @@
         },
         en: {
             heroEyebrow: 'Morris Water Maze / MWM',
-            heroTitle: 'Morris Water Maze Manual',
+            heroTitle: 'Morris Water Maze',
             heroSubtitle: 'Covers recording, pool/platform ellipse setup, standard circular coordinate correction, probe metrics, search strategy, batch setup, outputs, and QC.',
-            heroChips: ['PowerPoint-style ellipse editing', 'Standard circular maps', 'ROI axes', 'Platform crossings', 'Target quadrant', 'Search strategy'],
             heroCards: [
                 ['fa-video', 'Fixed Camera First', 'MWM works best with a fixed overhead or near-overhead camera. Do not move the camera, zoom, or pool within a trial.'],
                 ['fa-circle-nodes', 'Ellipse to Circle Correction', 'The visible pool may be oval in the camera view. Each ROI axis, quadrant, and platform is mapped into the standard circular pool before metrics are computed.'],
@@ -279,7 +277,7 @@
                     timeTable: {
                         headers: ['Mode', 'Use Case', 'Notes'],
                         rows: [
-                            ['Follow Global', 'Most single-trial videos', 'Uses the global start/end time from upload or video setup.'],
+                            ['Follow Video', 'Most single-trial videos', 'Uses the video start/end time from Analysis Configuration.'],
                             ['Precise Time Range', 'Videos with multiple phases or trimming needs', 'Applies a ROI-specific seconds range; empty values fall back to global settings.']
                         ]
                     },
@@ -342,7 +340,7 @@
                             ['<code>total_distance_cm</code> / <code>mean_swim_speed_cm_s</code> / <code>max_swim_speed_cm_s</code>', 'Total path length, mean swim speed, and framewise maximum swim speed.', 'Speed metrics are mainly locomotion/QC controls; max speed should not be used alone as a behavioral conclusion.'],
                             ['<code>thigmotaxis_time_s</code> / <code>thigmotaxis_percent</code>', 'Time and percentage near the pool wall.', 'May reflect strategy, stress, or detection issues.'],
                             ['<code>whishaw_corridor_time_s</code> / <code>whishaw_corridor_percent</code>', 'Time and percentage near the direct corridor from release point to platform.', 'Supports directed-search review, but should be interpreted with the trajectory map.'],
-                            ['<code>moving_time_s</code> / <code>floating_time_s</code>', 'Movement and low-speed/floating time from the movement threshold.', 'Auxiliary locomotion metric; currently judged from framewise speed.'],
+                            ['<code>moving_time_s</code> / <code>floating_time_s</code>', 'Movement and low-speed/floating time from the movement threshold.', 'Auxiliary locomotion metric calculated from framewise speed.'],
                             ['<code>search_strategy</code> / <code>search_strategy_label</code> / <code>search_strategy_display</code>', 'Automated search-strategy classification from the standard-pool trajectory.', '<code>search_strategy</code> is the code value; <code>search_strategy_display</code> is the bilingual report label.'],
                             ['<code>search_strategy_score</code> / <code>search_strategy_confidence</code>', 'Strategy rank and rule confidence.', 'Higher scores generally indicate more spatially directed search; uncertain samples are not ranked.'],
                             ['<code>search_strategy_basis</code>', 'Key features used by the classifier, such as directness, thigmotaxis, coverage, and near-platform occupancy.', 'If the class looks surprising, inspect this field and the standard track map first.'],
@@ -451,9 +449,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip"><i class="fas fa-water"></i>${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

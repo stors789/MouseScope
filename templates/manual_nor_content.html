@@ -5,19 +5,18 @@
     const NOR_MANUAL = {
         zh: {
             heroEyebrow: 'Novel Object Recognition / NOR',
-            heroTitle: '新奇物体识别完整操作手册',
+            heroTitle: '新奇物体识别',
             heroSubtitle: '本手册覆盖 arena 与物体标定、阶段与角色设置、头向辅助探索的含义、所有可调参数、全部导出字段，以及批量模式的正确配置方式。',
-            heroChips: ['4 角点 + 2 物体点', 'Recognition / Familiarization', '头向辅助探索', 'track / summary / bins', '热图 + 轨迹图'],
             heroCards: [
                 ['fas fa-object-group', '每个 ROI 到底是什么', 'NOR 里每个 ROI 代表“一个 arena + 两个物体中心点”。arena 决定厘米坐标和中心区，物体点决定接近区、探索时间和偏好指标。'],
                 ['fas fa-crosshairs', '探索判定是怎么做的', '系统会先看是否进入物体交互半径、速度是否足够低，再在头向估计置信度足够时用头向门控；如果头向不够可靠，就回退到距离规则。'],
                 ['fas fa-layer-group', '批量模式的使用规则', '每个视频都会独立保存 phase、arena 尺寸、ROI、物体点、遮罩和调参参数；但同一个视频内部的多个 ROI 仍共享这一视频的一套检测与统计参数。'],
             ],
-            flow: ['视频采集要求', '上传与时间范围', 'arena 与物体标定', '阶段 / 角色 / 时间窗', '调参与预览', '结果与偏好指标'],
+            flow: ['视频采集要求', '导入与分析配置', 'arena 与物体标定', '阶段 / 角色 / 时间窗', '调参与预览', '结果与偏好指标'],
             nav: [
                 ['overview', '总览'],
                 ['recording', '采集要求'],
-                ['upload', '上传与时间范围'],
+                ['upload', '导入与分析配置'],
                 ['calibration', 'arena / 物体 / 时间窗'],
                 ['params', '参数字典'],
                 ['outputs', '结果字典'],
@@ -69,16 +68,16 @@
                         }
                     ],
                     callouts: [
-                        ['info', '头向辅助不等于必须拍到尾巴', '头向估计主要依赖鼠体轮廓前缘、主轴方向和前后帧连续性，不是直接靠完整尾巴。但如果轮廓极不稳定，头向辅助仍然会失效并回退到距离规则。']
+                        ['info', '头向辅助不等于必须拍到尾巴', '头向估计主要依赖鼠体轮廓前缘、主轴方向和前后帧连续性，不是直接靠完整尾巴。轮廓极不稳定时，系统会回退到距离规则。']
                     ]
                 },
                 upload: {
-                    title: '上传与时间范围',
-                    lead: '上传页定义本批次视频、默认统计时间和输出目录。之后每个 ROI 还能进一步设置自己的精确时间窗。',
+                    title: '导入与分析配置',
+                    lead: '导入页选择实验和视频；分析配置页逐视频设置外层统计时间、FPS、方向和输出目录。每个 ROI 还能进一步设置精确时间窗。',
                     points: [
-                        '上传页的全局开始 / 结束时间是默认统计范围；ROI 如果跟随全局，就直接使用这里的时间。',
+                        '分析配置页的视频开始 / 结束时间是外层统计范围；ROI 如果跟随视频，就直接使用该范围。',
                         '如果源视频 FPS 不可靠，建议手动覆盖 FPS，尤其是你要比较潜伏期、探索时长和速度指标时。',
-                        '批量时仍然建议把条件相近的视频放在同一批次，尽管现在每个视频都能单独配置。'
+                        '批量分析建议组合采集条件相近的视频，便于逐视频配置和统一复核。'
                     ],
                     callouts: [
                         ['success', '输出目录层级', '批量模式下，每个视频会在总输出目录下创建自己的子文件夹，里面包含该视频的 result video、track、summary、bins、报告、热图和轨迹图。']
@@ -112,7 +111,7 @@
                             items: [
                                 '检测遮罩用于框定允许检测鼠体的范围，不会改变 arena 尺寸和物体坐标。',
                                 '可选时间模式包括 <code>global</code> 与 <code>precise</code>。',
-                                '精确时间窗只影响统计，逐帧轨迹 CSV 仍会记录哪些帧落在统计窗口内。'
+                                '精确时间窗只影响统计；逐帧轨迹 CSV 会标记哪些帧落在统计窗口内。'
                             ]
                         }
                     ],
@@ -121,7 +120,7 @@
                         rows: [
                             ['<code>phase</code>', '决定系统输出 recognition 还是 familiarization 指标。', '会影响 summary 和 bins 里有哪些列。'],
                             ['<code>arena_width_cm</code> / <code>arena_height_cm</code>', '定义透视校正后的真实 arena 尺寸。', '影响距离、速度、中心区和热图。'],
-                            ['<code>global</code>', '跟随上传页全局时间。', '适合同一批次统一时长。'],
+                            ['<code>global</code>', '跟随分析配置页中对应视频的时间。', '适合同一视频内 ROI 使用统一时长。'],
                             ['<code>precise</code>', '直接按视频绝对时间设置开始 / 结束秒数。', '适合不同 ROI 统计不同片段。']
                         ]
                     },
@@ -256,9 +255,9 @@
                 },
                 batch: {
                     title: '批量流程',
-                    lead: '现在 NOR 已经支持“每个视频独立配置，再统一批量运行”。正确流程是先把所有视频的 phase、arena、物体、遮罩、时间窗和参数都配完，再开始整批分析。',
+                    lead: 'NOR 批量分析为每个视频保存独立配置。请先完成所有视频的 phase、arena、物体、遮罩、时间窗和参数设置，再启动整批分析。',
                     steps: [
-                        '上传多个 NOR 视频，设置全局时间范围、FPS 覆盖和输出目录。',
+                        '导入多个 NOR 视频，在分析配置页逐视频设置时间范围、FPS、方向和输出目录。',
                         '逐个视频切换，分别设置 phase、arena 宽高，并完成每个 ROI 的 4 角点 + 2 物体点标定。',
                         '分别填写物体名称、角色、ROI 名称，并按需要画检测遮罩。',
                         '为每个 ROI 设置时间模式和精确时间窗。',
@@ -291,13 +290,12 @@
         },
         en: {
             heroEyebrow: 'Novel Object Recognition / NOR',
-            heroTitle: 'Complete Novel Object Recognition Manual',
+            heroTitle: 'Novel Object Recognition',
             heroSubtitle: 'This manual explains arena plus object calibration, phase and role setup, head-direction-assisted exploration logic, every exposed parameter, every exported field, and the correct batch workflow.',
-            heroChips: ['4 corners + 2 object points', 'Recognition / Familiarization', 'Head-direction assisted exploration', 'track / summary / bins', 'Heatmap + trackmap'],
             heroCards: [
                 ['fas fa-object-group', 'What each ROI really means', 'In NOR, each ROI is “one arena plus two object centers.” The arena defines centimeter coordinates and center zone, while the object points define interaction zones, exploration time, and preference metrics.'],
                 ['fas fa-crosshairs', 'How exploration is actually judged', 'The system first checks interaction radius and low movement speed, then uses head-direction gating when head estimation is confident. If head confidence is too low, it falls back to distance-based logic.'],
-                ['fas fa-layer-group', 'Batch workflow rule', 'Phase, arena size, ROI geometry, object points, masks, and tuning are stored per video. Inside a single video, however, multiple ROIs still share one tuning set.'],
+                ['fas fa-layer-group', 'Batch workflow rule', 'Phase, arena size, ROI geometry, object points, masks, and tuning are stored per video. Multiple ROIs inside one video share one tuning set.'],
             ],
             flow: ['Recording requirements', 'Upload and analysis range', 'Arena and object calibration', 'Phase / role / time window', 'Tuning and preview', 'Results and preference metrics'],
             nav: [
@@ -360,11 +358,11 @@
                 },
                 upload: {
                     title: 'Upload and analysis range',
-                    lead: 'The upload page defines the videos in the run, the default statistics window, and the output directory. Each ROI may later refine its own precise time range.',
+                    lead: 'Import selects the assay and videos. Analysis Configuration sets each video\'s outer range, FPS, orientation, and output directory; each ROI may then narrow its precise range.',
                     points: [
                         'The upload-page global start and end time define the default analysis window; ROIs in follow-global mode use it directly.',
                         'If source-video FPS is unreliable, override FPS manually, especially when comparing latency, exploration duration, and speed metrics.',
-                        'Even though videos now support independent configuration, it is still best to batch together videos collected under similar conditions.'
+                        'For batch analysis, group videos collected under similar conditions to simplify per-video setup and review.'
                     ],
                     callouts: [
                         ['success', 'Output directory hierarchy', 'In batch mode, each video gets its own child folder under the selected parent directory, containing that video’s result video, track table, summary, bins, report, heatmaps, and trackmaps.']
@@ -542,7 +540,7 @@
                 },
                 batch: {
                     title: 'Batch workflow',
-                    lead: 'NOR now supports full per-video configuration followed by one combined batch run. The correct workflow is to finish phase, arena, object, mask, time-window, and tuning setup for every video before starting analysis.',
+                    lead: 'NOR batch analysis stores an independent configuration for each video. Finish phase, arena, object, mask, time-window, and tuning setup for every video before starting the batch.',
                     steps: [
                         'Upload multiple NOR videos and set the global time range, FPS override, and output directory.',
                         'Switch through videos one by one and set phase, arena width and height, then complete 4-corner plus 2-object calibration for every ROI in that video.',
@@ -554,7 +552,7 @@
                     ],
                     rules: [
                         'In batch mode, each video stores its own phase, arena size, ROI geometry, object points, masks, time windows, and tuning parameters.',
-                        'Multiple ROIs inside the same video still share one tuning set.',
+                        'Multiple ROIs inside the same video share one tuning set.',
                         'If a video is missing arena points, object points, or valid mask configuration, the batch is blocked before start.',
                         'ZIP downloads preserve one child directory per video.'
                     ]
@@ -638,9 +636,6 @@
                         <div class="manual-eyebrow">${copy.heroEyebrow}</div>
                         <h2>${copy.heroTitle}</h2>
                         <p>${copy.heroSubtitle}</p>
-                    </div>
-                    <div class="manual-chip-row">
-                        ${copy.heroChips.map(chip => `<span class="manual-chip">${chip}</span>`).join('')}
                     </div>
                 </div>
                 ${renderCards(copy.heroCards)}

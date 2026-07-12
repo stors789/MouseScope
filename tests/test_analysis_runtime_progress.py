@@ -17,6 +17,8 @@ class DummyAnalysisSession(AnalysisSessionBase):
         self.message = ""
         self.status = "analyzing"
         self.logs = []
+        self.is_running = True
+        self.end_time = None
 
     def _log(self, message, *, force_console=False):
         self.logs.append(str(message))
@@ -68,6 +70,33 @@ class BatchProgressAggregationTest(unittest.TestCase):
             frame_idx=1,
             source_frames_done=1,
         )
+
+    def test_worker_slot_release_does_not_change_analysis_status(self):
+        session = DummyAnalysisSession(total_videos=1)
+
+        with session._video_worker_slot() as acquired:
+            self.assertTrue(acquired)
+
+        self.assertTrue(session.is_running)
+        self.assertEqual(session.status, "analyzing")
+
+    def test_stop_is_idempotent_for_completed_analysis(self):
+        session = DummyAnalysisSession(total_videos=1)
+        session.status = "completed"
+        session.is_running = False
+        session.end_time = 123.0
+
+        self.assertFalse(session.stop())
+        self.assertEqual(session.status, "completed")
+        self.assertEqual(session.end_time, 123.0)
+
+    def test_stop_marks_terminal_state(self):
+        session = DummyAnalysisSession(total_videos=1)
+        session.stop()
+
+        self.assertFalse(session.is_running)
+        self.assertEqual(session.status, "stopped")
+        self.assertIsNotNone(session.end_time)
 
 
 if __name__ == "__main__":
