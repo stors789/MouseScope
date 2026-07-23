@@ -174,3 +174,15 @@ coll = COLLECT(
     upx_exclude=[],
     name='MouseScope',
 )
+
+# On macOS, wrap the collected onedir build in a native application bundle.
+# Windows continues to use dist/MouseScope/MouseScope.exe as before.
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='MouseScope.app',
+        bundle_identifier='io.github.fujiacheng3.mousescope',
+        info_plist={
+            'NSHighResolutionCapable': True,
+        },
+    )
