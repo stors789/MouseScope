@@ -1,0 +1,2 @@
+# Build-only dependency. Pin the packager so repeated builds use the same toolchain.
+pyinstaller==6.21.0
