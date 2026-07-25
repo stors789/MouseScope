@@ -165,3 +165,24 @@ def test_manual_preview_does_not_create_automatic_tracker() -> None:
     assert response.status_code == 200
     assert response.get_json()['roi_count'] == 1
     tracker.assert_not_called()
+
+
+def test_manual_workbench_persists_per_roi_events_and_shortcuts() -> None:
+    template = (ROOT / 'templates' / 'calibrate_maze.html').read_text(encoding='utf-8')
+
+    assert "roi.scoring_mode==='manual'?'manual':'automatic'" in template
+    assert 'payload.manual_events=cloneState(roi.manual_events||[])' in template
+    assert 'workspace_video_configs' in template
+    assert "recordManualArm(`arm_${key}`)" in template
+    assert "event.code==='Space'" in template
+    assert "pageFormat('alert.manual_empty'" in template
+
+
+def test_manual_workbench_is_not_rendered_for_epm() -> None:
+    template = (ROOT / 'templates' / 'calibrate_maze.html').read_text(encoding='utf-8')
+    workbench = template.index('id="manualWorkbench"')
+    guard = template.rfind('{% if not is_epm %}', 0, workbench)
+    closing = template.find('{% endif %}', workbench)
+
+    assert guard >= 0
+    assert closing > workbench
