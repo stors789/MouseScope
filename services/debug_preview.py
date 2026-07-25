@@ -456,10 +456,14 @@ def _y_maze_debug_preview(frame, data, video_path):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     tracker_results = []
+    manual_rois = []
     detected_count = 0
     for idx, roi in enumerate(rois):
         if not isinstance(roi, dict):
             return jsonify({'error': f'Y-maze ROI {idx + 1} must be an object.'}), 400
+        if str(roi.get('scoring_mode') or 'automatic').lower() == 'manual':
+            manual_rois.append(roi)
+            continue
         try:
             zone_polygons = _coerce_zone_polygons_with_schema(roi.get('zones'), YMAZE_ZONE_POINT_COUNTS, 'Y-maze')
         except Exception as exc:
@@ -494,6 +498,23 @@ def _y_maze_debug_preview(frame, data, video_path):
         detected_count += int(bool(result.get('detected')))
 
     result_frame = draw_y_maze_results(frame, tracker_results)
+    for roi in manual_rois:
+        center_points = np.asarray(
+            [_point_xy(point) for point in ((roi.get('zones') or {}).get('center') or [])],
+            dtype=np.float32,
+        )
+        if center_points.size:
+            center = center_points.reshape(-1, 2).mean(axis=0)
+            cv2.putText(
+                result_frame,
+                'Manual scoring',
+                (max(4, int(center[0]) - 55), max(18, int(center[1]))),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 165, 255),
+                2,
+                cv2.LINE_AA,
+            )
     _, buf_orig = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
     _, buf_result = cv2.imencode('.jpg', result_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
@@ -502,7 +523,7 @@ def _y_maze_debug_preview(frame, data, video_path):
         'result': base64.b64encode(buf_result).decode('utf-8'),
         'detected': detected_count > 0,
         'detections': detected_count,
-        'roi_count': len(tracker_results),
+        'roi_count': len(rois),
     })
 
 

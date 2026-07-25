@@ -223,6 +223,129 @@ def _project_point_with_transform(
     return project_point_homography(point, transform)
 
 
+def normalize_manual_arm_entries(
+    events: Sequence[Dict[str, Any]],
+    *,
+    window_start_s: Optional[float] = None,
+    window_end_s: Optional[float] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Validate ordered manual arm-entry events and filter the active window."""
+    arm_aliases = {
+        "A": "arm_a",
+        "B": "arm_b",
+        "C": "arm_c",
+        "arm_a": "arm_a",
+        "arm_b": "arm_b",
+        "arm_c": "arm_c",
+    }
+    normalized: List[Dict[str, Any]] = []
+    previous_time = -float("inf")
+    excluded = 0
+    for index, raw in enumerate(events or []):
+        if not isinstance(raw, dict):
+            raise ValueError(f"Manual Y-maze event {index + 1} must be an object.")
+        try:
+            timestamp_s = float(raw.get("timestamp_s"))
+        except (TypeError, ValueError):
+            raise ValueError(f"Manual Y-maze event {index + 1} has an invalid timestamp.")
+        if not math.isfinite(timestamp_s) or timestamp_s < 0:
+            raise ValueError(f"Manual Y-maze event {index + 1} has an invalid timestamp.")
+        if timestamp_s <= previous_time:
+            raise ValueError("Manual Y-maze events must use strictly increasing timestamps.")
+        previous_time = timestamp_s
+        arm = arm_aliases.get(str(raw.get("arm") or "").strip())
+        if arm is None:
+            raise ValueError(f"Manual Y-maze event {index + 1} must use arm A, B, or C.")
+        if window_start_s is not None and timestamp_s < float(window_start_s):
+            excluded += 1
+            continue
+        if window_end_s is not None and timestamp_s > float(window_end_s):
+            excluded += 1
+            continue
+        normalized.append({"timestamp_s": timestamp_s, "arm": arm})
+    return normalized, excluded
+
+
+def build_manual_y_maze_summary(
+    *,
+    roi_id: int,
+    roi_name: str,
+    events: Sequence[Dict[str, Any]],
+    window_start_s: float,
+    window_end_s: Optional[float],
+    time_mode: str = "global",
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    valid_events, excluded = normalize_manual_arm_entries(
+        events,
+        window_start_s=window_start_s,
+        window_end_s=window_end_s,
+    )
+    sequence = [event["arm"] for event in valid_events]
+    arm_entries = {name: sequence.count(name) for name in YMazeTracker.ARM_NAMES}
+    alternation_count = sum(
+        1 for index in range(2, len(sequence)) if len(set(sequence[index - 2:index + 1])) == 3
+    )
+    opportunities = max(len(sequence) - 2, 0)
+    alternation_percent = (
+        round(alternation_count / opportunities * 100.0, 2)
+        if opportunities > 0
+        else None
+    )
+    duration = (
+        max(0.0, float(window_end_s) - float(window_start_s))
+        if window_end_s is not None
+        else 0.0
+    )
+    summary = {
+        "roi_id": int(roi_id),
+        "roi_name": str(roi_name),
+        "scoring_method": "manual",
+        "time_mode": str(time_mode or "global"),
+        "time_start_s": format_seconds(window_start_s),
+        "time_end_s": format_seconds(window_end_s) if window_end_s is not None else None,
+        "analysis_window_start_s": format_seconds(window_start_s),
+        "total_time_s": format_seconds(duration),
+        "detected_frames": 0,
+        "detected_rate_percent": None,
+        "total_distance_cm": 0.0,
+        "mean_speed_cm_s": 0.0,
+        "max_speed_cm_s": 0.0,
+        "center_time_s": None,
+        "center_percent": None,
+        "moving_time_s": None,
+        "immobility_time_s": None,
+        "total_arm_entries": len(sequence),
+        "alternation_count": alternation_count,
+        "alternation_opportunities": opportunities,
+        "alternation_percent": alternation_percent,
+        "arm_length_cm": None,
+        "arm_width_cm": None,
+        "entry_depth_ratio": None,
+        "entry_reset_center_s": None,
+        "movement_threshold_cm_s": None,
+        "entry_sequence": "-".join(YMazeTracker.ARM_LABELS[name] for name in sequence),
+        "cm_per_px_est": None,
+        "manual_events_excluded": excluded,
+    }
+    for name in YMazeTracker.ARM_NAMES:
+        label = YMazeTracker.ARM_LABELS[name].lower()
+        summary[f"arm_{label}_time_s"] = None
+        summary[f"arm_{label}_percent"] = None
+        summary[f"arm_{label}_entries"] = arm_entries[name]
+    rows = [
+        {
+            "roi_id": int(roi_id),
+            "roi_name": str(roi_name),
+            "timestamp_s": format_seconds(event["timestamp_s"]),
+            "arm": YMazeTracker.ARM_LABELS[event["arm"]],
+            "arm_key": event["arm"],
+            "scoring_method": "manual",
+        }
+        for event in valid_events
+    ]
+    return summary, rows
+
+
 class YMazeTracker:
     """Track one mouse in one manually drawn Y-maze and score alternation."""
 
@@ -937,6 +1060,7 @@ class YMazeTracker:
         summary: Dict[str, Any] = {
             "roi_id": self.roi_id,
             "roi_name": self.roi_name,
+            "scoring_method": "automatic",
             "time_mode": self.time_config.get("mode", "global"),
             "time_start_s": self.time_config.get("start"),
             "time_end_s": self.time_config.get("end"),
