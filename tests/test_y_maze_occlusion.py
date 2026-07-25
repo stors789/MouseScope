@@ -124,6 +124,26 @@ def test_direct_arm_to_arm_jump_is_blocked_until_center_passage() -> None:
     assert tracker.arm_entry_sequence == ["arm_a", "arm_b"]
 
 
+def test_direct_arm_transition_counts_when_center_passage_is_optional() -> None:
+    tracker = make_tracker(
+        tracking_max_jump_cm=200.0,
+        require_center_passage=False,
+    )
+    results = feed(
+        tracker,
+        [
+            detection(POINTS["arm_a"]),
+            detection(POINTS["arm_b"]),
+            detection(POINTS["arm_c"]),
+        ],
+    )
+
+    assert [row["arm_entry_event"] for row in results] == [True, True, True]
+    assert tracker.arm_entry_sequence == ["arm_a", "arm_b", "arm_c"]
+    assert tracker.alternation_count == 1
+    assert tracker.build_summary()["require_center_passage"] is False
+
+
 def test_normal_three_arm_sequence_counts_one_alternation() -> None:
     tracker = make_tracker(tracking_max_jump_cm=200.0)
     feed(
@@ -149,7 +169,14 @@ def test_builder_adds_safe_defaults_and_preserves_per_video_overrides() -> None:
         session,
         {
             "rois": [],
-            "per_video_configs": [{}, {"tracking_max_jump_cm": 7, "occlusion_hold_s": 0.8}],
+            "per_video_configs": [
+                {},
+                {
+                    "tracking_max_jump_cm": 7,
+                    "occlusion_hold_s": 0.8,
+                    "require_center_passage": "false",
+                },
+            ],
         },
     )
 
@@ -157,9 +184,25 @@ def test_builder_adds_safe_defaults_and_preserves_per_video_overrides() -> None:
     assert config["occlusion_hold_s"] == 0.4
     assert config["zone_confirm_s"] == 0.12
     assert config["center_reset_s"] == 0.2
+    assert config["require_center_passage"] is True
     assert config["per_video_configs"][0]["tracking_max_jump_cm"] == 12.0
+    assert config["per_video_configs"][0]["require_center_passage"] is True
     assert config["per_video_configs"][1]["tracking_max_jump_cm"] == 7.0
     assert config["per_video_configs"][1]["occlusion_hold_s"] == 0.8
+    assert config["per_video_configs"][1]["require_center_passage"] is False
+
+
+def test_center_passage_switch_is_present_only_in_y_maze_controls() -> None:
+    template = (ROOT / "templates" / "calibrate_maze.html").read_text(encoding="utf-8")
+
+    assert 'id="requireCenterPassage"' in template
+    assert "tuning.require_center_passage=document.getElementById('requireCenterPassage').checked" in template
+    assert "syncCenterPassageUI()" in template
+    switch_pos = template.index('id="requireCenterPassage"')
+    guard_pos = template.rfind("{% if not is_epm %}", 0, switch_pos)
+    guard_end = template.find("{% endif %}", switch_pos)
+    assert guard_pos >= 0
+    assert guard_end > switch_pos
 
 
 def test_center_label_is_immediate_and_reset_counts_from_first_center_frame() -> None:
