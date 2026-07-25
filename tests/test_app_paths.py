@@ -41,6 +41,23 @@ class ApplicationDataPathTest(unittest.TestCase):
             self.assertEqual(resolved, fallback)
             self.assertTrue(fallback.is_dir())
 
+    def test_macos_bundle_uses_application_support_without_touching_bundle(self):
+        with TemporaryDirectory() as temp_dir:
+            bundle_root = Path(temp_dir) / 'MouseScope.app' / 'Contents' / 'MacOS'
+            expected = Path.home() / 'Library' / 'Application Support' / 'MouseScope' / 'data'
+            with patch('services.app_paths.sys.platform', 'darwin'), patch(
+                'services.app_paths._ensure_writable_directory',
+                return_value=expected,
+            ) as ensure:
+                resolved = resolve_application_data_directory(
+                    bundle_root,
+                    frozen=True,
+                    environ={},
+                )
+
+            self.assertEqual(resolved, expected)
+            ensure.assert_called_once_with(expected)
+
 
 if __name__ == '__main__':
     unittest.main()

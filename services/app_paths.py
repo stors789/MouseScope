@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Mapping
@@ -33,6 +34,8 @@ def _user_data_directory(environ: Mapping[str, str]) -> Path:
     local_root = environ.get('LOCALAPPDATA') or environ.get('APPDATA')
     if local_root:
         return Path(local_root).expanduser() / 'MouseScope' / 'data'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'MouseScope' / 'data'
     return Path.home() / '.mousescope' / 'data'
 
 
@@ -48,10 +51,16 @@ def resolve_application_data_directory(
     if override:
         return _ensure_writable_directory(Path(os.path.expandvars(override)).expanduser())
 
-    portable = Path(base_dir) / 'data'
     if not frozen:
-        return _ensure_writable_directory(portable)
+        return _ensure_writable_directory(Path(base_dir) / 'data')
 
+    # A macOS app bundle is code-signed as a sealed directory. Writing runtime
+    # databases inside Contents/MacOS invalidates that signature even when the
+    # bundle happens to be writable.
+    if sys.platform == 'darwin':
+        return _ensure_writable_directory(_user_data_directory(env))
+
+    portable = Path(base_dir) / 'data'
     try:
         return _ensure_writable_directory(portable)
     except OSError as exc:
