@@ -79,6 +79,7 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "movement_threshold_cm_s": 2.0, "entry_depth_ratio": 0.2,
         "tracking_max_jump_cm": 12.0, "occlusion_hold_s": 0.4,
         "zone_confirm_s": 0.12, "center_reset_s": 0.2,
+        "require_center_passage": True,
         "temporal_bg_samples": 90, "temporal_diff_threshold": 25,
         "bin_seconds": 60.0, "generate_video": True,
     },
@@ -145,6 +146,7 @@ _FIELD_LABELS: dict[str, tuple[str, str]] = {
     "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
     "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
     "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
+    "require_center_passage": ("入臂切换必须经过中心", "Require center passage between arms"),
     "temporal_bg_samples": ("时序背景抽样帧数", "Temporal background samples"),
     "temporal_diff_threshold": ("时序背景差分阈值", "Temporal difference threshold"),
     "auto_threshold": ("自动不动阈值", "Auto immobility threshold"), "immobility_threshold": ("不动阈值", "Immobility threshold"),
@@ -230,6 +232,7 @@ _FIELD_LABELS.update({
     "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
     "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
     "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
+    "require_center_passage": ("入臂切换必须经过中心", "Require center passage between arms"),
     "temporal_bg_samples": ("时序背景抽样帧数", "Temporal background samples"),
     "temporal_diff_threshold": ("时序背景差分阈值", "Temporal difference threshold"),
 })

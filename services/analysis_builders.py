@@ -293,6 +293,7 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
     default_occlusion_hold_s = float(data.get("occlusion_hold_s", 0.4))
     default_zone_confirm_s = float(data.get("zone_confirm_s", 0.12))
     default_center_reset_s = float(data.get("center_reset_s", 0.2))
+    default_require_center_passage = _coerce_bool(data.get("require_center_passage"), True)
     default_temporal_bg_samples = int(data.get("temporal_bg_samples", 90))
     default_temporal_diff_threshold = int(data.get("temporal_diff_threshold", 25))
     default_bin_seconds = float(data.get("bin_seconds", 60.0))
@@ -318,6 +319,10 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
             "occlusion_hold_s": float(raw_cfg.get("occlusion_hold_s", default_occlusion_hold_s)),
             "zone_confirm_s": float(raw_cfg.get("zone_confirm_s", default_zone_confirm_s)),
             "center_reset_s": float(raw_cfg.get("center_reset_s", default_center_reset_s)),
+            "require_center_passage": _coerce_bool(
+                raw_cfg.get("require_center_passage"),
+                default_require_center_passage,
+            ),
             "temporal_bg_samples": int(raw_cfg.get("temporal_bg_samples", default_temporal_bg_samples)),
             "temporal_diff_threshold": int(raw_cfg.get("temporal_diff_threshold", default_temporal_diff_threshold)),
             "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
@@ -344,6 +349,7 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
         "occlusion_hold_s": default_occlusion_hold_s,
         "zone_confirm_s": default_zone_confirm_s,
         "center_reset_s": default_center_reset_s,
+        "require_center_passage": default_require_center_passage,
         "temporal_bg_samples": default_temporal_bg_samples,
         "temporal_diff_threshold": default_temporal_diff_threshold,
         "bin_seconds": default_bin_seconds,

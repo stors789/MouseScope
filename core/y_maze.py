@@ -244,6 +244,7 @@ class YMazeTracker:
         occlusion_hold_s: float = 0.4,
         zone_confirm_s: float = 0.12,
         center_reset_s: float = 0.2,
+        require_center_passage: bool = True,
         roi_id: int = 1,
         roi_name: Optional[str] = None,
         time_config: Optional[Dict[str, Any]] = None,
@@ -267,6 +268,7 @@ class YMazeTracker:
         self.occlusion_hold_s = max(0.0, float(occlusion_hold_s))
         self.zone_confirm_s = max(0.0, float(zone_confirm_s))
         self.center_entry_reset_s = max(0.0, float(center_reset_s))
+        self.require_center_passage = bool(require_center_passage)
 
         self.zone_polygons_img = {
             name: sort_polygon_points(zone_polygons[name]).astype(np.float32)
@@ -624,7 +626,8 @@ class YMazeTracker:
             self.pending_zone_s = 0.0
             return self.stable_zone
         if (
-            observed_zone in self.ARM_NAMES
+            self.require_center_passage
+            and observed_zone in self.ARM_NAMES
             and self.current_entry_arm in self.ARM_NAMES
             and observed_zone != self.current_entry_arm
             and not self.center_passed_since_entry
@@ -826,7 +829,8 @@ class YMazeTracker:
                     stable_zone_key in self.ARM_NAMES
                     and self._is_inside_entry_zone(stable_zone_key, centroid_px)
                 )
-                if inside_entry_zone and self.center_passed_since_entry:
+                transition_allowed = self.center_passed_since_entry or not self.require_center_passage
+                if inside_entry_zone and transition_allowed:
                     if self.current_entry_arm != stable_zone_key:
                         arm_entry_event = True
                         entry_arm_name = stable_zone_key
@@ -955,6 +959,7 @@ class YMazeTracker:
             "arm_width_cm": format_metric(self.arm_width_cm),
             "entry_depth_ratio": round(self.entry_depth_ratio, 3),
             "entry_reset_center_s": format_seconds(self.center_entry_reset_s),
+            "require_center_passage": bool(self.require_center_passage),
             "tracking_max_jump_cm": round(self.tracking_max_jump_cm, 3),
             "occlusion_hold_s": format_seconds(self.occlusion_hold_s),
             "zone_confirm_s": format_seconds(self.zone_confirm_s),

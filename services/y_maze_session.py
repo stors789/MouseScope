@@ -110,6 +110,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 occlusion_hold_s=float(vision_config.get('occlusion_hold_s', 0.4)),
                 zone_confirm_s=float(vision_config.get('zone_confirm_s', 0.12)),
                 center_reset_s=float(vision_config.get('center_reset_s', 0.2)),
+                require_center_passage=bool(vision_config.get('require_center_passage', True)),
                 roi_id=roi['roi_id'],
                 roi_name=roi['name'],
                 time_config=roi.get('time_config'),

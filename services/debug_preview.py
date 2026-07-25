@@ -483,6 +483,8 @@ def _y_maze_debug_preview(frame, data, video_path):
             occlusion_hold_s=float(data.get('occlusion_hold_s', 0.4)),
             zone_confirm_s=float(data.get('zone_confirm_s', 0.12)),
             center_reset_s=float(data.get('center_reset_s', 0.2)),
+            require_center_passage=str(data.get('require_center_passage', True)).strip().lower()
+            not in {'0', 'false', 'no', 'off'},
             roi_id=idx + 1,
             roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'Y-Maze {idx + 1}',
             time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
