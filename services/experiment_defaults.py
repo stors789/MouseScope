@@ -77,6 +77,8 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "dilation_iter": 2, "min_area": 120, "max_area": 50000,
         "arm_length_cm": 30.0, "arm_width_cm": 10.0,
         "movement_threshold_cm_s": 2.0, "entry_depth_ratio": 0.2,
+        "tracking_max_jump_cm": 12.0, "occlusion_hold_s": 0.4,
+        "zone_confirm_s": 0.12, "center_reset_s": 0.2,
         "bin_seconds": 60.0, "generate_video": True,
     },
     "light_dark_box": {
@@ -139,6 +141,9 @@ _FIELD_LABELS: dict[str, tuple[str, str]] = {
     "closed_arm_length_cm": ("封闭臂长度（cm）", "Closed-arm length (cm)"), "open_axis": ("开放臂方向", "Open-arm axis"),
     "arm_length_cm": ("臂长（cm）", "Arm length (cm)"), "arm_width_cm": ("臂宽（cm）", "Arm width (cm)"),
     "entry_depth_ratio": ("进入深度比例", "Entry-depth ratio"), "cylinder_diameter_cm": ("圆筒直径（cm）", "Cylinder diameter (cm)"),
+    "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
+    "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
+    "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
     "auto_threshold": ("自动不动阈值", "Auto immobility threshold"), "immobility_threshold": ("不动阈值", "Immobility threshold"),
     "immobility_high_threshold": ("高不动阈值", "High immobility threshold"), "threshold_sensitivity": ("阈值灵敏度", "Threshold sensitivity"),
     "smoothing_window_s": ("平滑窗口（s）", "Smoothing window (s)"), "min_immobility_duration_s": ("最短不动时长（s）", "Minimum immobility (s)"),
@@ -219,6 +224,9 @@ _FIELD_LABELS.update({
     "selected_phase": ("选择阶段", "Selected phase"), "protocol_segments": ("完整流程时间轴（JSON）", "Full-protocol timeline (JSON)"),
     "role_schedule": ("对象角色安排（JSON）", "Object-role schedule (JSON)"), "cup_exclusion_radius_cm": ("杯体排除半径（cm）", "Cup exclusion radius (cm)"),
     "center_reset_s": ("中心区重置（s）", "Center reset (s)"),
+    "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
+    "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
+    "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
 })
 
 _SELECT_OPTIONS.update({
@@ -247,11 +255,13 @@ _POSITIVE_CM_FIELDS = {
     "track_smoothing_max_jump_cm", "whishaw_corridor_width_cm", "light_box_length_cm",
     "light_box_width_cm", "dark_box_length_cm", "dark_box_width_cm", "shared_edge_length_cm",
     "cup_exclusion_radius_cm",
+    "tracking_max_jump_cm",
 }
 _NONNEGATIVE_SECONDS_FIELDS = {
     "smoothing_window_s", "min_immobility_duration_s", "min_active_duration_s", "gap_merge_s",
     "min_valid_exploration_s", "platform_dwell_s", "max_gap_s", "door_open_delay_s",
     "transition_min_dwell_s", "doorway_reset_s", "center_reset_s",
+    "occlusion_hold_s", "zone_confirm_s",
 }
 _FIELD_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "gray_threshold": {"min": 0, "max": 255, "step": 1}, "body_gray_threshold": {"min": 0, "max": 255, "step": 1},
