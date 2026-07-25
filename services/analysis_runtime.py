@@ -26,6 +26,7 @@ from vision_tracker import (
     render_tst_activity_curve,
     render_tst_ethogram,
     create_static_background,
+    create_temporal_background,
 )
 from open_field import (
     OpenFieldTracker,
@@ -207,7 +208,7 @@ def _analysis_stdout_logs_enabled() -> bool:
 class FrameCachedBackgroundSubtractor:
     """Cache repeated threshold/static masks for the same frame."""
 
-    CACHEABLE_METHODS = {"threshold", "static"}
+    CACHEABLE_METHODS = {"threshold", "static", "temporal"}
 
     def __init__(self, wrapped: Any) -> None:
         self._wrapped = wrapped
@@ -283,6 +284,8 @@ def build_standard_processors(
     analysis_size=None,
     area_scale=1.0,
     morphology_scale=1.0,
+    temporal_start_frame=0,
+    temporal_end_frame=None,
 ):
     def _scaled_area(value, default):
         try:
@@ -320,6 +323,21 @@ def build_standard_processors(
             if target_w > 0 and target_h > 0 and (bg_rgb.shape[1], bg_rgb.shape[0]) != (target_w, target_h):
                 bg_rgb = cv2.resize(bg_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA)
         bg_subtractor = BackgroundSubtractor(method='static', static_bg=bg_rgb)
+    elif bg_method == 'temporal':
+        temporal_bg, temporal_noise, _ = create_temporal_background(
+            video_path,
+            num_samples=int(vision_config.get('temporal_bg_samples', 90)),
+            start_frame=temporal_start_frame,
+            end_frame=temporal_end_frame,
+            orientation_override=vision_config.get('orientation_override'),
+            analysis_size=analysis_size,
+        )
+        bg_subtractor = BackgroundSubtractor(
+            method='temporal',
+            threshold=int(vision_config.get('temporal_diff_threshold', 25)),
+            static_bg=temporal_bg,
+            temporal_noise_map=temporal_noise,
+        )
     else:
         bg_subtractor = BackgroundSubtractor(method=bg_method)
 
@@ -524,6 +542,8 @@ class AnalysisSessionBase:
         erosion_default=1,
         dilation_default=2,
         min_area_default=120,
+        temporal_start_frame=0,
+        temporal_end_frame=None,
     ):
         return build_standard_processors(
             video_path,
@@ -535,6 +555,8 @@ class AnalysisSessionBase:
             analysis_size=(sampling['analysis_width'], sampling['analysis_height']),
             area_scale=float(sampling.get('scale_x', 1.0)) * float(sampling.get('scale_y', 1.0)),
             morphology_scale=min(float(sampling.get('scale_x', 1.0)), float(sampling.get('scale_y', 1.0))),
+            temporal_start_frame=temporal_start_frame,
+            temporal_end_frame=temporal_end_frame,
         )
 
     @staticmethod

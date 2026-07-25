@@ -9,7 +9,13 @@ import cv2
 import numpy as np
 from flask import jsonify
 
-from vision_tracker import BackgroundSubtractor, MorphologyProcessor, MouseDetector, create_static_background
+from vision_tracker import (
+    BackgroundSubtractor,
+    MorphologyProcessor,
+    MouseDetector,
+    create_static_background,
+    create_temporal_background,
+)
 from open_field import OpenFieldTracker, draw_open_field_results
 from novel_object import NovelObjectTracker, draw_novel_object_results
 from elevated_plus import ElevatedPlusTracker, draw_elevated_plus_results
@@ -77,6 +83,14 @@ def _session_orientation_override(sess: dict[str, Any], video_idx: int):
     return None
 
 
+def _session_video_runtime_config(sess: dict[str, Any], video_idx: int) -> dict[str, Any]:
+    draft = sess.get('draft_payload') or {}
+    configs = draft.get('per_video_configs') if isinstance(draft, dict) else None
+    if isinstance(configs, list) and 0 <= video_idx < len(configs) and isinstance(configs[video_idx], dict):
+        return configs[video_idx]
+    return {}
+
+
 def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) -> None:
     for cache_key, entry in list(debug_static_bg_cache.items()):
         if isinstance(entry, dict):
@@ -96,7 +110,18 @@ def cleanup_debug_preview_cache(now: float, ttl_seconds: float, max_items: int) 
             debug_static_bg_cache.pop(cache_key, None)
 
 
-def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, orientation_override=None):
+def _build_debug_bg_subtractor(
+    video_path,
+    bg_method,
+    gray_threshold,
+    invert,
+    orientation_override=None,
+    *,
+    temporal_bg_samples=90,
+    temporal_diff_threshold=25,
+    temporal_start_frame=0,
+    temporal_end_frame=None,
+):
     if bg_method == 'threshold':
         return BackgroundSubtractor(method='threshold', threshold=gray_threshold, invert=invert)
     if bg_method == 'static':
@@ -118,6 +143,37 @@ def _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, or
         }
         bg_rgb = cv2.cvtColor(static_bg, cv2.COLOR_GRAY2BGR) if len(static_bg.shape) == 2 else static_bg
         return BackgroundSubtractor(method='static', static_bg=bg_rgb)
+    if bg_method == 'temporal':
+        cache_key = (
+            'temporal',
+            os.path.abspath(video_path),
+            str(orientation_override if orientation_override is not None else 'auto'),
+            int(temporal_bg_samples),
+            int(temporal_start_frame or 0),
+            None if temporal_end_frame is None else int(temporal_end_frame),
+        )
+        cache_entry = debug_static_bg_cache.get(cache_key)
+        temporal_bg = cache_entry.get('bg') if isinstance(cache_entry, dict) else None
+        temporal_noise = cache_entry.get('noise') if isinstance(cache_entry, dict) else None
+        if temporal_bg is None or temporal_noise is None:
+            temporal_bg, temporal_noise, _ = create_temporal_background(
+                video_path,
+                num_samples=int(temporal_bg_samples),
+                start_frame=int(temporal_start_frame or 0),
+                end_frame=temporal_end_frame,
+                orientation_override=orientation_override,
+            )
+        debug_static_bg_cache[cache_key] = {
+            'bg': temporal_bg,
+            'noise': temporal_noise,
+            'last_accessed_at': _now_ts(),
+        }
+        return BackgroundSubtractor(
+            method='temporal',
+            threshold=int(temporal_diff_threshold),
+            static_bg=temporal_bg,
+            temporal_noise_map=temporal_noise,
+        )
     return BackgroundSubtractor(method=bg_method)
 
 
@@ -340,10 +396,6 @@ def _elevated_plus_debug_preview(frame, data, video_path):
             fps=30.0,
             movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
             entry_depth_ratio=float(data.get('entry_depth_ratio', 0.2)),
-            tracking_max_jump_cm=float(data.get('tracking_max_jump_cm', 12.0)),
-            occlusion_hold_s=float(data.get('occlusion_hold_s', 0.4)),
-            zone_confirm_s=float(data.get('zone_confirm_s', 0.12)),
-            center_reset_s=float(data.get('center_reset_s', 0.2)),
             roi_id=idx + 1,
             roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'EPM {idx + 1}',
             time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
@@ -380,7 +432,17 @@ def _y_maze_debug_preview(frame, data, video_path):
         return jsonify({'error': 'Y-maze preview requires at least one ROI.'}), 400
 
     try:
-        bg_sub = _build_debug_bg_subtractor(video_path, bg_method, gray_threshold, invert, data.get('_orientation_override'))
+        bg_sub = _build_debug_bg_subtractor(
+            video_path,
+            bg_method,
+            gray_threshold,
+            invert,
+            data.get('_orientation_override'),
+            temporal_bg_samples=int(data.get('temporal_bg_samples', 90)),
+            temporal_diff_threshold=int(data.get('temporal_diff_threshold', 25)),
+            temporal_start_frame=int(data.get('_temporal_start_frame', 0)),
+            temporal_end_frame=data.get('_temporal_end_frame'),
+        )
     except Exception as e:
         return jsonify({'error': f'无法创建背景模型: {e}'}), 400
 
@@ -417,6 +479,10 @@ def _y_maze_debug_preview(frame, data, video_path):
             fps=30.0,
             movement_threshold_cm_s=float(data.get('movement_threshold_cm_s', 2.0)),
             entry_depth_ratio=float(data.get('entry_depth_ratio', 0.2)),
+            tracking_max_jump_cm=float(data.get('tracking_max_jump_cm', 12.0)),
+            occlusion_hold_s=float(data.get('occlusion_hold_s', 0.4)),
+            zone_confirm_s=float(data.get('zone_confirm_s', 0.12)),
+            center_reset_s=float(data.get('center_reset_s', 0.2)),
             roi_id=idx + 1,
             roi_name=(roi.get('name') if isinstance(roi, dict) else None) or f'Y-Maze {idx + 1}',
             time_config=(roi.get('time_config') if isinstance(roi, dict) else None),
@@ -823,6 +889,25 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
     video_path = video_paths[video_idx]
     data = dict(data)
     data['_orientation_override'] = _session_orientation_override(sess, video_idx)
+    runtime_config = _session_video_runtime_config(sess, video_idx)
+    effective_fps = (
+        runtime_config.get('fps_override')
+        or sess.get('fps_override')
+        or _session_video_fps(sess, video_idx)
+        or 30.0
+    )
+    start_s = runtime_config.get('start_sec')
+    if start_s is None:
+        start_s = sess.get('start_seconds')
+    end_s = runtime_config.get('end_sec')
+    if end_s is None:
+        end_s = sess.get('end_seconds')
+    data['_temporal_start_frame'] = max(0, int(round(float(start_s or 0.0) * float(effective_fps))))
+    data['_temporal_end_frame'] = (
+        max(data['_temporal_start_frame'], int(round(float(end_s) * float(effective_fps))))
+        if end_s is not None
+        else (total_frames - 1 if total_frames > 0 else None)
+    )
     frame = read_video_frame(
         video_path,
         frame_idx,
