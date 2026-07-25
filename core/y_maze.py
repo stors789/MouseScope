@@ -331,6 +331,9 @@ class YMazeTracker:
         self.last_detection_time_abs: Optional[float] = None
         self.velocity_px_s = np.zeros(2, dtype=np.float64)
         self.expected_area_px: Optional[float] = None
+        self.reacquire_candidate_px: Optional[Tuple[float, float]] = None
+        self.reacquire_candidate_s = 0.0
+        self.reacquire_confirm_s = max(0.1, self.zone_confirm_s)
         self.prev_stats_centroid_px: Optional[Tuple[float, float]] = None
         self.prev_centroid_px: Optional[Tuple[float, float]] = None
         self.missing_frames = 0
@@ -527,9 +530,13 @@ class YMazeTracker:
     ) -> Optional[Dict[str, Any]]:
         """Choose a plausible fragment using shape, area history and motion continuity."""
         if not detections:
+            if elapsed_s > self.occlusion_hold_s + 1e-9:
+                self.reacquire_candidate_px = None
+                self.reacquire_candidate_s = 0.0
             return None
 
-        prediction = self._prediction_px(elapsed_s)
+        long_gap = elapsed_s > self.occlusion_hold_s + 1e-9
+        prediction = None if long_gap else self._prediction_px(elapsed_s)
         max_jump_px = self.tracking_max_jump_cm / max(self.cm_per_px, 1e-9)
         scored: List[Tuple[float, Dict[str, Any]]] = []
         for detection in detections:
@@ -555,8 +562,30 @@ class YMazeTracker:
             scored.append((score, detection))
 
         if not scored:
+            if long_gap:
+                self.reacquire_candidate_px = None
+                self.reacquire_candidate_s = 0.0
             return None
-        return max(scored, key=lambda item: item[0])[1]
+        selected = max(scored, key=lambda item: item[0])[1]
+        if long_gap:
+            candidate_px = tuple(float(value) for value in selected["centroid"])
+            continuity_px = self.tracking_max_jump_cm / max(self.cm_per_px, 1e-9)
+            if (
+                self.reacquire_candidate_px is not None
+                and math.hypot(
+                    candidate_px[0] - self.reacquire_candidate_px[0],
+                    candidate_px[1] - self.reacquire_candidate_px[1],
+                ) <= continuity_px
+            ):
+                self.reacquire_candidate_s += 1.0 / self.fps
+            else:
+                self.reacquire_candidate_px = candidate_px
+                self.reacquire_candidate_s = 1.0 / self.fps
+            if self.reacquire_candidate_s + 1e-9 < self.reacquire_confirm_s:
+                return None
+        self.reacquire_candidate_px = None
+        self.reacquire_candidate_s = 0.0
+        return selected
 
     def _update_tracking_history(
         self,
@@ -618,9 +647,6 @@ class YMazeTracker:
             self.stable_zone = observed_zone
             self.pending_zone = None
             self.pending_zone_s = 0.0
-            if observed_zone != "center":
-                self.center_entry_streak = 0
-                self.center_entry_streak_s = 0.0
         return self.stable_zone
 
     def detect_mouse(
@@ -734,7 +760,13 @@ class YMazeTracker:
             self.prev_all_centroid_px = None
 
         observed_zone_key = self._zone_name_for_point(centroid_px) if detected else "Unknown"
-        zone_key = self._update_stable_zone(observed_zone_key, detected, current_dt)
+        stable_zone_key = self._update_stable_zone(observed_zone_key, detected, current_dt)
+        if detected and observed_zone_key != "Unknown":
+            zone_key = observed_zone_key
+        elif tracking_state == "predicted":
+            zone_key = stable_zone_key
+        else:
+            zone_key = "Unknown"
         zone_group = "arm" if zone_key in self.ARM_NAMES else "center" if zone_key == "center" else "unknown"
         zone_label = self.ZONE_LABELS.get(zone_key, "Unknown")
         self.last_speed_cm_s = speed_cm_s
@@ -781,33 +813,33 @@ class YMazeTracker:
                     self.immobile_frames += 1
                     self.immobile_time_s += current_dt
 
-                inside_entry_zone = zone_key in self.ARM_NAMES and self._is_inside_entry_zone(zone_key, centroid_px)
-                if zone_key == "center" and observed_zone_key == "center":
+                if observed_zone_key == "center":
                     self.center_entry_streak += 1
                     self.center_entry_streak_s += current_dt
                     if self.center_entry_streak_s >= self.center_entry_reset_s:
                         self.current_entry_arm = None
                         self.center_passed_since_entry = True
-                elif inside_entry_zone and self.center_passed_since_entry:
+                else:
                     self.center_entry_streak = 0
                     self.center_entry_streak_s = 0.0
-                    if self.current_entry_arm != zone_key:
+                inside_entry_zone = (
+                    stable_zone_key in self.ARM_NAMES
+                    and self._is_inside_entry_zone(stable_zone_key, centroid_px)
+                )
+                if inside_entry_zone and self.center_passed_since_entry:
+                    if self.current_entry_arm != stable_zone_key:
                         arm_entry_event = True
-                        entry_arm_name = zone_key
-                        self.current_entry_arm = zone_key
+                        entry_arm_name = stable_zone_key
+                        self.current_entry_arm = stable_zone_key
                         self.center_passed_since_entry = False
-                        self.arm_entries[zone_key] += 1
+                        self.arm_entries[stable_zone_key] += 1
                         self.total_arm_entries += 1
-                        self.arm_entry_sequence.append(zone_key)
+                        self.arm_entry_sequence.append(stable_zone_key)
                         if len(self.arm_entry_sequence) >= 3:
                             trio = self.arm_entry_sequence[-3:]
                             if len(set(trio)) == 3:
                                 self.alternation_count += 1
                                 alternation_event = True
-                else:
-                    self.center_entry_streak = 0
-                    self.center_entry_streak_s = 0.0
-
                 self.trajectory_px_stats.append(centroid_px)
                 template_xy = self.project_point_to_template_cm(centroid_px, zone_key)
                 if template_xy is not None:
@@ -848,6 +880,7 @@ class YMazeTracker:
             "cumulative_distance_cm": format_metric(stats_cumulative_distance_cm),
             "zone_key": zone_key,
             "observed_zone_key": observed_zone_key,
+            "scoring_zone_key": stable_zone_key,
             "zone": zone_label,
             "zone_group": zone_group,
             "current_arm": zone_key if zone_key in self.ARM_NAMES else None,
@@ -872,6 +905,7 @@ class YMazeTracker:
             "speed_cm_s": speed_cm_s,
             "zone_key": zone_key,
             "observed_zone_key": observed_zone_key,
+            "scoring_zone_key": stable_zone_key,
             "zone_label": zone_label,
             "zone_group": zone_group,
             "arm_entry_event": arm_entry_event,

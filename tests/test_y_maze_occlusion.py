@@ -118,7 +118,8 @@ def test_direct_arm_to_arm_jump_is_blocked_until_center_passage() -> None:
 
     assert results[0]["arm_entry_event"] is True
     assert results[1]["arm_entry_event"] is False
-    assert results[1]["zone_key"] == "arm_a"
+    assert results[1]["zone_key"] == "arm_b"
+    assert results[1]["scoring_zone_key"] == "arm_a"
     assert results[3]["arm_entry_event"] is True
     assert tracker.arm_entry_sequence == ["arm_a", "arm_b"]
 
@@ -159,3 +160,47 @@ def test_builder_adds_safe_defaults_and_preserves_per_video_overrides() -> None:
     assert config["per_video_configs"][0]["tracking_max_jump_cm"] == 12.0
     assert config["per_video_configs"][1]["tracking_max_jump_cm"] == 7.0
     assert config["per_video_configs"][1]["occlusion_hold_s"] == 0.8
+
+
+def test_center_label_is_immediate_and_reset_counts_from_first_center_frame() -> None:
+    tracker = YMazeTracker(
+        ZONES,
+        fps=10.0,
+        zone_confirm_s=0.3,
+        center_reset_s=0.2,
+        entry_depth_ratio=0.2,
+        tracking_max_jump_cm=200.0,
+    )
+    results = feed(
+        tracker,
+        [
+            detection(POINTS["arm_a"]),
+            detection(POINTS["arm_a"]),
+            detection(POINTS["arm_a"]),
+            detection(POINTS["center"]),
+            detection(POINTS["center"]),
+            detection(POINTS["arm_b"]),
+            detection(POINTS["arm_b"]),
+            detection(POINTS["arm_b"]),
+        ],
+    )
+
+    assert results[3]["zone_key"] == "center"
+    assert results[3]["scoring_zone_key"] == "arm_a"
+    assert tracker.arm_entry_sequence == ["arm_a", "arm_b"]
+
+
+def test_long_occlusion_allows_confirmed_far_reacquisition() -> None:
+    tracker = make_tracker(
+        tracking_max_jump_cm=4.0,
+        occlusion_hold_s=0.2,
+    )
+    tracker.zone_confirm_s = 0.12
+    tracker.reacquire_confirm_s = 0.12
+    tracker.last_all_centroid_px = POINTS["arm_a"]
+    tracker.last_detection_time_abs = 0.0
+    tracker.expected_area_px = 100.0
+    far_candidate = detection(POINTS["arm_b"])
+
+    assert tracker._select_detection([far_candidate], elapsed_s=0.5) is None
+    assert tracker._select_detection([far_candidate], elapsed_s=0.6) is far_candidate
