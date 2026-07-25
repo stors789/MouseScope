@@ -133,8 +133,10 @@ class BackgroundSubtractor:
             # Stable structures therefore disappear, while a mouse that stops
             # after being acquired remains different from the fixed background.
             diff = cv2.absdiff(gray, self.static_bg)
-            noise_floor = np.ceil(
-                self.temporal_noise_map.astype(np.float32) * self.temporal_noise_scale
+            noise_floor = np.clip(
+                np.ceil(self.temporal_noise_map.astype(np.float32) * self.temporal_noise_scale),
+                0,
+                255,
             ).astype(np.uint8)
             effective_threshold = np.maximum(noise_floor, int(np.clip(self.threshold, 0, 255)))
             return np.where(diff > effective_threshold, 255, 0).astype(np.uint8)
@@ -2351,8 +2353,9 @@ def create_temporal_background(
     """Build a frozen median background and robust pixel-noise map.
 
     Frames are sampled uniformly across the requested analysis window. The
-    90th-percentile absolute deviation captures recurring reflection/compression
-    flicker and is used as a per-pixel floor by ``BackgroundSubtractor``.
+    Median absolute deviation captures recurring reflection/compression flicker
+    without treating a mouse that visits a pixel in a minority of samples as
+    persistent noise. It is used as a per-pixel floor by ``BackgroundSubtractor``.
     """
     cap = open_video_capture(video_path, orientation_override=orientation_override)
     if not cap.isOpened():
@@ -2389,5 +2392,5 @@ def create_temporal_background(
     stack = np.stack(frames, axis=0)
     background = np.median(stack, axis=0).astype(np.uint8)
     deviations = np.abs(stack.astype(np.int16) - background.astype(np.int16))
-    noise_map = np.percentile(deviations, 90, axis=0).astype(np.uint8)
+    noise_map = np.median(deviations, axis=0).astype(np.uint8)
     return background, noise_map, indices
