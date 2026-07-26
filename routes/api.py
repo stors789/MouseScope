@@ -52,7 +52,11 @@ from services.resource_policy import resolved_run_resource_policy
 from services.video_frame_reader import read_video_frame
 from services.video_orientation import orientation_override_degrees
 from services.visual_style_preview import preview_experiment_payload, render_visual_style_preview
-from services.y_maze_roi_templates import RoiTemplateValidationError
+from services.roi_templates import (
+    RoiTemplateValidationError,
+    canonical_assay,
+    materialize_template,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +68,9 @@ def register_api_routes(app, ctx) -> None:
     project_store = getattr(ctx, "project_store", None)
     visual_style_store = getattr(ctx, "visual_style_store", None)
     experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
-    y_maze_roi_template_store = getattr(ctx, "y_maze_roi_template_store", None)
+    roi_template_store = getattr(ctx, "roi_template_store", None)
+    # Compatibility for embedders that still inject the old store.
+    legacy_y_maze_roi_template_store = getattr(ctx, "y_maze_roi_template_store", None)
     manual_video_cache_dir = Path(getattr(ctx, "DATA_DIR", tempfile.gettempdir())) / "manual_video_cache"
     app_version = str(getattr(ctx, "APP_VERSION", ""))
     RESULT_DIR = ctx.RESULT_DIR
@@ -184,31 +190,112 @@ def register_api_routes(app, ctx) -> None:
                 return False
         return True
 
-    @app.route('/api/y_maze_roi_templates', methods=['GET'])
-    def get_y_maze_roi_templates():
-        if y_maze_roi_template_store is None:
+    @app.route('/api/roi_templates', methods=['GET'])
+    def get_roi_templates():
+        if roi_template_store is None:
             return _api_error('ROI 模板存储未配置。', 500)
-        return jsonify({'templates': y_maze_roi_template_store.list_templates()})
+        try:
+            assay = canonical_assay(request.args.get('assay'))
+            templates = roi_template_store.list_templates(assay)
+            width = request.args.get('width', type=int)
+            height = request.args.get('height', type=int)
+            if width and height:
+                orientation = request.args.get('orientation', default=0, type=int)
+                templates = [
+                    materialize_template(
+                        template,
+                        {'width': width, 'height': height, 'orientation_degrees': orientation},
+                    )
+                    for template in templates
+                ]
+        except RoiTemplateValidationError as exc:
+            return _api_error(str(exc), 400)
+        return jsonify({'templates': templates})
 
-    @app.route('/api/y_maze_roi_templates', methods=['POST'])
-    def save_y_maze_roi_template():
-        if y_maze_roi_template_store is None:
+    @app.route('/api/roi_templates', methods=['POST'])
+    def save_roi_template():
+        if roi_template_store is None:
             return _api_error('ROI 模板存储未配置。', 500)
         data = request.get_json(silent=True) or {}
         try:
-            saved = y_maze_roi_template_store.save_template(
+            saved = roi_template_store.save_template(
+                data.get('assay'),
                 data.get('name'),
-                {'rois': data.get('rois'), 'geometry': data.get('geometry')},
+                {
+                    'rois': data.get('rois'),
+                    'geometry': data.get('geometry'),
+                    'source_frame': data.get('source_frame'),
+                },
+            )
+        except RoiTemplateValidationError as exc:
+            return _api_error(str(exc), 400)
+        return jsonify({'success': True, 'template': saved})
+
+    @app.route('/api/roi_templates/<template_id>', methods=['DELETE'])
+    def delete_roi_template(template_id):
+        if roi_template_store is None:
+            return _api_error('ROI 模板存储未配置。', 500)
+        try:
+            deleted = roi_template_store.delete_template(request.args.get('assay'), template_id)
+        except RoiTemplateValidationError as exc:
+            return _api_error(str(exc), 400)
+        if not deleted:
+            return _api_error('ROI 模板不存在。', 404)
+        return jsonify({'success': True})
+
+    # Keep old API paths working for integrations while the UI uses the generic API.
+    @app.route('/api/y_maze_roi_templates', methods=['GET', 'POST'])
+    def legacy_y_maze_roi_templates():
+        if roi_template_store is not None:
+            if request.method == 'GET':
+                return jsonify({'templates': roi_template_store.list_templates('y_maze')})
+            data = request.get_json(silent=True) or {}
+            try:
+                source = data.get('source_frame')
+                if not source:
+                    points = [
+                        point
+                        for roi in data.get('rois') or []
+                        for group in list((roi.get('zones') or {}).values())
+                        + [roi.get('detection_points') or []]
+                        for point in group or []
+                    ]
+                    source = {
+                        'width': max(1, int(max([float(p.get('x') or 0) for p in points] or [1]) + .999)),
+                        'height': max(1, int(max([float(p.get('y') or 0) for p in points] or [1]) + .999)),
+                    }
+                saved = roi_template_store.save_template(
+                    'y_maze',
+                    data.get('name'),
+                    {'rois': data.get('rois'), 'geometry': data.get('geometry'), 'source_frame': source},
+                )
+            except RoiTemplateValidationError as exc:
+                return _api_error(str(exc), 400)
+            return jsonify({'success': True, 'template': saved})
+        if legacy_y_maze_roi_template_store is None:
+            return _api_error('ROI 模板存储未配置。', 500)
+        if request.method == 'GET':
+            return jsonify({'templates': legacy_y_maze_roi_template_store.list_templates()})
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = legacy_y_maze_roi_template_store.save_template(
+                data.get('name'), {'rois': data.get('rois'), 'geometry': data.get('geometry')}
             )
         except RoiTemplateValidationError as exc:
             return _api_error(str(exc), 400)
         return jsonify({'success': True, 'template': saved})
 
     @app.route('/api/y_maze_roi_templates/<template_id>', methods=['DELETE'])
-    def delete_y_maze_roi_template(template_id):
-        if y_maze_roi_template_store is None:
+    def legacy_delete_y_maze_roi_template(template_id):
+        store = roi_template_store or legacy_y_maze_roi_template_store
+        if store is None:
             return _api_error('ROI 模板存储未配置。', 500)
-        if not y_maze_roi_template_store.delete_template(template_id):
+        deleted = (
+            store.delete_template('y_maze', template_id)
+            if roi_template_store is not None
+            else store.delete_template(template_id)
+        )
+        if not deleted:
             return _api_error('ROI 模板不存在。', 404)
         return jsonify({'success': True})
 
