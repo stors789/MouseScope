@@ -73,7 +73,7 @@ elif ! "$PYTHON_EXE" -c 'import PyInstaller' >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! "$PYTHON_EXE" -c 'import webview, webview.platforms.cocoa' >/dev/null 2>&1; then
+if ! "$PYTHON_EXE" -c 'import webview, webview.platforms.cocoa; from PIL import Image' >/dev/null 2>&1; then
     echo "[ERROR] The macOS WebView dependencies are not available." >&2
     echo "        Run without --no-install or install requirements-macos.txt." >&2
     exit 1
@@ -81,19 +81,7 @@ fi
 
 ICON_SOURCE="$PROJECT_DIR/static/img/logo.png"
 ICON_OUTPUT="$PROJECT_DIR/build/MouseScope.icns"
-ICON_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mousescope-icon.XXXXXX")"
-trap 'rm -rf "$ICON_WORK_DIR"' EXIT
-ICONSET="$ICON_WORK_DIR/MouseScope.iconset"
-mkdir -p "$ICONSET" "$PROJECT_DIR/build"
-
-for size in 16 32 128 256 512; do
-    double_size=$((size * 2))
-    sips -s format png -z "$size" "$size" "$ICON_SOURCE" \
-        --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-    sips -s format png -z "$double_size" "$double_size" "$ICON_SOURCE" \
-        --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$ICON_OUTPUT"
+"$PYTHON_EXE" tools/build_macos_icon.py "$ICON_SOURCE" "$ICON_OUTPUT"
 
 "$PYTHON_EXE" -m PyInstaller --clean --noconfirm MouseScope.spec
 

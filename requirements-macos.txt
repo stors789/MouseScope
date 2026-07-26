@@ -1,2 +1,4 @@
 # macOS-only embedded WKWebView runtime. Do not install this file on Windows.
 pywebview==6.2.1
+# Reproducible ICNS generation for the app bundle.
+Pillow==12.3.0
