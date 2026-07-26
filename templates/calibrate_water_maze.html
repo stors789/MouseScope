@@ -1398,5 +1398,16 @@ document.addEventListener('DOMContentLoaded', function () {
         MouseScopeTour.register('calibrate-water-maze', {version: 'v2', steps: waterMazeTourSteps});
     }
 });
+window.MouseScopeRoiTemplateAdapter = {
+    assay:'water_maze', isBatch:Boolean(isBatch), videoCount:totalVideoCount,
+    getPayload:()=>({rois:normalizeRois(rois),geometry:{pool_diameter_cm:num('poolDiameterCm',120),platform_radius_cm:num('platformRadiusCm',5)}}),
+    getFrameMeta:index=>{const i=index??currentVideoIdx;const info=videoInfoList[i]||currentVideoInfo||videoInfo||{};const image=i===currentVideoIdx?baseFrame:null;return{width:image?.width||info.width,height:image?.height||info.height,orientation_degrees:info.orientation_degrees||info.orientation_override||0};},
+    applyPayload:(payloads,all)=>{
+        if(all)videoConfigs.forEach((cfg,index)=>{cfg.rois=cloneState(payloads[index].rois);Object.assign(cfg,payloads[index].geometry);});
+        else{rois=cloneState(payloads[0].rois).map(migrateLegacyPool);Object.entries(payloads[0].geometry||{}).forEach(([key,value])=>{if(key==='pool_diameter_cm')document.getElementById('poolDiameterCm').value=value;if(key==='platform_radius_cm')document.getElementById('platformRadiusCm').value=value;});}
+        if(all){const cfg=videoConfigs[currentVideoIdx];rois=cloneState(cfg.rois||[]).map(migrateLegacyPool);document.getElementById('poolDiameterCm').value=cfg.pool_diameter_cm||120;document.getElementById('platformRadiusCm').value=cfg.platform_radius_cm||5;}
+        clearMaskDraft();activePoolIndex=rois.length?0:null;persistCurrentVideoState();updatePoolList();updateStatusLabels();drawPoolCanvas();
+    }
+};
 </script>
 {% endblock %}

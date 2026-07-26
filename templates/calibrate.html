@@ -1646,5 +1646,22 @@
             else if (i === activeStep) nav.classList.add('active');
         }
     }
+    window.MouseScopeRoiTemplateAdapter = {
+        assay: 'tst', isBatch: Boolean(isBatch), videoCount: totalVideoCount,
+        getPayload: () => ({rois: cloneState(rois.filter(isCompleteROI)), geometry: {}}),
+        getFrameMeta: index => {
+            const i = index ?? currentVideoIdx;
+            const info = videoInfoList[i] || currentVideoInfo || videoInfo || {};
+            const canvas = i === currentVideoIdx ? document.getElementById('roiCanvas') : null;
+            return {width: canvas?.width || info.width, height: canvas?.height || info.height, orientation_degrees: info.orientation_degrees || info.orientation_override || 0};
+        },
+        applyPayload: (payloads, all) => {
+            if (all) videoConfigs.forEach((cfg, index) => { cfg.rois = cloneState(payloads[index].rois); cfg.current_roi = []; });
+            else rois = cloneState(payloads[0].rois);
+            if (all) rois = cloneState(videoConfigs[currentVideoIdx].rois || []);
+            currentROI = []; isDrawingROI = false; activeROIIndex = null;
+            persistCurrentVideoState(); updateROIList(); drawROICanvas(); updateROIReadinessUI();
+        }
+    };
 </script>
 {% endblock %}

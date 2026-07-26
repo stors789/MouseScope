@@ -1412,5 +1412,17 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     document.addEventListener('mousescope:langchange', applyFstLang);
 });
+window.MouseScopeRoiTemplateAdapter = {
+    assay: 'forced_swim', isBatch: Boolean(isBatch), videoCount: totalVideoCount,
+    getPayload: () => ({rois: cloneState(rois.filter(isCompleteCylinderROI)), geometry: {cylinder_diameter_cm: Number(document.getElementById('defaultDiameterCm')?.value || 10)}}),
+    getFrameMeta: index => {const i=index??currentVideoIdx;const info=videoInfoList[i]||currentVideoInfo||videoInfo||{};const image=i===currentVideoIdx?baseFrame:null;return {width:image?.width||info.width,height:image?.height||info.height,orientation_degrees:info.orientation_degrees||info.orientation_override||0};},
+    applyPayload: (payloads, all) => {
+        if(all) videoConfigs.forEach((cfg,index)=>{cfg.rois=cloneState(payloads[index].rois);});
+        else {rois=cloneState(payloads[0].rois);document.getElementById('defaultDiameterCm').value=payloads[0].geometry.cylinder_diameter_cm||10;}
+        if(all) rois=cloneState(videoConfigs[currentVideoIdx].rois||[]);
+        document.getElementById('defaultDiameterCm').value=(payloads[all?currentVideoIdx:0].geometry||{}).cylinder_diameter_cm||10;
+        currentPoints=[]; currentEditPoints=[]; persistCurrentVideoState(); updateCylinderList(); drawFstCanvas();
+    }
+};
 </script>
 {% endblock %}

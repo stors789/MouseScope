@@ -2057,6 +2057,16 @@ function startAnalysis() {
 
 document.addEventListener('DOMContentLoaded', applyNorLang);
 document.addEventListener('mousescope:langchange', applyNorLang);
+window.MouseScopeRoiTemplateAdapter = {
+    assay:'novel_object',isBatch:Boolean(isBatch),videoCount:totalVideoCount,
+    getPayload:()=>({rois:cloneState(rois.filter(isCompleteNorROI)),geometry:{arena_width_cm:Number(document.getElementById('arenaWidthCm')?.value||50),arena_height_cm:Number(document.getElementById('arenaHeightCm')?.value||50),interaction_radius_cm:Number(document.getElementById('interactionRadius')?.value||4)}}),
+    getFrameMeta:index=>{const i=index??currentVideoIdx;const info=videoInfoList[i]||currentVideoInfo||videoInfo||{};const image=i===currentVideoIdx?baseFrame:null;return{width:image?.width||info.width,height:image?.height||info.height,orientation_degrees:info.orientation_degrees||info.orientation_override||0};},
+    applyPayload:(payloads,all)=>{
+        if(all)videoConfigs.forEach((cfg,index)=>{cfg.rois=cloneState(payloads[index].rois);Object.assign(cfg,payloads[index].geometry);});else{rois=cloneState(payloads[0].rois);document.getElementById('arenaWidthCm').value=payloads[0].geometry.arena_width_cm||50;document.getElementById('arenaHeightCm').value=payloads[0].geometry.arena_height_cm||50;document.getElementById('interactionRadius').value=payloads[0].geometry.interaction_radius_cm||4;}
+        if(all)rois=cloneState(videoConfigs[currentVideoIdx].rois||[]);
+        const appliedGeometry=payloads[all?currentVideoIdx:0].geometry||{};document.getElementById('arenaWidthCm').value=appliedGeometry.arena_width_cm||50;document.getElementById('arenaHeightCm').value=appliedGeometry.arena_height_cm||50;document.getElementById('interactionRadius').value=appliedGeometry.interaction_radius_cm||4;
+        currentROI={points:[],objects:[]};persistCurrentVideoState();updateROIList();drawArenaCanvas();
+    }
+};
 </script>
 {% endblock %}
-

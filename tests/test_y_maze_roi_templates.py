@@ -17,6 +17,7 @@ if str(CORE) not in sys.path:
 from services.y_maze_roi_templates import (
     RoiTemplateValidationError,
     YMazeRoiTemplateStore,
+    normalize_template_payload,
 )
 from routes.api import register_api_routes
 
@@ -61,6 +62,12 @@ def test_store_persists_geometry_across_instances(tmp_path: Path) -> None:
     assert loaded[0]["rois"][0]["detection_points"][-1] == {"x": 0.0, "y": 20.0}
     assert "subject_id" not in loaded[0]["rois"][0]
     assert "manual_events" not in loaded[0]["rois"][0]
+
+
+def test_legacy_normalize_function_keeps_one_argument_api() -> None:
+    normalized = normalize_template_payload(_payload())
+    assert normalized["assay"] == "y_maze"
+    assert normalized["coordinate_space"] == "normalized"
 
 
 def test_same_name_updates_and_delete_is_persistent(tmp_path: Path) -> None:
@@ -130,7 +137,9 @@ def test_y_maze_calibration_exposes_persistent_template_controls() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'id="roiTemplatePanel"' in template
-    assert "fetch('/api/y_maze_roi_templates'" in template
+    assert "fetch('/api/roi_templates'" in template
+    assert "templateAssay()" in template
+    assert "'elevated_plus':'y_maze'" in template
     assert "saveRoiTemplate()" in template
     assert "applyRoiTemplate()" in template
     assert "deleteRoiTemplate()" in template
