@@ -74,6 +74,11 @@ def run_desktop_app(*, webview_module: Any | None = None) -> int:
 
     import app as app_module
 
+    # The bootstrap URL contains the short-lived desktop session token. Keep
+    # Werkzeug access logs available in normal web mode, but never persist that
+    # URL from the production desktop entry point.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
     token = secrets.token_urlsafe(32)
     app_module.app.config.update(
         MOUSESCOPE_DESKTOP_MODE=True,

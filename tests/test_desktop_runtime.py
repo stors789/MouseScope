@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import unittest
@@ -186,11 +187,17 @@ class DesktopRuntimeTest(unittest.TestCase):
 
     def test_launcher_uses_cocoa_without_opening_external_browser(self):
         fake_webview = _FakeWebview()
+        werkzeug_logger = logging.getLogger("werkzeug")
+        original_level = werkzeug_logger.level
         with patch("desktop._configure_file_logging"), patch(
             "desktop.stop_analysis_sessions",
             return_value={},
         ), patch("desktop.webbrowser.open") as open_browser:
-            result = desktop.run_desktop_app(webview_module=fake_webview)
+            try:
+                result = desktop.run_desktop_app(webview_module=fake_webview)
+                self.assertGreaterEqual(werkzeug_logger.level, logging.WARNING)
+            finally:
+                werkzeug_logger.setLevel(original_level)
 
         self.assertEqual(result, 0)
         args, kwargs = fake_webview.create_args
