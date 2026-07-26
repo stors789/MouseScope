@@ -100,6 +100,12 @@ from services.experiment_defaults_store import ExperimentDefaultsStore
 from services.reproducibility import finalize_reproducibility_artifacts
 from services.version import APP_VERSION, APP_VERSION_TAG
 from services.app_paths import resolve_application_data_directory
+from services.desktop_runtime import (
+    DESKTOP_TOKEN_COOKIE,
+    DESKTOP_TOKEN_HEADER,
+    desktop_token_matches,
+    is_loopback_address,
+)
 
 try:
     import pandas as pd
@@ -145,6 +151,8 @@ LICENSE_EXEMPT_ENDPOINTS = {
     'license_page',
     'api_get_license',
     'api_accept_license',
+    'desktop_bootstrap',
+    'desktop_health',
 }
 
 
@@ -652,6 +660,39 @@ app.secret_key = _load_or_create_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = None
 
 
+@app.before_request
+def desktop_session_guard():
+    """Keep the embedded desktop service private to its owning WebView."""
+    if not app.config.get('MOUSESCOPE_DESKTOP_MODE'):
+        return None
+
+    if not is_loopback_address(request.remote_addr):
+        return jsonify({'success': False, 'error': 'Desktop requests must use loopback.'}), 403
+
+    expected_origin = str(app.config.get('MOUSESCOPE_DESKTOP_ORIGIN') or '')
+    expected_host = expected_origin.removeprefix('http://').removeprefix('https://')
+    if not expected_host or request.host != expected_host:
+        return jsonify({'success': False, 'error': 'Invalid desktop host.'}), 403
+
+    expected_token = str(app.config.get('MOUSESCOPE_DESKTOP_TOKEN') or '')
+    endpoint = request.endpoint or ''
+    if endpoint == 'desktop_bootstrap':
+        supplied_token = request.args.get('token')
+    else:
+        supplied_token = (
+            request.headers.get(DESKTOP_TOKEN_HEADER)
+            or request.cookies.get(DESKTOP_TOKEN_COOKIE)
+        )
+    if not desktop_token_matches(expected_token, supplied_token):
+        return jsonify({'success': False, 'error': 'Invalid desktop session.'}), 403
+
+    if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+        origin = str(request.headers.get('Origin') or '')
+        if origin and origin != expected_origin:
+            return jsonify({'success': False, 'error': 'Invalid desktop request origin.'}), 403
+    return None
+
+
 @app.errorhandler(RequestEntityTooLarge)
 def handle_request_entity_too_large(_exc):
     message = '上传请求过大，已被运行环境拒绝。请拆分批次，或改用本地路径方式选择文件。'
@@ -913,6 +954,7 @@ def inject_navigation_context():
     return {
         'app_version': APP_VERSION,
         'app_version_tag': APP_VERSION_TAG,
+        'desktop_mode': bool(app.config.get('MOUSESCOPE_DESKTOP_MODE')),
         'enable_three_chamber': is_three_chamber_enabled(),
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
@@ -942,6 +984,7 @@ from routes.pages import register_page_routes
 from routes.api import register_api_routes
 from routes.projects import register_project_page_routes
 from routes.project_api import register_project_api_routes
+from routes.desktop import register_desktop_routes
 
 route_context = SimpleNamespace(
     APP_VERSION=APP_VERSION,
@@ -970,6 +1013,7 @@ register_page_routes(app, route_context)
 register_api_routes(app, route_context)
 register_project_page_routes(app, route_context)
 register_project_api_routes(app, route_context)
+register_desktop_routes(app, route_context)
 
 
 # ==================== 启动 ====================
