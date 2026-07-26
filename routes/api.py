@@ -52,6 +52,7 @@ from services.resource_policy import resolved_run_resource_policy
 from services.video_frame_reader import read_video_frame
 from services.video_orientation import orientation_override_degrees
 from services.visual_style_preview import preview_experiment_payload, render_visual_style_preview
+from services.y_maze_roi_templates import RoiTemplateValidationError
 
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def register_api_routes(app, ctx) -> None:
     project_store = getattr(ctx, "project_store", None)
     visual_style_store = getattr(ctx, "visual_style_store", None)
     experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
+    y_maze_roi_template_store = getattr(ctx, "y_maze_roi_template_store", None)
     manual_video_cache_dir = Path(getattr(ctx, "DATA_DIR", tempfile.gettempdir())) / "manual_video_cache"
     app_version = str(getattr(ctx, "APP_VERSION", ""))
     RESULT_DIR = ctx.RESULT_DIR
@@ -181,6 +183,34 @@ def register_api_routes(app, ctx) -> None:
             if experiment_filter not in experiment_values:
                 return False
         return True
+
+    @app.route('/api/y_maze_roi_templates', methods=['GET'])
+    def get_y_maze_roi_templates():
+        if y_maze_roi_template_store is None:
+            return _api_error('ROI 模板存储未配置。', 500)
+        return jsonify({'templates': y_maze_roi_template_store.list_templates()})
+
+    @app.route('/api/y_maze_roi_templates', methods=['POST'])
+    def save_y_maze_roi_template():
+        if y_maze_roi_template_store is None:
+            return _api_error('ROI 模板存储未配置。', 500)
+        data = request.get_json(silent=True) or {}
+        try:
+            saved = y_maze_roi_template_store.save_template(
+                data.get('name'),
+                {'rois': data.get('rois'), 'geometry': data.get('geometry')},
+            )
+        except RoiTemplateValidationError as exc:
+            return _api_error(str(exc), 400)
+        return jsonify({'success': True, 'template': saved})
+
+    @app.route('/api/y_maze_roi_templates/<template_id>', methods=['DELETE'])
+    def delete_y_maze_roi_template(template_id):
+        if y_maze_roi_template_store is None:
+            return _api_error('ROI 模板存储未配置。', 500)
+        if not y_maze_roi_template_store.delete_template(template_id):
+            return _api_error('ROI 模板不存在。', 404)
+        return jsonify({'success': True})
 
     def _decorate_task_urls(task: dict) -> dict:
         session_id = task.get('session_id')
