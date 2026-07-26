@@ -66,12 +66,34 @@ echo "       $PYTHON_EXE"
 
 if [[ "$install_dependencies" == true ]]; then
     echo "[INFO] Installing/updating runtime and build dependencies..."
-    "$PYTHON_EXE" -m pip install -r requirements.txt -r requirements-build.txt
+    "$PYTHON_EXE" -m pip install -r requirements.txt -r requirements-macos.txt -r requirements-build.txt
 elif ! "$PYTHON_EXE" -c 'import PyInstaller' >/dev/null 2>&1; then
     echo "[ERROR] PyInstaller is not available in the selected Python environment." >&2
     echo "        Run without --no-install or install requirements-build.txt." >&2
     exit 1
 fi
+
+if ! "$PYTHON_EXE" -c 'import webview, webview.platforms.cocoa' >/dev/null 2>&1; then
+    echo "[ERROR] The macOS WebView dependencies are not available." >&2
+    echo "        Run without --no-install or install requirements-macos.txt." >&2
+    exit 1
+fi
+
+ICON_SOURCE="$PROJECT_DIR/static/img/logo.png"
+ICON_OUTPUT="$PROJECT_DIR/build/MouseScope.icns"
+ICON_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mousescope-icon.XXXXXX")"
+trap 'rm -rf "$ICON_WORK_DIR"' EXIT
+ICONSET="$ICON_WORK_DIR/MouseScope.iconset"
+mkdir -p "$ICONSET" "$PROJECT_DIR/build"
+
+for size in 16 32 128 256 512; do
+    double_size=$((size * 2))
+    sips -s format png -z "$size" "$size" "$ICON_SOURCE" \
+        --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -s format png -z "$double_size" "$double_size" "$ICON_SOURCE" \
+        --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$ICON_OUTPUT"
 
 "$PYTHON_EXE" -m PyInstaller --clean --noconfirm MouseScope.spec
 
@@ -79,6 +101,14 @@ APP_PATH="$PROJECT_DIR/dist/MouseScope.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/MouseScope"
 if [[ ! -d "$APP_PATH" || ! -x "$APP_EXECUTABLE" ]]; then
     echo "[ERROR] Build completed without the expected app bundle: $APP_PATH" >&2
+    exit 1
+fi
+if [[ -d "$APP_PATH/Contents/MacOS/data" ]]; then
+    echo "[ERROR] Runtime data was embedded in the signed app area." >&2
+    exit 1
+fi
+if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist" >/dev/null; then
+    echo "[ERROR] MouseScope.app is missing a valid Info.plist." >&2
     exit 1
 fi
 

@@ -20,6 +20,17 @@ try:
 except Exception:
     IMAGEIO_FFMPEG_DATAS = []
 
+IS_MACOS = sys.platform == 'darwin'
+ENTRY_SCRIPT = 'desktop.py' if IS_MACOS else 'app.py'
+APP_ICON = os.path.join(PROJECT_DIR, 'build', 'MouseScope.icns')
+if not os.path.isfile(APP_ICON):
+    APP_ICON = None
+
+MACOS_HIDDEN_IMPORTS = [
+    'webview',
+    'webview.platforms.cocoa',
+] if IS_MACOS else []
+
 def _collect_optional_binary(env_name, executable_names):
     candidates = []
     env_path = os.environ.get(env_name)
@@ -37,7 +48,7 @@ def _collect_optional_binary(env_name, executable_names):
 FFPROBE_BINARIES = _collect_optional_binary('MOUSESCOPE_FFPROBE_EXE', ['ffprobe.exe', 'ffprobe'])
 
 a = Analysis(
-    [os.path.join(PROJECT_DIR, 'app.py')],
+    [os.path.join(PROJECT_DIR, ENTRY_SCRIPT)],
     pathex=[PROJECT_DIR, os.path.join(PROJECT_DIR, 'core')],
     binaries=FFPROBE_BINARIES,
     datas=[
@@ -128,7 +139,9 @@ a = Analysis(
         'routes.pages',
         'routes.projects',
         'routes.project_api',
-    ],
+        'routes.desktop',
+        'services.desktop_runtime',
+    ] + MACOS_HIDDEN_IMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -163,8 +176,8 @@ exe = EXE(
     upx=True,
     # Keep Windows diagnostics visible, but make the macOS bundle a normal
     # foreground application instead of setting LSBackgroundOnly.
-    console=sys.platform != 'darwin',
-    # icon='static/img/icon.ico',  # 如果有图标，取消注释
+    console=not IS_MACOS,
+    icon=APP_ICON if IS_MACOS else None,
 )
 
 coll = COLLECT(
@@ -180,14 +193,19 @@ coll = COLLECT(
 
 # On macOS, wrap the collected onedir build in a native application bundle.
 # Windows continues to use dist/MouseScope/MouseScope.exe as before.
-if sys.platform == 'darwin':
+if IS_MACOS:
     app = BUNDLE(
         coll,
         name='MouseScope.app',
         bundle_identifier='io.github.fujiacheng3.mousescope',
+        icon=APP_ICON,
         info_plist={
+            'CFBundleDisplayName': 'MouseScope',
+            'CFBundleName': 'MouseScope',
             'CFBundleShortVersionString': APP_VERSION,
             'CFBundleVersion': APP_VERSION,
+            'LSBackgroundOnly': False,
+            'LSUIElement': False,
             'NSHighResolutionCapable': True,
         },
     )

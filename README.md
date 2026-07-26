@@ -281,9 +281,9 @@ On macOS, run:
 ./build_app.sh
 ```
 
-脚本会安装运行和构建依赖，并生成 `dist/MouseScope.app`。若依赖已经安装，可使用 `./build_app.sh --no-install`；若要指定 Python 环境，可设置 `MOUSESCOPE_PYTHON`：
+脚本会安装运行、macOS WKWebView 和构建依赖，并生成 `dist/MouseScope.app`。双击后 Web UI 会直接显示在独立应用窗口中，不会打开系统浏览器或 Terminal。运行时数据保存在 `~/Library/Application Support/MouseScope/data`，不会写入 App Bundle。若依赖已经安装，可使用 `./build_app.sh --no-install`；若要指定 Python 环境，可设置 `MOUSESCOPE_PYTHON`：
 
-The script installs runtime and build dependencies, then creates `dist/MouseScope.app`. Use `./build_app.sh --no-install` when the dependencies are already installed, or set `MOUSESCOPE_PYTHON` to select a Python environment:
+The script installs the runtime, macOS WKWebView, and build dependencies, then creates `dist/MouseScope.app`. Double-clicking it opens the Web UI inside a standalone app window without Safari or Terminal. Runtime data is stored under `~/Library/Application Support/MouseScope/data`, outside the app bundle. Use `./build_app.sh --no-install` when the dependencies are already installed, or set `MOUSESCOPE_PYTHON` to select a Python environment:
 
 ```bash
 MOUSESCOPE_PYTHON=/path/to/python3 ./build_app.sh --no-install
@@ -384,8 +384,10 @@ MouseScope/
 |  \- assets/
 |- tests/
 |- MouseScope.spec
+|- desktop.py
 |- build_app.sh
 |- build_exe.bat
+|- requirements-macos.txt
 |- requirements-build.txt
 \- requirements.txt
 ```

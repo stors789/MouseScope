@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Mapping
@@ -36,11 +38,31 @@ def _user_data_directory(environ: Mapping[str, str]) -> Path:
     return Path.home() / '.mousescope' / 'data'
 
 
+def _macos_data_directory(environ: Mapping[str, str]) -> Path:
+    home = Path(str(environ.get('HOME') or Path.home())).expanduser()
+    return home / 'Library' / 'Application Support' / 'MouseScope' / 'data'
+
+
+def _copy_missing_tree(source: Path, destination: Path) -> None:
+    """Migrate legacy data without replacing files already in the stable store."""
+    if not source.is_dir():
+        return
+    for item in source.rglob('*'):
+        relative = item.relative_to(source)
+        target = destination / relative
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file() and not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+
+
 def resolve_application_data_directory(
     base_dir: str | os.PathLike,
     *,
     frozen: bool,
     environ: Mapping[str, str] | None = None,
+    platform_name: str | None = None,
 ) -> Path:
     """Choose a writable data directory for source and packaged executions."""
     env = os.environ if environ is None else environ
@@ -51,6 +73,21 @@ def resolve_application_data_directory(
     portable = Path(base_dir) / 'data'
     if not frozen:
         return _ensure_writable_directory(portable)
+
+    if (platform_name or sys.platform) == 'darwin':
+        stable = _ensure_writable_directory(_macos_data_directory(env))
+        legacy_candidates = (
+            portable,
+            _user_data_directory(env),
+        )
+        for legacy in legacy_candidates:
+            try:
+                if legacy.resolve() == stable.resolve():
+                    continue
+                _copy_missing_tree(legacy, stable)
+            except OSError as exc:
+                logger.warning('Unable to migrate legacy MouseScope data from %s: %s', legacy, exc)
+        return stable
 
     try:
         return _ensure_writable_directory(portable)
