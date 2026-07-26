@@ -8,6 +8,7 @@ import os
 import sys
 import shutil
 from PyInstaller.utils.hooks import collect_data_files
+from services.version import APP_VERSION
 
 block_cipher = None
 
@@ -160,7 +161,9 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,       # 保留控制台窗口，方便看日志；发布时可改 False
+    # Keep Windows diagnostics visible, but make the macOS bundle a normal
+    # foreground application instead of setting LSBackgroundOnly.
+    console=sys.platform != 'darwin',
     # icon='static/img/icon.ico',  # 如果有图标，取消注释
 )
 
@@ -174,3 +177,17 @@ coll = COLLECT(
     upx_exclude=[],
     name='MouseScope',
 )
+
+# On macOS, wrap the collected onedir build in a native application bundle.
+# Windows continues to use dist/MouseScope/MouseScope.exe as before.
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='MouseScope.app',
+        bundle_identifier='io.github.fujiacheng3.mousescope',
+        info_plist={
+            'CFBundleShortVersionString': APP_VERSION,
+            'CFBundleVersion': APP_VERSION,
+            'NSHighResolutionCapable': True,
+        },
+    )

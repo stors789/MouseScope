@@ -16,7 +16,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Version-v3.5.0-c96442" alt="Version"/>
-  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-7a5136" alt="Platform"/>
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
   <img src="https://img.shields.io/badge/Modules-8%20Assays-16a34a" alt="Modules"/>
   <img src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%20%7C%20English-0f766e" alt="Language"/>
@@ -271,6 +271,29 @@ python app.py
 
 After startup, open the local web interface. The exact port may follow the startup message in your environment.
 
+### 方式三：构建 macOS 应用 | Option 3: Build the macOS App
+
+在 macOS 上运行：
+
+On macOS, run:
+
+```bash
+./build_app.sh
+```
+
+脚本会安装运行和构建依赖，并生成 `dist/MouseScope.app`。若依赖已经安装，可使用 `./build_app.sh --no-install`；若要指定 Python 环境，可设置 `MOUSESCOPE_PYTHON`：
+
+The script installs runtime and build dependencies, then creates `dist/MouseScope.app`. Use `./build_app.sh --no-install` when the dependencies are already installed, or set `MOUSESCOPE_PYTHON` to select a Python environment:
+
+```bash
+MOUSESCOPE_PYTHON=/path/to/python3 ./build_app.sh --no-install
+open dist/MouseScope.app
+```
+
+PyInstaller 生成当前 Mac 架构对应的应用（Apple Silicon 或 Intel），因此发布时应在目标架构上构建。当前应用未进行 Apple Developer 签名或公证，适合本地构建和测试；对外分发前仍需完成签名与公证。Windows 构建继续使用 `build_exe.bat`。
+
+PyInstaller produces an app for the current Mac architecture (Apple Silicon or Intel), so release builds should run on the target architecture. The app is not yet signed or notarized with an Apple Developer identity and is intended for local builds and testing; sign and notarize it before public distribution. Continue to use `build_exe.bat` for Windows builds.
+
 ## 依赖 | Dependencies
 
 核心依赖记录在 `requirements.txt` 中：
@@ -286,6 +309,10 @@ Core dependencies are listed in `requirements.txt`:
 `imageio-ffmpeg` 用于在打包版或无系统 FFmpeg 的环境中提供更稳定的标注视频编码能力。
 
 `imageio-ffmpeg` helps provide more stable annotated-video encoding in packaged builds or environments without a system FFmpeg.
+
+构建专用依赖记录在 `requirements-build.txt` 中。
+
+Build-only dependencies are pinned in `requirements-build.txt`.
 
 ## 本地数据与隐私 | Local Data and Privacy
 
@@ -357,6 +384,9 @@ MouseScope/
 |  \- assets/
 |- tests/
 |- MouseScope.spec
+|- build_app.sh
+|- build_exe.bat
+|- requirements-build.txt
 \- requirements.txt
 ```
 
