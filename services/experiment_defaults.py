@@ -77,10 +77,6 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "dilation_iter": 2, "min_area": 120, "max_area": 50000,
         "arm_length_cm": 30.0, "arm_width_cm": 10.0,
         "movement_threshold_cm_s": 2.0, "entry_depth_ratio": 0.2,
-        "tracking_max_jump_cm": 12.0, "occlusion_hold_s": 0.4,
-        "zone_confirm_s": 0.12, "center_reset_s": 0.2,
-        "require_center_passage": True,
-        "temporal_bg_samples": 90, "temporal_diff_threshold": 25,
         "bin_seconds": 60.0, "generate_video": True,
     },
     "light_dark_box": {
@@ -143,12 +139,6 @@ _FIELD_LABELS: dict[str, tuple[str, str]] = {
     "closed_arm_length_cm": ("封闭臂长度（cm）", "Closed-arm length (cm)"), "open_axis": ("开放臂方向", "Open-arm axis"),
     "arm_length_cm": ("臂长（cm）", "Arm length (cm)"), "arm_width_cm": ("臂宽（cm）", "Arm width (cm)"),
     "entry_depth_ratio": ("进入深度比例", "Entry-depth ratio"), "cylinder_diameter_cm": ("圆筒直径（cm）", "Cylinder diameter (cm)"),
-    "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
-    "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
-    "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
-    "require_center_passage": ("入臂切换必须经过中心", "Require center passage between arms"),
-    "temporal_bg_samples": ("时序背景抽样帧数", "Temporal background samples"),
-    "temporal_diff_threshold": ("时序背景差分阈值", "Temporal difference threshold"),
     "auto_threshold": ("自动不动阈值", "Auto immobility threshold"), "immobility_threshold": ("不动阈值", "Immobility threshold"),
     "immobility_high_threshold": ("高不动阈值", "High immobility threshold"), "threshold_sensitivity": ("阈值灵敏度", "Threshold sensitivity"),
     "smoothing_window_s": ("平滑窗口（s）", "Smoothing window (s)"), "min_immobility_duration_s": ("最短不动时长（s）", "Minimum immobility (s)"),
@@ -229,12 +219,6 @@ _FIELD_LABELS.update({
     "selected_phase": ("选择阶段", "Selected phase"), "protocol_segments": ("完整流程时间轴（JSON）", "Full-protocol timeline (JSON)"),
     "role_schedule": ("对象角色安排（JSON）", "Object-role schedule (JSON)"), "cup_exclusion_radius_cm": ("杯体排除半径（cm）", "Cup exclusion radius (cm)"),
     "center_reset_s": ("中心区重置（s）", "Center reset (s)"),
-    "tracking_max_jump_cm": ("最大追踪跳变（cm）", "Maximum tracking jump (cm)"),
-    "occlusion_hold_s": ("短时遮挡保持（s）", "Short occlusion hold (s)"),
-    "zone_confirm_s": ("区域确认时长（s）", "Zone confirmation time (s)"),
-    "require_center_passage": ("入臂切换必须经过中心", "Require center passage between arms"),
-    "temporal_bg_samples": ("时序背景抽样帧数", "Temporal background samples"),
-    "temporal_diff_threshold": ("时序背景差分阈值", "Temporal difference threshold"),
 })
 
 _SELECT_OPTIONS.update({
@@ -248,13 +232,6 @@ _SELECT_OPTIONS.update({
 })
 
 _EXPERIMENT_SELECT_OPTIONS: dict[tuple[str, str], list[tuple[str, str, str]]] = {
-    ("y_maze", "bg_method"): [
-        ("threshold", "阈值", "Threshold"),
-        ("static", "静态背景", "Static background"),
-        ("mog2", "MOG2", "MOG2"),
-        ("knn", "KNN", "KNN"),
-        ("temporal", "时序背景", "Temporal background"),
-    ],
     ("three_chamber", "phase"): [
         ("habituation_center", "中央室适应", "Center habituation"),
         ("habituation_all", "全场适应", "Full-apparatus habituation"),
@@ -270,21 +247,17 @@ _POSITIVE_CM_FIELDS = {
     "track_smoothing_max_jump_cm", "whishaw_corridor_width_cm", "light_box_length_cm",
     "light_box_width_cm", "dark_box_length_cm", "dark_box_width_cm", "shared_edge_length_cm",
     "cup_exclusion_radius_cm",
-    "tracking_max_jump_cm",
 }
 _NONNEGATIVE_SECONDS_FIELDS = {
     "smoothing_window_s", "min_immobility_duration_s", "min_active_duration_s", "gap_merge_s",
     "min_valid_exploration_s", "platform_dwell_s", "max_gap_s", "door_open_delay_s",
     "transition_min_dwell_s", "doorway_reset_s", "center_reset_s",
-    "occlusion_hold_s", "zone_confirm_s",
 }
 _FIELD_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "gray_threshold": {"min": 0, "max": 255, "step": 1}, "body_gray_threshold": {"min": 0, "max": 255, "step": 1},
     "erosion_kernel": {"min": 1, "max": 99, "step": 1}, "dilation_kernel": {"min": 1, "max": 99, "step": 1},
     "erosion_iter": {"min": 0, "max": 50, "step": 1}, "dilation_iter": {"min": 0, "max": 50, "step": 1},
     "min_area": {"min": 1, "max": 1_000_000_000, "step": 1}, "max_area": {"min": 1, "max": 1_000_000_000, "step": 1},
-    "temporal_bg_samples": {"min": 5, "max": 500, "step": 1},
-    "temporal_diff_threshold": {"min": 1, "max": 255, "step": 1},
     "center_ratio_x": {"min": 0.01, "max": 1.0, "step": 0.01}, "center_ratio_y": {"min": 0.01, "max": 1.0, "step": 0.01},
     "entry_depth_ratio": {"min": 0.0, "max": 1.0, "step": 0.01}, "head_confidence_threshold": {"min": 0.0, "max": 1.0, "step": 0.01},
     "head_angle_threshold_deg": {"min": 0.0, "max": 180.0, "step": 1},
@@ -307,7 +280,7 @@ def _select_options(experiment: str, key: str) -> list[tuple[str, str, str]]:
 
 
 def _field_group(key: str) -> str:
-    if key in {"bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "temporal_bg_samples", "temporal_diff_threshold", "exclude_platform_from_detection"}:
+    if key in {"bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "exclude_platform_from_detection"}:
         return "detection"
     if key in {"arena_side_cm", "arena_width_cm", "arena_height_cm", "center_size_cm", "open_arm_length_cm", "closed_arm_length_cm", "arm_length_cm", "arm_width_cm", "cylinder_diameter_cm", "pool_diameter_cm", "platform_radius_cm", "light_box_length_cm", "light_box_width_cm", "dark_box_length_cm", "dark_box_width_cm", "shared_edge_length_cm", "open_axis"}:
         return "geometry"

@@ -118,11 +118,6 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 fps=fps,
                 movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
                 entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
-                tracking_max_jump_cm=float(vision_config.get('tracking_max_jump_cm', 12.0)),
-                occlusion_hold_s=float(vision_config.get('occlusion_hold_s', 0.4)),
-                zone_confirm_s=float(vision_config.get('zone_confirm_s', 0.12)),
-                center_reset_s=float(vision_config.get('center_reset_s', 0.2)),
-                require_center_passage=bool(vision_config.get('require_center_passage', True)),
                 roi_id=roi['roi_id'],
                 roi_name=roi['name'],
                 time_config=roi.get('time_config'),
@@ -205,8 +200,6 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 erosion_default=1,
                 dilation_default=2,
                 min_area_default=120,
-                temporal_start_frame=start_frame,
-                temporal_end_frame=end_frame,
             )
         self._log(
             f"Configured {len(trackers)} automatic and "
@@ -228,6 +221,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             if annotated_writer is None:
                 self._log("Y-maze annotated video disabled because no writer is available.")
 
+        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             self._log(f"Start Y-maze analysis from frame {start_frame} ({timebase.time_at(start_frame):.1f}s)")

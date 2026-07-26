@@ -363,11 +363,6 @@ class YMazeTracker:
         fps: float = 30.0,
         movement_threshold_cm_s: float = 2.0,
         entry_depth_ratio: float = 0.2,
-        tracking_max_jump_cm: float = 12.0,
-        occlusion_hold_s: float = 0.4,
-        zone_confirm_s: float = 0.12,
-        center_reset_s: float = 0.2,
-        require_center_passage: bool = True,
         roi_id: int = 1,
         roi_name: Optional[str] = None,
         time_config: Optional[Dict[str, Any]] = None,
@@ -387,11 +382,6 @@ class YMazeTracker:
         self.fps = max(1.0, float(fps))
         self.movement_threshold_cm_s = max(0.0, float(movement_threshold_cm_s))
         self.entry_depth_ratio = float(np.clip(entry_depth_ratio, 0.05, 0.8))
-        self.tracking_max_jump_cm = max(0.5, float(tracking_max_jump_cm))
-        self.occlusion_hold_s = max(0.0, float(occlusion_hold_s))
-        self.zone_confirm_s = max(0.0, float(zone_confirm_s))
-        self.center_entry_reset_s = max(0.0, float(center_reset_s))
-        self.require_center_passage = bool(require_center_passage)
 
         self.zone_polygons_img = {
             name: sort_polygon_points(zone_polygons[name]).astype(np.float32)
@@ -443,28 +433,19 @@ class YMazeTracker:
 
         self.arm_entry_sequence: List[str] = []
         self.current_entry_arm: Optional[str] = None
+        self.center_entry_reset_s = 0.2
         self.center_entry_reset_frames = max(1, int(round(self.fps * self.center_entry_reset_s)))
         self.center_entry_streak = 0
         self.center_entry_streak_s = 0.0
-        self.stable_zone = "Unknown"
-        self.pending_zone: Optional[str] = None
-        self.pending_zone_s = 0.0
-        self.center_passed_since_entry = True
         self.first_detected_time_abs: Optional[float] = None
         self.prev_all_centroid_px: Optional[Tuple[float, float]] = None
         self.last_all_centroid_px: Optional[Tuple[float, float]] = None
-        self.last_detection_time_abs: Optional[float] = None
-        self.velocity_px_s = np.zeros(2, dtype=np.float64)
-        self.expected_area_px: Optional[float] = None
-        self.reacquire_candidate_px: Optional[Tuple[float, float]] = None
-        self.reacquire_candidate_s = 0.0
-        self.reacquire_confirm_s = max(0.1, self.zone_confirm_s)
         self.prev_stats_centroid_px: Optional[Tuple[float, float]] = None
         self.prev_centroid_px: Optional[Tuple[float, float]] = None
         self.missing_frames = 0
-        self.max_gap_frames = max(0, int(round(self.fps * self.occlusion_hold_s)))
+        self.max_gap_frames = 5
         self.missing_time_s = 0.0
-        self.max_gap_s = self.occlusion_hold_s
+        self.max_gap_s = self.max_gap_frames / max(float(self.fps), 1e-6)
 
         self.trajectory_px_live: deque[Tuple[float, float]] = deque(maxlen=1000)
         self.trajectory_px_stats: List[Tuple[float, float]] = []
@@ -634,157 +615,7 @@ class YMazeTracker:
         tail = self.arm_entry_sequence[-max_items:]
         return "-".join(self.ARM_LABELS.get(name, name) for name in tail)
 
-    def _full_entry_sequence(self) -> str:
-        return "-".join(
-            self.ARM_LABELS.get(name, name)
-            for name in self.arm_entry_sequence
-        )
-
-    def _prediction_px(self, elapsed_s: float) -> Optional[Tuple[float, float]]:
-        if self.last_all_centroid_px is None:
-            return None
-        prediction = np.asarray(self.last_all_centroid_px, dtype=np.float64)
-        prediction += self.velocity_px_s * max(0.0, min(float(elapsed_s), self.occlusion_hold_s))
-        return float(prediction[0]), float(prediction[1])
-
-    def _select_detection(
-        self,
-        detections: Sequence[Dict[str, Any]],
-        *,
-        elapsed_s: float,
-    ) -> Optional[Dict[str, Any]]:
-        """Choose a plausible fragment using shape, area history and motion continuity."""
-        if not detections:
-            if elapsed_s > self.occlusion_hold_s + 1e-9:
-                self.reacquire_candidate_px = None
-                self.reacquire_candidate_s = 0.0
-            return None
-
-        long_gap = elapsed_s > self.occlusion_hold_s + 1e-9
-        prediction = None if long_gap else self._prediction_px(elapsed_s)
-        max_jump_px = self.tracking_max_jump_cm / max(self.cm_per_px, 1e-9)
-        scored: List[Tuple[float, Dict[str, Any]]] = []
-        for detection in detections:
-            area = max(float(detection.get("area") or 0.0), 1e-6)
-            solidity = float(np.clip(detection.get("solidity", 0.0), 0.0, 1.0))
-            if self.expected_area_px is None:
-                # On the first frame, prefer compact candidates; area only breaks
-                # near-ties and is capped so a wall shadow cannot dominate.
-                min_area = max(float(getattr(detection, "min_area", 0.0) or 0.0), 1.0)
-                area_score = min(1.0, math.log1p(area) / max(math.log1p(min_area * 8.0), 1.0))
-            else:
-                area_score = math.exp(-abs(math.log(area / max(self.expected_area_px, 1e-6))))
-
-            continuity_score = 0.5
-            if prediction is not None:
-                cx, cy = detection["centroid"]
-                distance_px = math.hypot(float(cx) - prediction[0], float(cy) - prediction[1])
-                if distance_px > max_jump_px:
-                    continue
-                continuity_score = math.exp(-0.5 * (distance_px / max(max_jump_px * 0.5, 1.0)) ** 2)
-
-            score = 0.55 * continuity_score + 0.25 * area_score + 0.20 * solidity
-            scored.append((score, detection))
-
-        if not scored:
-            if long_gap:
-                self.reacquire_candidate_px = None
-                self.reacquire_candidate_s = 0.0
-            return None
-        selected = max(scored, key=lambda item: item[0])[1]
-        if long_gap:
-            candidate_px = tuple(float(value) for value in selected["centroid"])
-            continuity_px = self.tracking_max_jump_cm / max(self.cm_per_px, 1e-9)
-            if (
-                self.reacquire_candidate_px is not None
-                and math.hypot(
-                    candidate_px[0] - self.reacquire_candidate_px[0],
-                    candidate_px[1] - self.reacquire_candidate_px[1],
-                ) <= continuity_px
-            ):
-                self.reacquire_candidate_s += 1.0 / self.fps
-            else:
-                self.reacquire_candidate_px = candidate_px
-                self.reacquire_candidate_s = 1.0 / self.fps
-            if self.reacquire_candidate_s + 1e-9 < self.reacquire_confirm_s:
-                return None
-        self.reacquire_candidate_px = None
-        self.reacquire_candidate_s = 0.0
-        return selected
-
-    def _update_tracking_history(
-        self,
-        centroid_px: Tuple[float, float],
-        area_px: float,
-        current_time: float,
-    ) -> None:
-        if self.last_all_centroid_px is not None and self.last_detection_time_abs is not None:
-            elapsed = max(float(current_time) - self.last_detection_time_abs, 1.0 / self.fps)
-            measured = (
-                (float(centroid_px[0]) - self.last_all_centroid_px[0]) / elapsed,
-                (float(centroid_px[1]) - self.last_all_centroid_px[1]) / elapsed,
-            )
-            self.velocity_px_s = self.velocity_px_s * 0.65 + np.asarray(measured) * 0.35
-        else:
-            self.velocity_px_s[:] = 0.0
-        self.last_all_centroid_px = centroid_px
-        self.last_detection_time_abs = float(current_time)
-        if self.expected_area_px is None:
-            self.expected_area_px = max(float(area_px), 1.0)
-        else:
-            # Partial occlusion can shrink the visible blob abruptly. A slow EMA
-            # learns it without letting a single large reflection redefine the mouse.
-            self.expected_area_px = self.expected_area_px * 0.9 + max(float(area_px), 1.0) * 0.1
-
-    def _update_stable_zone(self, observed_zone: str, detected: bool, dt_s: float) -> str:
-        if not detected:
-            if self.missing_time_s > self.occlusion_hold_s:
-                self.stable_zone = "Unknown"
-                self.pending_zone = None
-                self.pending_zone_s = 0.0
-            return self.stable_zone
-
-        if observed_zone == "Unknown":
-            self.pending_zone = None
-            self.pending_zone_s = 0.0
-            return self.stable_zone
-        if (
-            self.require_center_passage
-            and observed_zone in self.ARM_NAMES
-            and self.current_entry_arm in self.ARM_NAMES
-            and observed_zone != self.current_entry_arm
-            and not self.center_passed_since_entry
-        ):
-            # A mouse cannot move directly between arms in a Y maze. Treat this
-            # as a wall/reflection candidate until a stable center passage occurs.
-            self.pending_zone = None
-            self.pending_zone_s = 0.0
-            return self.stable_zone
-        if observed_zone == self.stable_zone:
-            self.pending_zone = None
-            self.pending_zone_s = 0.0
-            return self.stable_zone
-        if observed_zone != self.pending_zone:
-            self.pending_zone = observed_zone
-            self.pending_zone_s = dt_s
-        else:
-            self.pending_zone_s += dt_s
-        if self.pending_zone_s + 1e-9 >= self.zone_confirm_s:
-            self.stable_zone = observed_zone
-            self.pending_zone = None
-            self.pending_zone_s = 0.0
-        return self.stable_zone
-
-    def detect_mouse(
-        self,
-        frame: np.ndarray,
-        gray: np.ndarray,
-        bg_subtractor,
-        morph_processor,
-        detector,
-        *,
-        elapsed_s: float = 0.0,
-    ):
+    def detect_mouse(self, frame: np.ndarray, gray: np.ndarray, bg_subtractor, morph_processor, detector):
         self.initialize(frame.shape)
         assert self.detection_bbox is not None
         assert self._cropped_detection_mask is not None
@@ -793,26 +624,27 @@ class YMazeTracker:
         crop_frame = frame[y : y + h, x : x + w]
         crop_gray = gray[y : y + h, x : x + w]
 
-        if getattr(bg_subtractor, "method", "") in {"static", "temporal"}:
+        if getattr(bg_subtractor, "method", "") == "static":
             full_fg_mask = bg_subtractor.apply(frame, gray=gray)
             fg_mask = full_fg_mask[y : y + h, x : x + w]
         else:
             fg_mask = bg_subtractor.apply(crop_frame, gray=crop_gray)
         fg_mask = cv2.bitwise_and(fg_mask, fg_mask, mask=self._cropped_detection_mask)
         fg_mask = morph_processor.process(fg_mask, inplace=True)
-        local_detections = detector.detect(fg_mask)
-        detections = []
-        for item in local_detections:
-            detection = dict(item)
-            cx, cy = detection["centroid"]
-            detection["centroid"] = (cx + x, cy + y)
-            bx, by, bw, bh = detection["bbox"]
-            detection["bbox"] = (bx + x, by + y, bw, bh)
-            contour = detection.get("contour")
-            if contour is not None:
-                detection["contour"] = contour + np.array([[x, y]])
-            detections.append(detection)
-        detection = self._select_detection(detections, elapsed_s=elapsed_s)
+        detections = detector.detect(fg_mask)
+        if not detections:
+            return None, fg_mask
+
+        detection = max(detections, key=lambda item: item.get("area", 0))
+        cx, cy = detection["centroid"]
+        detection["centroid"] = (cx + x, cy + y)
+
+        bx, by, bw, bh = detection["bbox"]
+        detection["bbox"] = (bx + x, by + y, bw, bh)
+
+        contour = detection.get("contour")
+        if contour is not None:
+            detection["contour"] = contour + np.array([[x, y]])
         return detection, fg_mask
 
     def update(
@@ -831,48 +663,34 @@ class YMazeTracker:
         except (TypeError, ValueError):
             current_dt = 1.0 / max(float(self.fps), 1e-6)
         current_dt = max(current_dt, 1e-6)
-        next_missing_time_s = self.missing_time_s + current_dt
-        detection, fg_mask = self.detect_mouse(
-            frame,
-            gray,
-            bg_subtractor,
-            morph_processor,
-            detector,
-            elapsed_s=next_missing_time_s,
-        )
+        detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
 
         centroid_px: Optional[Tuple[float, float]] = None
         bbox = None
         contour = None
         detected = detection is not None
-        tracking_state = "detected" if detected else "unknown"
 
         if detection is not None:
             self.detected_frames += 1
             centroid_px = tuple(float(v) for v in detection["centroid"])
             bbox = detection.get("bbox")
             contour = detection.get("contour")
-            self._update_tracking_history(
-                centroid_px,
-                float(detection.get("area") or 0.0),
-                float(current_time),
-            )
+            self.last_all_centroid_px = centroid_px
             self.prev_centroid_px = centroid_px
             self.missing_frames = 0
             self.missing_time_s = 0.0
             if self.first_detected_time_abs is None:
                 self.first_detected_time_abs = float(current_time)
-        elif self.last_all_centroid_px is not None and next_missing_time_s <= self.max_gap_s + 1e-9:
-            centroid_px = self._prediction_px(next_missing_time_s)
+        elif self.last_all_centroid_px is not None and self.missing_time_s < self.max_gap_s:
+            centroid_px = self.last_all_centroid_px
             self.missing_frames += 1
-            self.missing_time_s = next_missing_time_s
-            tracking_state = "predicted"
+            self.missing_time_s += current_dt
         else:
             self.missing_frames += 1
-            self.missing_time_s = next_missing_time_s
+            self.missing_time_s += current_dt
 
         speed_cm_s = 0.0
-        if detected and centroid_px is not None:
+        if centroid_px is not None:
             if self.prev_all_centroid_px is not None:
                 step_px = float(
                     math.hypot(
@@ -882,17 +700,10 @@ class YMazeTracker:
                 )
                 speed_cm_s = step_px * self.cm_per_px / current_dt
             self.prev_all_centroid_px = centroid_px
-        elif centroid_px is None:
+        else:
             self.prev_all_centroid_px = None
 
-        observed_zone_key = self._zone_name_for_point(centroid_px) if detected else "Unknown"
-        stable_zone_key = self._update_stable_zone(observed_zone_key, detected, current_dt)
-        if detected and observed_zone_key != "Unknown":
-            zone_key = observed_zone_key
-        elif tracking_state == "predicted":
-            zone_key = stable_zone_key
-        else:
-            zone_key = "Unknown"
+        zone_key = self._zone_name_for_point(centroid_px)
         zone_group = "arm" if zone_key in self.ARM_NAMES else "center" if zone_key == "center" else "unknown"
         zone_label = self.ZONE_LABELS.get(zone_key, "Unknown")
         self.last_speed_cm_s = speed_cm_s
@@ -911,7 +722,7 @@ class YMazeTracker:
                 self.detected_frames_in_window += 1
                 self.detected_time_in_window_s += current_dt
 
-            if detected and centroid_px is not None:
+            if centroid_px is not None:
                 if self.prev_stats_centroid_px is not None:
                     step_px = float(
                         math.hypot(
@@ -939,40 +750,37 @@ class YMazeTracker:
                     self.immobile_frames += 1
                     self.immobile_time_s += current_dt
 
-                if observed_zone_key == "center":
+                inside_entry_zone = zone_key in self.ARM_NAMES and self._is_inside_entry_zone(zone_key, centroid_px)
+                if zone_key == "center":
                     self.center_entry_streak += 1
                     self.center_entry_streak_s += current_dt
                     if self.center_entry_streak_s >= self.center_entry_reset_s:
                         self.current_entry_arm = None
-                        self.center_passed_since_entry = True
-                else:
+                elif inside_entry_zone:
                     self.center_entry_streak = 0
                     self.center_entry_streak_s = 0.0
-                inside_entry_zone = (
-                    stable_zone_key in self.ARM_NAMES
-                    and self._is_inside_entry_zone(stable_zone_key, centroid_px)
-                )
-                transition_allowed = self.center_passed_since_entry or not self.require_center_passage
-                if inside_entry_zone and transition_allowed:
-                    if self.current_entry_arm != stable_zone_key:
+                    if self.current_entry_arm != zone_key:
                         arm_entry_event = True
-                        entry_arm_name = stable_zone_key
-                        self.current_entry_arm = stable_zone_key
-                        self.center_passed_since_entry = False
-                        self.arm_entries[stable_zone_key] += 1
+                        entry_arm_name = zone_key
+                        self.current_entry_arm = zone_key
+                        self.arm_entries[zone_key] += 1
                         self.total_arm_entries += 1
-                        self.arm_entry_sequence.append(stable_zone_key)
+                        self.arm_entry_sequence.append(zone_key)
                         if len(self.arm_entry_sequence) >= 3:
                             trio = self.arm_entry_sequence[-3:]
                             if len(set(trio)) == 3:
                                 self.alternation_count += 1
                                 alternation_event = True
+                else:
+                    self.center_entry_streak = 0
+                    self.center_entry_streak_s = 0.0
+
                 self.trajectory_px_stats.append(centroid_px)
                 template_xy = self.project_point_to_template_cm(centroid_px, zone_key)
                 if template_xy is not None:
                     self.trajectory_template_cm_stats.append(template_xy)
                 self.trajectory_px_live.append(centroid_px)
-            elif centroid_px is None:
+            else:
                 self.prev_stats_centroid_px = None
                 self.center_entry_streak = 0
                 self.center_entry_streak_s = 0.0
@@ -996,7 +804,6 @@ class YMazeTracker:
             "dt_s": format_seconds(current_dt),
             "window_time_s": format_seconds(current_time - self._stats_window_origin_abs()) if in_stats_window else None,
             "detected": bool(detected),
-            "tracking_state": tracking_state,
             "in_stats_window": bool(in_stats_window),
             "x_px": format_metric(centroid_px[0]) if centroid_px is not None else None,
             "y_px": format_metric(centroid_px[1]) if centroid_px is not None else None,
@@ -1006,8 +813,6 @@ class YMazeTracker:
             "step_distance_cm": format_metric(stats_step_distance_cm),
             "cumulative_distance_cm": format_metric(stats_cumulative_distance_cm),
             "zone_key": zone_key,
-            "observed_zone_key": observed_zone_key,
-            "scoring_zone_key": stable_zone_key,
             "zone": zone_label,
             "zone_group": zone_group,
             "current_arm": zone_key if zone_key in self.ARM_NAMES else None,
@@ -1024,15 +829,12 @@ class YMazeTracker:
             "roi_id": self.roi_id,
             "roi_name": self.roi_name,
             "detected": bool(detected),
-            "tracking_state": tracking_state,
             "centroid": centroid_px,
             "bbox": bbox,
             "contour": contour,
             "fg_mask": fg_mask,
             "speed_cm_s": speed_cm_s,
             "zone_key": zone_key,
-            "observed_zone_key": observed_zone_key,
-            "scoring_zone_key": stable_zone_key,
             "zone_label": zone_label,
             "zone_group": zone_group,
             "arm_entry_event": arm_entry_event,
@@ -1083,12 +885,8 @@ class YMazeTracker:
             "arm_width_cm": format_metric(self.arm_width_cm),
             "entry_depth_ratio": round(self.entry_depth_ratio, 3),
             "entry_reset_center_s": format_seconds(self.center_entry_reset_s),
-            "require_center_passage": bool(self.require_center_passage),
-            "tracking_max_jump_cm": round(self.tracking_max_jump_cm, 3),
-            "occlusion_hold_s": format_seconds(self.occlusion_hold_s),
-            "zone_confirm_s": format_seconds(self.zone_confirm_s),
             "movement_threshold_cm_s": round(self.movement_threshold_cm_s, 3),
-            "entry_sequence": self._full_entry_sequence(),
+            "entry_sequence": self._sequence_tail(max_items=12),
             "cm_per_px_est": round(self.cm_per_px, 6),
         }
         for arm_name in self.ARM_NAMES:
