@@ -492,6 +492,12 @@ class YMazeTracker:
         tail = self.arm_entry_sequence[-max_items:]
         return "-".join(self.ARM_LABELS.get(name, name) for name in tail)
 
+    def _full_entry_sequence(self) -> str:
+        return "-".join(
+            self.ARM_LABELS.get(name, name)
+            for name in self.arm_entry_sequence
+        )
+
     def detect_mouse(self, frame: np.ndarray, gray: np.ndarray, bg_subtractor, morph_processor, detector):
         self.initialize(frame.shape)
         assert self.detection_bbox is not None
@@ -762,7 +768,7 @@ class YMazeTracker:
             "entry_depth_ratio": round(self.entry_depth_ratio, 3),
             "entry_reset_center_s": format_seconds(self.center_entry_reset_s),
             "movement_threshold_cm_s": round(self.movement_threshold_cm_s, 3),
-            "entry_sequence": self._sequence_tail(max_items=12),
+            "entry_sequence": self._full_entry_sequence(),
             "cm_per_px_est": round(self.cm_per_px, 6),
         }
         for arm_name in self.ARM_NAMES:
