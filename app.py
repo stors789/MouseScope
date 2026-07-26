@@ -97,6 +97,7 @@ from services.analysis_sessions import configure_analysis_runtime
 from services.debug_preview import cleanup_debug_preview_cache
 from services.visual_style_store import VisualStyleStore
 from services.experiment_defaults_store import ExperimentDefaultsStore
+from services.roi_templates import RoiTemplateStore
 from services.reproducibility import finalize_reproducibility_artifacts
 from services.version import APP_VERSION, APP_VERSION_TAG
 from services.app_paths import resolve_application_data_directory
@@ -733,6 +734,10 @@ analysis_history = AnalysisHistoryStore(
 analysis_history.mark_interrupted_running()
 visual_style_store = VisualStyleStore(DATA_DIR / 'visual_style.json')
 experiment_defaults_store = ExperimentDefaultsStore(DATA_DIR / 'experiment_defaults.json')
+roi_template_store = RoiTemplateStore(
+    DATA_DIR / 'roi_templates.json',
+    legacy_y_maze_path=DATA_DIR / 'y_maze_roi_templates.json',
+)
 
 project_store = ProjectStore(
     projects_root=PROJECTS_DIR,
@@ -996,6 +1001,7 @@ route_context = SimpleNamespace(
     project_store=project_store,
     visual_style_store=visual_style_store,
     experiment_defaults_store=experiment_defaults_store,
+    roi_template_store=roi_template_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
     _cleanup_session_artifacts=_cleanup_session_artifacts,

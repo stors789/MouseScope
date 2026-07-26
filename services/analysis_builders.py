@@ -289,6 +289,13 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
     default_arm_width_cm = float(data.get("arm_width_cm", 10.0))
     default_movement_threshold_cm_s = float(data.get("movement_threshold_cm_s", 2.0))
     default_entry_depth_ratio = float(data.get("entry_depth_ratio", 0.2))
+    default_tracking_max_jump_cm = float(data.get("tracking_max_jump_cm", 12.0))
+    default_occlusion_hold_s = float(data.get("occlusion_hold_s", 0.4))
+    default_zone_confirm_s = float(data.get("zone_confirm_s", 0.12))
+    default_center_reset_s = float(data.get("center_reset_s", 0.2))
+    default_require_center_passage = _coerce_bool(data.get("require_center_passage"), True)
+    default_temporal_bg_samples = int(data.get("temporal_bg_samples", 90))
+    default_temporal_diff_threshold = int(data.get("temporal_diff_threshold", 25))
     default_bin_seconds = float(data.get("bin_seconds", 60.0))
 
     per_video_configs = _iter_video_configs(
@@ -308,6 +315,16 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
             "rois": copy.deepcopy(raw_cfg.get("rois", data.get("rois", []))),
             "movement_threshold_cm_s": float(raw_cfg.get("movement_threshold_cm_s", default_movement_threshold_cm_s)),
             "entry_depth_ratio": float(raw_cfg.get("entry_depth_ratio", default_entry_depth_ratio)),
+            "tracking_max_jump_cm": float(raw_cfg.get("tracking_max_jump_cm", default_tracking_max_jump_cm)),
+            "occlusion_hold_s": float(raw_cfg.get("occlusion_hold_s", default_occlusion_hold_s)),
+            "zone_confirm_s": float(raw_cfg.get("zone_confirm_s", default_zone_confirm_s)),
+            "center_reset_s": float(raw_cfg.get("center_reset_s", default_center_reset_s)),
+            "require_center_passage": _coerce_bool(
+                raw_cfg.get("require_center_passage"),
+                default_require_center_passage,
+            ),
+            "temporal_bg_samples": int(raw_cfg.get("temporal_bg_samples", default_temporal_bg_samples)),
+            "temporal_diff_threshold": int(raw_cfg.get("temporal_diff_threshold", default_temporal_diff_threshold)),
             "bin_seconds": float(raw_cfg.get("bin_seconds", default_bin_seconds)),
         },
     )
@@ -328,6 +345,13 @@ def build_y_maze_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str,
         "arm_width_cm": default_arm_width_cm,
         "movement_threshold_cm_s": default_movement_threshold_cm_s,
         "entry_depth_ratio": default_entry_depth_ratio,
+        "tracking_max_jump_cm": default_tracking_max_jump_cm,
+        "occlusion_hold_s": default_occlusion_hold_s,
+        "zone_confirm_s": default_zone_confirm_s,
+        "center_reset_s": default_center_reset_s,
+        "require_center_passage": default_require_center_passage,
+        "temporal_bg_samples": default_temporal_bg_samples,
+        "temporal_diff_threshold": default_temporal_diff_threshold,
         "bin_seconds": default_bin_seconds,
         "generate_video": data.get("generate_video", True),
         **_base_session_fields(sess),

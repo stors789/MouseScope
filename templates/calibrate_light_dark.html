@@ -428,5 +428,16 @@ document.getElementById('drawCanvas').addEventListener('click', onCanvasClick);
 document.addEventListener('mousescope:langchange', applyLdbI18n);
 normalizeConfigs(); loadCurrent(); syncFrameControls(); loadFrame();
 applyLdbI18n();
+window.MouseScopeRoiTemplateAdapter = {
+    assay:'light_dark_box',isBatch:Boolean(isBatch),videoCount:videoConfigs.length,
+    getPayload:()=>({rois:getCompletePayloadRois(true),geometry:{light_box_length_cm:Number(document.getElementById('lightBoxLengthCm')?.value||0),light_box_width_cm:Number(document.getElementById('lightBoxWidthCm')?.value||0),dark_box_length_cm:Number(document.getElementById('darkBoxLengthCm')?.value||0),dark_box_width_cm:Number(document.getElementById('darkBoxWidthCm')?.value||0),shared_edge_length_cm:Number(document.getElementById('sharedEdgeLengthCm')?.value||0)}}),
+    getFrameMeta:index=>{const i=index??currentVideoIdx;const info=videoInfoList[i]||videoInfo||{};const image=i===currentVideoIdx?frameImage:null;return{width:image?.naturalWidth||info.width,height:image?.naturalHeight||info.height,orientation_degrees:info.orientation_degrees||info.orientation_override||0};},
+    applyPayload:(payloads,all)=>{
+        if(all)videoConfigs.forEach((cfg,index)=>{cfg.rois=clone(payloads[index].rois);Object.assign(cfg,payloads[index].geometry);});else{rois=clone(payloads[0].rois).map(ensureROIShape);const ids={light_box_length_cm:'lightBoxLengthCm',light_box_width_cm:'lightBoxWidthCm',dark_box_length_cm:'darkBoxLengthCm',dark_box_width_cm:'darkBoxWidthCm',shared_edge_length_cm:'sharedEdgeLengthCm'};Object.entries(payloads[0].geometry||{}).forEach(([key,value])=>{const el=document.getElementById(ids[key]);if(el)el.value=value;});}
+        if(all)rois=clone(videoConfigs[currentVideoIdx].rois||[]).map(ensureROIShape);
+        if(all){const ids={light_box_length_cm:'lightBoxLengthCm',light_box_width_cm:'lightBoxWidthCm',dark_box_length_cm:'darkBoxLengthCm',dark_box_width_cm:'darkBoxWidthCm',shared_edge_length_cm:'sharedEdgeLengthCm'};Object.entries(payloads[currentVideoIdx].geometry||{}).forEach(([key,value])=>{const el=document.getElementById(ids[key]);if(el)el.value=value;});}
+        activeRoi=rois.length?0:-1;persistCurrent();renderAll();
+    }
+};
 </script>
 {% endblock %}
