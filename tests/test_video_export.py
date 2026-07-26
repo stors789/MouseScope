@@ -6,7 +6,11 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
 
-from services.video_export import FfmpegVideoWriter
+from services.video_export import (
+    FfmpegVideoWriter,
+    _register_ffmpeg_process,
+    terminate_active_ffmpeg_processes,
+)
 
 
 class _FakeFfmpegProcess:
@@ -21,6 +25,9 @@ class _FakeFfmpegProcess:
         return 0
 
     def kill(self):
+        return None
+
+    def terminate(self):
         return None
 
 
@@ -42,6 +49,25 @@ class VideoExportResourceTest(unittest.TestCase):
 
         self.assertTrue(process.stdin.closed)
         self.assertTrue(process.stderr.closed)
+
+    def test_shutdown_terminates_registered_ffmpeg_children(self):
+        process = _FakeFfmpegProcess()
+        running = True
+
+        def poll():
+            return None if running else 0
+
+        def terminate():
+            nonlocal running
+            running = False
+
+        process.poll = poll
+        process.terminate = terminate
+        _register_ffmpeg_process(process)
+
+        self.assertEqual(terminate_active_ffmpeg_processes(timeout=0.1), 1)
+        self.assertFalse(running)
+        self.assertEqual(terminate_active_ffmpeg_processes(timeout=0.1), 0)
 
 
 if __name__ == "__main__":

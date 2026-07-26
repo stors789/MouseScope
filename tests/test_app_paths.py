@@ -36,10 +36,31 @@ class ApplicationDataPathTest(unittest.TestCase):
                     base,
                     frozen=True,
                     environ={'LOCALAPPDATA': str(Path(temp_dir) / 'LocalAppData')},
+                    platform_name='win32',
                 )
 
             self.assertEqual(resolved, fallback)
             self.assertTrue(fallback.is_dir())
+
+    def test_macos_bundle_uses_application_support_and_migrates_legacy_data(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            base = root / 'MouseScope.app' / 'Contents' / 'MacOS'
+            legacy = base / 'data'
+            legacy.mkdir(parents=True)
+            (legacy / 'history.json').write_text('legacy', encoding='utf-8')
+
+            resolved = resolve_application_data_directory(
+                base,
+                frozen=True,
+                environ={'HOME': str(root / 'home')},
+                platform_name='darwin',
+            )
+
+            expected = root / 'home' / 'Library' / 'Application Support' / 'MouseScope' / 'data'
+            self.assertEqual(resolved, expected)
+            self.assertEqual((resolved / 'history.json').read_text(encoding='utf-8'), 'legacy')
+            self.assertEqual((legacy / 'history.json').read_text(encoding='utf-8'), 'legacy')
 
 
 if __name__ == '__main__':

@@ -126,6 +126,11 @@ def run_desktop_app(*, webview_module: Any | None = None) -> int:
         configure_desktop_shutdown(None)
         stop_analysis_sessions(app_module.analysis_sessions)
         server.shutdown()
+        app_module.app.config.update(
+            MOUSESCOPE_DESKTOP_MODE=False,
+            MOUSESCOPE_DESKTOP_TOKEN="",
+            MOUSESCOPE_DESKTOP_ORIGIN="",
+        )
 
 
 if __name__ == "__main__":
