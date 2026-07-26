@@ -176,9 +176,13 @@ def test_manual_workbench_persists_per_roi_events_and_shortcuts() -> None:
     assert "recordManualArm(`arm_${key}`)" in template
     assert "event.code==='Space'" in template
     assert "pageFormat('alert.manual_empty'" in template
-    assert 'return fetch(`/api/get_first_frame/' in template
-    assert 'await loadManualFrame(next)' in template
-    assert 'scheduleManualPlaybackStep(generation)' in template
+    assert 'id="manualVideo"' in template
+    assert 'video.src=`/api/video_source/' in template
+    assert "video.requestVideoFrameCallback(render)" in template
+    assert 'video.currentTime=targetTime' in template
+    assert 'video.playbackRate=' in template
+    assert 'video.play().then(' in template
+    assert 'if(manualRoiIndex==null||' in template
     assert 'setInterval(' not in template
 
 

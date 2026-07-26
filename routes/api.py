@@ -990,6 +990,39 @@ def register_api_routes(app, ctx) -> None:
             'video_info': video_info,
         })
 
+    @app.route('/api/video_source/<session_id>')
+    def video_source(session_id):
+        """Serve one session video inline with HTTP Range support."""
+        sess = analysis_sessions.get(session_id)
+        if not sess:
+            return _api_error('会话不存在', 404, code='session_not_found')
+        try:
+            video_idx = _nonnegative_int(request.args.get('video', 0), 'video')
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        video_paths = sess.get('video_paths') or []
+        if video_idx >= len(video_paths):
+            return _api_error(
+                '会话没有对应视频文件',
+                404,
+                code='video_not_found',
+                message_en='The requested session video does not exist.',
+            )
+        video_path = Path(video_paths[video_idx])
+        if not video_path.is_file():
+            return _api_error(
+                '视频文件不存在',
+                404,
+                code='video_not_found',
+                message_en='The requested session video file is missing.',
+            )
+        return send_file(
+            video_path,
+            conditional=True,
+            as_attachment=False,
+            download_name=video_path.name,
+        )
+
 
     @app.route('/api/batch_state/<session_id>')
     def api_batch_state(session_id):
