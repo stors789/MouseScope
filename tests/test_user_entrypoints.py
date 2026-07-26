@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import copy
+import threading
 import time
 import unittest
 import uuid
@@ -35,6 +36,36 @@ class UserEntrypointGuardTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("/license?next=/upload", response.headers["Location"])
+
+    def test_desktop_quit_is_disabled_in_server_mode(self):
+        original = self.app.config.get("DESKTOP_MODE")
+        self.app.config["DESKTOP_MODE"] = False
+        try:
+            response = self.client.post("/api/desktop/quit")
+            self.assertEqual(response.status_code, 404)
+        finally:
+            self.app.config["DESKTOP_MODE"] = original
+
+    def test_desktop_quit_dispatches_exit_callback(self):
+        original_mode = self.app.config.get("DESKTOP_MODE")
+        original_callback = self.app.config.get("DESKTOP_EXIT_CALLBACK")
+        exited = threading.Event()
+        self.app.config["DESKTOP_MODE"] = True
+        self.app.config["DESKTOP_EXIT_CALLBACK"] = exited.set
+        try:
+            response = self.client.post(
+                "/api/desktop/quit",
+                environ_base={"REMOTE_ADDR": "127.0.0.1"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.get_json()["success"])
+            self.assertTrue(exited.wait(1.0))
+        finally:
+            self.app.config["DESKTOP_MODE"] = original_mode
+            if original_callback is None:
+                self.app.config.pop("DESKTOP_EXIT_CALLBACK", None)
+            else:
+                self.app.config["DESKTOP_EXIT_CALLBACK"] = original_callback
 
     def _seed_single_session(self):
         video_path = ROOT / "test.mp4"

@@ -56,6 +56,11 @@
                     <li class="nav-item ms-lg-2 mt-2 mt-lg-0">
                         <button onclick="toggleLang()" class="btn btn-outline-primary btn-sm lang-toggle-btn" data-tour-id="nav-lang" title="Switch Language / 切换语言"><span data-i18n="lang.toggle">English</span></button>
                     </li>
+                    {% if desktop_mode %}
+                    <li class="nav-item ms-lg-2 mt-2 mt-lg-0">
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="quitMouseScopeDesktop()"><i class="fas fa-power-off me-1"></i><span data-i18n="nav.quit">退出</span></button>
+                    </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>
@@ -117,6 +122,21 @@
     </div>
 
     <script>
+    async function quitMouseScopeDesktop() {
+        const lang = localStorage.getItem('language') === 'en' ? 'en' : 'zh';
+        const prompt = lang === 'en'
+            ? 'Quit MouseScope? Running analyses will be interrupted.'
+            : '确认退出 MouseScope？正在运行的分析将会中断。';
+        if (!window.confirm(prompt)) return;
+        try {
+            const response = await fetch('/api/desktop/quit', {method: 'POST'});
+            if (!response.ok) throw new Error('quit failed');
+            document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f0f4f8;color:#0f172a;font-size:1.25rem;text-align:center;"><div>${lang === 'en' ? 'MouseScope has quit.<br><small>You may close this page.</small>' : 'MouseScope 已退出<br><small>现在可以关闭此页面。</small>'}</div></div>`;
+        } catch (_error) {
+            alert(lang === 'en' ? 'Unable to quit MouseScope.' : '无法退出 MouseScope。');
+        }
+    }
+
     (function() {
         function safeLicenseNextUrl() {
             const params = new URLSearchParams(window.location.search);
@@ -179,9 +199,13 @@
                         });
                 });
                 document.getElementById('licenseDeclineBtn').addEventListener('click', function() {
+                    {% if desktop_mode %}
+                    quitMouseScopeDesktop();
+                    {% else %}
                     alert('您未同意许可协议，将无法使用本软件。');
                     window.close();
                     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f0f4f8;color:#0f172a;font-size:1.25rem;text-align:center;"><div>您未同意许可协议<br><small style="color:#64748b;font-size:0.9rem;">请关闭此页面</small></div></div>';
+                    {% endif %}
                 });
             });
         }

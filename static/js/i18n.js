@@ -11,6 +11,7 @@
         'nav.manual':         '使用手册',
         'nav.license':        '许可协议',
         'nav.tour':           '新手引导',
+        'nav.quit':           '退出',
         'lang.toggle':        'English',
 
         'footer.rights':      'MouseScope Desktop v3.5.0 © 2026 All Rights Reserved | 版权所有',
@@ -1075,6 +1076,7 @@
         'nav.manual':         'User Manual',
         'nav.license':        'License',
         'nav.tour':           'Guide',
+        'nav.quit':           'Quit',
         'lang.toggle':        '中文',
 
         'footer.rights':      'MouseScope Desktop v3.5.0 © 2026 All Rights Reserved',

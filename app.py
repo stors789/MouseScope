@@ -145,6 +145,7 @@ LICENSE_EXEMPT_ENDPOINTS = {
     'license_page',
     'api_get_license',
     'api_accept_license',
+    'desktop_quit',
 }
 
 
@@ -650,6 +651,25 @@ app = Flask(__name__,
             static_folder=str(BUNDLE_DIR / 'static'))
 app.secret_key = _load_or_create_secret_key()
 app.config['MAX_CONTENT_LENGTH'] = None
+app.config['DESKTOP_MODE'] = bool(getattr(sys, 'frozen', False))
+
+
+def _desktop_exit_process():
+    """End the frozen desktop backend after the HTTP response is delivered."""
+    time.sleep(0.25)
+    os._exit(0)
+
+
+@app.post('/api/desktop/quit')
+def desktop_quit():
+    if not app.config.get('DESKTOP_MODE'):
+        return jsonify({'success': False, 'error': 'Desktop quit is unavailable in server mode.'}), 404
+    if request.remote_addr not in {'127.0.0.1', '::1'}:
+        return jsonify({'success': False, 'error': 'Desktop quit is restricted to this computer.'}), 403
+
+    callback = app.config.get('DESKTOP_EXIT_CALLBACK') or _desktop_exit_process
+    threading.Thread(target=callback, name='mousescope-desktop-exit', daemon=True).start()
+    return jsonify({'success': True})
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -913,6 +933,7 @@ def inject_navigation_context():
     return {
         'app_version': APP_VERSION,
         'app_version_tag': APP_VERSION_TAG,
+        'desktop_mode': bool(app.config.get('DESKTOP_MODE')),
         'enable_three_chamber': is_three_chamber_enabled(),
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
