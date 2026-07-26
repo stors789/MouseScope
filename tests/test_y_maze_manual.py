@@ -176,6 +176,10 @@ def test_manual_workbench_persists_per_roi_events_and_shortcuts() -> None:
     assert "recordManualArm(`arm_${key}`)" in template
     assert "event.code==='Space'" in template
     assert "pageFormat('alert.manual_empty'" in template
+    assert 'return fetch(`/api/get_first_frame/' in template
+    assert 'await loadManualFrame(next)' in template
+    assert 'scheduleManualPlaybackStep(generation)' in template
+    assert 'setInterval(' not in template
 
 
 def test_manual_workbench_is_not_rendered_for_epm() -> None:
