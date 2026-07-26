@@ -378,6 +378,9 @@
                     <input class="form-control font-monospace" id="analysisOutputDir" value="{{ output_dir or '' }}" placeholder="data/results/" {% if is_project_mode %}readonly{% endif %}>
                 </label>
                 {% if not is_project_mode %}
+                {% if desktop_mode %}
+                <button class="btn btn-outline-secondary" type="button" data-desktop-directory-target="analysisOutputDir"><i class="fas fa-folder-open me-2"></i><span>选择</span></button>
+                {% endif %}
                 <button class="btn btn-outline-primary" id="saveOutputBtn" type="button" onclick="saveSessionConfig()"><i class="fas fa-floppy-disk me-2"></i><span id="saveOutputText">保存目录</span></button>
                 {% endif %}
             </div>

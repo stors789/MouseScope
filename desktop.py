@@ -10,7 +10,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from services.desktop_runtime import DesktopServer
+from services.desktop_runtime import (
+    DesktopServer,
+    configure_desktop_shutdown,
+    request_desktop_shutdown,
+    stop_analysis_sessions,
+)
 
 
 def _configure_file_logging(data_dir: Path) -> None:
@@ -29,8 +34,13 @@ def _configure_file_logging(data_dir: Path) -> None:
 class DesktopApi:
     """Small, deliberately narrow bridge exposed to the Web UI."""
 
-    def __init__(self, origin: str) -> None:
+    def __init__(self, origin: str, *, folder_dialog_type: Any = 20) -> None:
         self._origin = origin.rstrip("/")
+        self._folder_dialog_type = folder_dialog_type
+        self._window: Any | None = None
+
+    def bind_window(self, window: Any) -> None:
+        self._window = window
 
     def open_external(self, raw_url: str) -> bool:
         try:
@@ -43,6 +53,19 @@ class DesktopApi:
         if target_origin == self._origin:
             return False
         return bool(webbrowser.open(parsed.geturl()))
+
+    def choose_directory(self, initial_directory: str = "") -> str | None:
+        if self._window is None:
+            return None
+        selected = self._window.create_file_dialog(
+            self._folder_dialog_type,
+            directory=str(initial_directory or ""),
+            allow_multiple=False,
+        )
+        return str(selected[0]) if selected else None
+
+    def quit_app(self) -> bool:
+        return request_desktop_shutdown()
 
 
 def run_desktop_app(*, webview_module: Any | None = None) -> int:
@@ -67,10 +90,12 @@ def run_desktop_app(*, webview_module: Any | None = None) -> int:
         f"{server.address.origin}/__desktop_bootstrap?"
         + urllib.parse.urlencode({"token": token})
     )
+    folder_dialog_type = getattr(getattr(webview_module, "FileDialog", None), "FOLDER", 20)
+    desktop_api = DesktopApi(server.address.origin, folder_dialog_type=folder_dialog_type)
     window = webview_module.create_window(
         "MouseScope",
         bootstrap_url,
-        js_api=DesktopApi(server.address.origin),
+        js_api=desktop_api,
         width=1440,
         height=960,
         min_size=(960, 680),
@@ -80,11 +105,14 @@ def run_desktop_app(*, webview_module: Any | None = None) -> int:
         background_color="#f5f1eb",
     )
     if window is None:
+        server.shutdown()
         raise RuntimeError("Unable to create the MouseScope desktop window.")
+    desktop_api.bind_window(window)
 
     try:
         server.start()
         server.wait_until_ready(token)
+        configure_desktop_shutdown(window.destroy)
         webview_module.settings["ALLOW_DOWNLOADS"] = True
         webview_module.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
         webview_module.start(
@@ -95,6 +123,8 @@ def run_desktop_app(*, webview_module: Any | None = None) -> int:
         )
         return 0
     finally:
+        configure_desktop_shutdown(None)
+        stop_analysis_sessions(app_module.analysis_sessions)
         server.shutdown()
 
 

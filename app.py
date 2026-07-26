@@ -153,6 +153,7 @@ LICENSE_EXEMPT_ENDPOINTS = {
     'api_accept_license',
     'desktop_bootstrap',
     'desktop_health',
+    'desktop_quit',
 }
 
 

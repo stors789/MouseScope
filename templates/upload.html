@@ -176,9 +176,16 @@
                                 rows="3" data-i18n="upload.local.placeholder" data-i18n-attr="placeholder"
                                 placeholder="例如：&#10;/data/videos/mouse1.mp4&#10;/data/videos/batch1/"></textarea>
                         </div>
-                        <button type="button" class="btn btn-outline-primary" id="validatePathsBtn" data-tour-id="upload-validate">
-                            <span data-i18n="upload.validate">验证路径</span>
-                        </button>
+                        <div class="d-flex flex-column gap-2">
+                            {% if desktop_mode %}
+                            <button type="button" class="btn btn-outline-secondary" data-desktop-directory-target="localPaths">
+                                <i class="fas fa-folder-tree me-2"></i><span>选择文件夹</span>
+                            </button>
+                            {% endif %}
+                            <button type="button" class="btn btn-outline-primary" id="validatePathsBtn" data-tour-id="upload-validate">
+                                <span data-i18n="upload.validate">验证路径</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 

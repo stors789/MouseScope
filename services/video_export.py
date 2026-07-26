@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -21,9 +22,52 @@ DEFAULT_PRESET = "veryfast"
 DEFAULT_MAXRATE_MBPS = 18.0
 DEFAULT_SOURCE_RATIO_LIMIT = 1.8
 
+_ACTIVE_FFMPEG_LOCK = threading.RLock()
+_ACTIVE_FFMPEG_PROCESSES: set[subprocess.Popen] = set()
+
 
 def _noop_log(_message: str) -> None:
     return
+
+
+def _register_ffmpeg_process(process: subprocess.Popen) -> None:
+    with _ACTIVE_FFMPEG_LOCK:
+        _ACTIVE_FFMPEG_PROCESSES.add(process)
+
+
+def _unregister_ffmpeg_process(process: subprocess.Popen | None) -> None:
+    if process is None:
+        return
+    with _ACTIVE_FFMPEG_LOCK:
+        _ACTIVE_FFMPEG_PROCESSES.discard(process)
+
+
+def terminate_active_ffmpeg_processes(*, timeout: float = 3.0) -> int:
+    """Terminate only FFmpeg children created by MouseScope video writers."""
+    with _ACTIVE_FFMPEG_LOCK:
+        processes = list(_ACTIVE_FFMPEG_PROCESSES)
+
+    active = [process for process in processes if process.poll() is None]
+    for process in active:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    for process in active:
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                process.wait(timeout=1.0)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        finally:
+            _unregister_ffmpeg_process(process)
+    return len(active)
 
 
 def _env_float(name: str, default: float) -> float:
@@ -236,6 +280,7 @@ class FfmpegVideoWriter:
             stderr=subprocess.PIPE,
             creationflags=creationflags,
         )
+        _register_ffmpeg_process(self.process)
         self.logger(
             f"{self.label} codec: FFmpeg H.264 "
             f"(CRF {self.crf}, maxrate {self.maxrate_mbps:.2f} Mbps)"
@@ -291,12 +336,15 @@ class FfmpegVideoWriter:
                 pass
 
         try:
-            return_code = self.process.wait(timeout=180)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            return_code = self.process.wait(timeout=10)
-            self.failed = True
-            self.error_message = "FFmpeg did not finish within the timeout."
+            try:
+                return_code = self.process.wait(timeout=180)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                return_code = self.process.wait(timeout=10)
+                self.failed = True
+                self.error_message = "FFmpeg did not finish within the timeout."
+        finally:
+            _unregister_ffmpeg_process(self.process)
 
         stderr_text = ""
         if self.process.stderr is not None:
