@@ -22,6 +22,7 @@ def register_page_routes(app, ctx) -> None:
     project_store = getattr(ctx, "project_store", None)
     experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
     BUNDLE_DIR = ctx.BUNDLE_DIR
+    desktop_preferences_store = ctx.desktop_preferences_store
     VALID_VIDEO_EXTS = ctx.VALID_VIDEO_EXTS
     _cleanup_session_artifacts = ctx._cleanup_session_artifacts
     _extract_video_info_from_entry = ctx._extract_video_info_from_entry
@@ -171,6 +172,12 @@ def register_page_routes(app, ctx) -> None:
     @app.route('/api/accept_license', methods=['POST'])
     def api_accept_license():
         """用户同意许可协议"""
+        if app.config.get('MOUSESCOPE_DESKTOP_MODE'):
+            store = app.config.get(
+                'MOUSESCOPE_DESKTOP_PREFERENCES_STORE',
+                desktop_preferences_store,
+            )
+            store.accept_license(app.config['MOUSESCOPE_LICENSE_SHA256'])
         session['license_accepted'] = True
         return jsonify({'success': True})
 

@@ -92,6 +92,15 @@ class GuidedTourConsistencyTest(unittest.TestCase):
         self.assertIn("nav-global-settings", sources)
         self.assertIn("tour.home.global_settings", sources)
 
+    def test_desktop_tour_completion_uses_stable_preferences_but_force_restart_remains(self):
+        tour = read(TOUR_PATH)
+        base = read(TEMPLATES / "base.html")
+        self.assertIn("window.MouseScopeOnboarding", base)
+        self.assertIn("desktopCompletedTours.has(key)", tour)
+        self.assertIn("/api/desktop/preferences/tours", tour)
+        self.assertIn("if (!options.force && isCompleted(tour))", tour)
+        self.assertIn("startCurrent({force:true})", base)
+
 
 class VersionConsistencyTest(unittest.TestCase):
     def test_current_version_is_3_5_0(self):

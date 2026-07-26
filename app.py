@@ -101,6 +101,7 @@ from services.roi_templates import RoiTemplateStore
 from services.reproducibility import finalize_reproducibility_artifacts
 from services.version import APP_VERSION, APP_VERSION_TAG
 from services.app_paths import resolve_application_data_directory
+from services.desktop_preferences import DesktopPreferencesStore, license_sha256
 from services.desktop_runtime import (
     DESKTOP_TOKEN_COOKIE,
     DESKTOP_TOKEN_HEADER,
@@ -738,6 +739,7 @@ roi_template_store = RoiTemplateStore(
     DATA_DIR / 'roi_templates.json',
     legacy_y_maze_path=DATA_DIR / 'y_maze_roi_templates.json',
 )
+desktop_preferences_store = DesktopPreferencesStore(DATA_DIR / 'desktop_preferences.json')
 
 project_store = ProjectStore(
     projects_root=PROJECTS_DIR,
@@ -921,6 +923,32 @@ def _license_not_accepted_response():
     return redirect(url_for('license_page', next=next_url))
 
 
+def _desktop_license_is_accepted():
+    if not app.config.get('MOUSESCOPE_DESKTOP_MODE'):
+        return False
+    store = app.config.get('MOUSESCOPE_DESKTOP_PREFERENCES_STORE')
+    digest = str(app.config.get('MOUSESCOPE_LICENSE_SHA256') or '')
+    return bool(store and digest and store.is_license_accepted(digest))
+
+
+def _request_license_is_accepted():
+    if session.get('license_accepted'):
+        return True
+    if _desktop_license_is_accepted():
+        # Restore the normal Flask session for this WebView run without making
+        # the session cookie itself the durable consent record.
+        session['license_accepted'] = True
+        return True
+    return False
+
+
+def _desktop_completed_tours():
+    if not app.config.get('MOUSESCOPE_DESKTOP_MODE'):
+        return []
+    store = app.config.get('MOUSESCOPE_DESKTOP_PREFERENCES_STORE')
+    return sorted(store.completed_tour_keys()) if store else []
+
+
 @app.before_request
 def before_request_guard():
     _cleanup_expired_runtime_state()
@@ -934,7 +962,7 @@ def before_request_guard():
     endpoint = request.endpoint or ''
     if endpoint in LICENSE_EXEMPT_ENDPOINTS or endpoint.startswith('static'):
         return None
-    if session.get('license_accepted'):
+    if _request_license_is_accepted():
         return None
     return _license_not_accepted_response()
 
@@ -961,6 +989,8 @@ def inject_navigation_context():
         'app_version': APP_VERSION,
         'app_version_tag': APP_VERSION_TAG,
         'desktop_mode': bool(app.config.get('MOUSESCOPE_DESKTOP_MODE')),
+        'desktop_license_accepted': _desktop_license_is_accepted(),
+        'desktop_completed_tours': _desktop_completed_tours(),
         'enable_three_chamber': is_three_chamber_enabled(),
         'manual_nav_url': manual_nav_url,
         'manual_nav_target': manual_nav_target,
@@ -1002,6 +1032,7 @@ route_context = SimpleNamespace(
     visual_style_store=visual_style_store,
     experiment_defaults_store=experiment_defaults_store,
     roi_template_store=roi_template_store,
+    desktop_preferences_store=desktop_preferences_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,
     _cleanup_session_artifacts=_cleanup_session_artifacts,
@@ -1016,6 +1047,10 @@ route_context = SimpleNamespace(
     _stage_local_video_if_needed=_stage_local_video_if_needed,
     _update_video_entry_info=_update_video_entry_info,
     _discard_uploaded_staging_file=_discard_uploaded_staging_file,
+)
+app.config.update(
+    MOUSESCOPE_DESKTOP_PREFERENCES_STORE=desktop_preferences_store,
+    MOUSESCOPE_LICENSE_SHA256=license_sha256(BUNDLE_DIR / 'LICENSE'),
 )
 register_page_routes(app, route_context)
 register_api_routes(app, route_context)

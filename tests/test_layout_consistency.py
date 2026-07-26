@@ -20,9 +20,13 @@ class LayoutConsistencyTest(unittest.TestCase):
     def test_license_page_does_not_request_task_badge_before_acceptance(self):
         source = (TEMPLATES / "base.html").read_text(encoding="utf-8")
         badge_body = source.split("const badge = document.getElementById('navTaskBadge')", 1)[1]
-        guard = "if (!localStorage.getItem('mousescope_license_accepted')) return;"
-        self.assertIn(guard, badge_body)
-        self.assertLess(badge_body.index(guard), badge_body.index("fetch('/api/tasks?summary=1')"))
+        self.assertIn("if (!localStorage.getItem('mousescope_license_accepted'))", badge_body)
+        self.assertIn("if (!serverAccepted) return;", badge_body)
+        self.assertIn("window.MouseScopeOnboarding.licenseAccepted", badge_body)
+        self.assertLess(
+            badge_body.index("if (!localStorage.getItem('mousescope_license_accepted'))"),
+            badge_body.index("fetch('/api/tasks?summary=1')"),
+        )
 
     def test_quick_analysis_uses_standard_page_width(self):
         source = (TEMPLATES / "upload.html").read_text(encoding="utf-8")

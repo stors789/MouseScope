@@ -38,6 +38,40 @@
         return `mousescope_tour_${tour.id}_${tour.version || 'v1'}`;
     }
 
+    const desktopCompletedTours = new Set(
+        Array.isArray(window.MouseScopeOnboarding?.completedTours)
+            ? window.MouseScopeOnboarding.completedTours
+            : []
+    );
+
+    function isCompleted(tour) {
+        const key = storageKey(tour);
+        if (desktopCompletedTours.has(key)) return true;
+        try {
+            return Boolean(localStorage.getItem(key));
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function persistCompletion(tour) {
+        const key = storageKey(tour);
+        try {
+            localStorage.setItem(key, 'done');
+        } catch (_error) {
+            // Desktop persistence below remains authoritative when WebKit
+            // origin storage is unavailable or reset.
+        }
+        desktopCompletedTours.add(key);
+        if (!window.MouseScopeOnboarding?.desktop) return;
+        fetch('/api/desktop/preferences/tours', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key}),
+            keepalive: true,
+        }).catch(() => {});
+    }
+
     function isBlockedByModal() {
         return !!document.querySelector('.modal.show');
     }
@@ -195,7 +229,7 @@
 
     function finish() {
         if (active) {
-            localStorage.setItem(storageKey(active.tour), 'done');
+            persistCompletion(active.tour);
         }
         removeLayer();
     }
@@ -219,7 +253,7 @@
     function start(id, options = {}) {
         const tour = registry.get(id);
         if (!tour) return false;
-        if (!options.force && localStorage.getItem(storageKey(tour))) return false;
+        if (!options.force && isCompleted(tour)) return false;
         if (isBlockedByModal()) {
             window.setTimeout(() => start(id, options), 900);
             return false;

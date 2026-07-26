@@ -81,6 +81,13 @@
     </div>
 
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+    <script>
+    window.MouseScopeOnboarding = {
+        desktop: {{ desktop_mode|tojson }},
+        licenseAccepted: {{ desktop_license_accepted|tojson }},
+        completedTours: {{ desktop_completed_tours|tojson }}
+    };
+    </script>
     <script src="{{ url_for('static', filename='js/tour.js') }}"></script>
     <script src="{{ url_for('static', filename='js/monitor_status.js') }}"></script>
     <script src="{{ url_for('static', filename='js/analysis_start_guard.js') }}"></script>
@@ -146,7 +153,16 @@
             }
         }
 
-        const accepted = localStorage.getItem('mousescope_license_accepted');
+        const desktopAccepted = Boolean(
+            window.MouseScopeOnboarding
+            && window.MouseScopeOnboarding.desktop
+            && window.MouseScopeOnboarding.licenseAccepted
+        );
+        const accepted = desktopAccepted || localStorage.getItem('mousescope_license_accepted');
+        if (desktopAccepted) {
+            document.addEventListener('DOMContentLoaded', finishLicenseRedirect);
+            return;
+        }
         if (accepted) {
             document.addEventListener('DOMContentLoaded', function() {
                 fetch('/api/accept_license', { method: 'POST' })
@@ -176,15 +192,19 @@
                     document.getElementById('licenseAcceptBtn').disabled = !this.checked;
                 });
                 document.getElementById('licenseAcceptBtn').addEventListener('click', function() {
-                    localStorage.setItem('mousescope_license_accepted', Date.now().toString());
                     fetch('/api/accept_license', { method: 'POST' })
                         .then(r => {
                             if (!r.ok) throw new Error('license sync failed');
+                            try {
+                                localStorage.setItem('mousescope_license_accepted', Date.now().toString());
+                            } catch (_error) {
+                                // Desktop consent is already durable on the backend.
+                            }
                             modal.hide();
                             finishLicenseRedirect();
                         })
                         .catch(() => {
-                            modal.hide();
+                            alert('许可协议状态保存失败，请重试。');
                         });
                 });
                 document.getElementById('licenseDeclineBtn').addEventListener('click', function() {
@@ -206,7 +226,13 @@
         if (!badge) return;
         // The first license page is intentionally unauthenticated. Do not fire
         // a guaranteed 403 before the user has accepted the agreement.
-        if (!localStorage.getItem('mousescope_license_accepted')) return;
+        const serverAccepted = Boolean(
+            window.MouseScopeOnboarding
+            && window.MouseScopeOnboarding.licenseAccepted
+        );
+        if (!localStorage.getItem('mousescope_license_accepted')) {
+            if (!serverAccepted) return;
+        }
         fetch('/api/tasks?summary=1')
             .then(r => r.ok ? r.json() : null)
             .then(data => {
