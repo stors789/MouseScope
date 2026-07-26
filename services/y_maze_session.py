@@ -213,6 +213,21 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             f"{sum(roi.get('scoring_mode') == 'manual' for roi in roi_configs)} manual Y-maze arenas"
         )
 
+        annotated_writer = None
+        if generate_video:
+            annotated_writer = create_annotated_video_writer(
+                output_video_path,
+                sampling['effective_fps'],
+                sampling['analysis_width'],
+                sampling['analysis_height'],
+                label='Y-maze video',
+                source_video_path=video_path,
+                logger=self._log,
+                async_write=True,
+            )
+            if annotated_writer is None:
+                self._log("Y-maze annotated video disabled because no writer is available.")
+
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             self._log(f"Start Y-maze analysis from frame {start_frame} ({timebase.time_at(start_frame):.1f}s)")
@@ -253,13 +268,20 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             for result in results:
                 self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
 
+            if annotated_writer is not None:
+                result_frame = draw_y_maze_results(analysis_frame, list(zip(trackers, results)))
+                self._draw_manual_overlays(result_frame, roi_configs, current_time)
+                annotated_writer.write(result_frame)
+            else:
+                result_frame = analysis_frame
+
             if frame_idx % 15 == 0:
                 rows = [self._live_row(tracker, result) for tracker, result in zip(trackers, results)]
                 self.realtime_data = rows
                 self.live_metrics = self._build_live_metrics(rows)
 
             if frame_idx % 30 == 0:
-                self.current_frame = analysis_frame
+                self.current_frame = result_frame
 
             frame_idx += 1
             skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
@@ -269,14 +291,15 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
 
             if frame_idx % 20 == 0:
                 analysis_fraction = source_frames_done / max(frames_to_process, 1)
-                analysis_phase = 0.82 if generate_video else 0.94
                 self._set_video_progress(
                     batch_index,
-                    analysis_fraction * analysis_phase,
+                    analysis_fraction * 0.94,
                     f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
                 )
 
         cap.release()
+        if annotated_writer is not None:
+            annotated_writer.release()
         if not self.is_running:
             return
         self._ensure_analysis_frames_processed(
@@ -419,24 +442,6 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 else:
                     self._log(f"Failed to save Y-maze trackmap grid: {trackmap_grid_final_path}")
 
-        if generate_video and self.is_running:
-            self._render_annotated_video(
-                video_path,
-                output_video_path,
-                vision_config,
-                roi_configs,
-                sampling['effective_fps'],
-                sampling['analysis_width'],
-                sampling['analysis_height'],
-                start_frame,
-                end_frame,
-                frames_to_process,
-                global_start_time_s,
-                sampling,
-                timebase,
-                batch_index=batch_index,
-            )
-
         if generate_video and os.path.exists(output_video_path):
             exported_video = _export_result_file(output_video_path, final_output_video_path)
             self._append_result_file(exported_video, 'video')
@@ -471,109 +476,6 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
 
         import gc
         gc.collect()
-
-    def _render_annotated_video(
-        self,
-        video_path,
-        output_video_path,
-        vision_config,
-        roi_configs,
-        fps,
-        width,
-        height,
-        start_frame,
-        end_frame,
-        frames_to_process,
-        global_start_time_s,
-        sampling,
-        timebase,
-        batch_index=None,
-    ):
-        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
-        if not cap.isOpened():
-            self._log(f"Unable to reopen Y-maze video for rendering: {video_path}")
-            return False
-
-        writer = create_annotated_video_writer(
-            output_video_path,
-            fps,
-            width,
-            height,
-            label='Y-maze video',
-            source_video_path=video_path,
-            logger=self._log,
-            async_write=True,
-        )
-        if writer is None:
-            cap.release()
-            self._log("Y-maze annotated video disabled because no writer is available.")
-            return False
-
-        render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
-        bg_subtractor = morph_processor = detector = None
-        if render_trackers:
-            bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
-                video_path,
-                vision_config,
-                sampling,
-                static_frames=15,
-                erosion_default=1,
-                dilation_default=2,
-                min_area_default=120,
-                temporal_start_frame=start_frame,
-                temporal_end_frame=end_frame,
-            )
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        frame_idx = 0
-        source_frames_done = 0
-        previous_analyzed_frame = None
-        try:
-            while self.is_running:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                try:
-                    current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
-                except Exception:
-                    current_frame_no = start_frame + source_frames_done
-                if current_frame_no > end_frame:
-                    break
-
-                current_time = timebase.time_at(current_frame_no)
-                current_dt = timebase.duration_between(
-                    previous_analyzed_frame,
-                    current_frame_no,
-                    sample_fps=fps,
-                )
-                analysis_frame = self._resize_for_sampling(frame, sampling)
-                gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
-                if bg_subtractor is not None:
-                    begin_frame_cache(bg_subtractor, current_frame_no)
-                results = [
-                    tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector, dt_s=current_dt)
-                    for tracker in render_trackers
-                ]
-                previous_analyzed_frame = current_frame_no
-                result_frame = draw_y_maze_results(analysis_frame, list(zip(render_trackers, results)))
-                self._draw_manual_overlays(result_frame, roi_configs, current_time)
-                writer.write(result_frame)
-                if frame_idx % 30 == 0:
-                    self.current_frame = result_frame
-                frame_idx += 1
-                skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
-                covered = 1 + skipped
-                source_frames_done += covered
-                self._advance_frame_counters(covered, processed=False)
-                if frame_idx % 60 == 0:
-                    self._set_video_progress(
-                        batch_index,
-                        0.82 + 0.16 * source_frames_done / max(frames_to_process, 1),
-                        f'Rendering Y-maze video {source_frames_done}/{frames_to_process} ({{progress}}%)',
-                    )
-        finally:
-            cap.release()
-            writer.release()
-        return os.path.exists(output_video_path)
 
     @staticmethod
     def _draw_manual_overlays(frame, roi_configs, current_time):
