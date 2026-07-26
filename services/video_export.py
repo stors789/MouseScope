@@ -70,6 +70,42 @@ def terminate_active_ffmpeg_processes(*, timeout: float = 3.0) -> int:
     return len(active)
 
 
+def run_tracked_ffmpeg(
+    command: list[str],
+    *,
+    timeout: float,
+) -> subprocess.CompletedProcess:
+    """Run an FFmpeg command that participates in desktop shutdown cleanup."""
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        creationflags=creationflags,
+    )
+    _register_ffmpeg_process(process)
+    try:
+        try:
+            _stdout, stderr = process.communicate(timeout=max(0.1, float(timeout)))
+        except subprocess.TimeoutExpired as exc:
+            process.terminate()
+            try:
+                _stdout, stderr = process.communicate(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                _stdout, stderr = process.communicate(timeout=1.0)
+            raise TimeoutError("FFmpeg command timed out.") from exc
+        return subprocess.CompletedProcess(
+            command,
+            process.returncode,
+            stdout=None,
+            stderr=stderr,
+        )
+    finally:
+        _unregister_ffmpeg_process(process)
+
+
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None:

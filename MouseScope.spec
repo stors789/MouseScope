@@ -108,6 +108,7 @@ a = Analysis(
         'services.analysis_sessions',
         'services.atomic_json',
         'services.api_errors',
+        'services.browser_video',
         'services.debug_preview',
         'services.experiment_defaults',
         'services.experiment_defaults_store',

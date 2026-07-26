@@ -989,6 +989,7 @@ from routes.desktop import register_desktop_routes
 
 route_context = SimpleNamespace(
     APP_VERSION=APP_VERSION,
+    DATA_DIR=DATA_DIR,
     UploadStorageError=UploadStorageError,
     analysis_sessions=analysis_sessions,
     analysis_history=analysis_history,

@@ -35,10 +35,19 @@ class BackgroundSubtractor:
     1. 'threshold' - 简单灰度阈值（推荐，最快最简单）
     2. 'MOG2' - 自适应背景减除
     3. 'KNN' - 自适应背景减除
-    4. 'static' - 静态背景减除
+    4. 'static' - 开头连续帧静态背景减除
+    5. 'temporal' - 全分析窗口均匀采样时序背景减除
     """
     
-    def __init__(self, method='threshold', threshold=127, invert=False, static_bg=None):
+    def __init__(
+        self,
+        method='threshold',
+        threshold=127,
+        invert=False,
+        static_bg=None,
+        temporal_noise_map=None,
+        temporal_noise_scale=3.0,
+    ):
         """
         初始化检测器
         
@@ -46,12 +55,16 @@ class BackgroundSubtractor:
             method: 'threshold', 'MOG2', 'KNN', 或 'static'
             threshold: 灰度阈值（仅threshold模式使用）
             invert: 是否反转（黑背景设为True）
-            static_bg: 静态背景图像（仅static模式使用）
+            static_bg: 静态/时序背景图像
+            temporal_noise_map: 时序样本的逐像素波动幅度
+            temporal_noise_scale: 波动幅度转为抑噪门限的倍率
         """
         self.method = method
         self.threshold = threshold
         self.invert = invert
         self.static_bg = static_bg
+        self.temporal_noise_map = temporal_noise_map
+        self.temporal_noise_scale = max(0.0, float(temporal_noise_scale))
         
         if method == 'threshold':
             # 简单阈值模式（最快，推荐）
@@ -72,6 +85,17 @@ class BackgroundSubtractor:
             if static_bg is None:
                 raise ValueError("Static background image required for static method")
             self.static_bg = cv2.cvtColor(static_bg, cv2.COLOR_BGR2GRAY) if len(static_bg.shape) == 3 else static_bg
+        elif method == 'temporal':
+            if static_bg is None:
+                raise ValueError("Temporal background image required for temporal method")
+            self.static_bg = cv2.cvtColor(static_bg, cv2.COLOR_BGR2GRAY) if len(static_bg.shape) == 3 else static_bg
+            if temporal_noise_map is None:
+                self.temporal_noise_map = np.zeros_like(self.static_bg, dtype=np.uint8)
+            else:
+                noise = np.asarray(temporal_noise_map)
+                if noise.shape != self.static_bg.shape:
+                    raise ValueError("Temporal noise map must match background dimensions")
+                self.temporal_noise_map = noise.astype(np.uint8, copy=False)
         else:
             raise ValueError(f"Unknown method: {method}")
     
@@ -104,6 +128,18 @@ class BackgroundSubtractor:
             diff = cv2.absdiff(gray, self.static_bg)
             _, fg_mask = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
             return fg_mask
+        elif self.method == 'temporal':
+            # The background and noise map are frozen before scoring starts.
+            # Stable structures therefore disappear, while a mouse that stops
+            # after being acquired remains different from the fixed background.
+            diff = cv2.absdiff(gray, self.static_bg)
+            noise_floor = np.clip(
+                np.ceil(self.temporal_noise_map.astype(np.float32) * self.temporal_noise_scale),
+                0,
+                255,
+            ).astype(np.uint8)
+            effective_threshold = np.maximum(noise_floor, int(np.clip(self.threshold, 0, 255)))
+            return np.where(diff > effective_threshold, 255, 0).astype(np.uint8)
         else:
             # 自适应背景减除（MOG2/KNN）
             return self.subtractor.apply(gray, learningRate=learning_rate)
@@ -2287,3 +2323,74 @@ def create_static_background(video_path, num_frames=10, start_frame=0, orientati
     bg = np.median(frames, axis=0).astype(np.uint8)
     
     return bg
+
+
+def uniform_temporal_sample_indices(
+    total_frames,
+    num_samples=90,
+    start_frame=0,
+    end_frame=None,
+):
+    """Return unique, evenly distributed frame indices for an analysis window."""
+    total = max(0, int(total_frames or 0))
+    if total <= 0:
+        return []
+    start = int(np.clip(int(start_frame or 0), 0, total - 1))
+    end_value = total - 1 if end_frame is None else int(end_frame)
+    end = int(np.clip(end_value, start, total - 1))
+    count = max(1, min(int(num_samples or 1), end - start + 1))
+    return np.unique(np.linspace(start, end, count, dtype=np.int64)).astype(int).tolist()
+
+
+def create_temporal_background(
+    video_path,
+    num_samples=90,
+    start_frame=0,
+    end_frame=None,
+    orientation_override=None,
+    analysis_size=None,
+):
+    """Build a frozen median background and robust pixel-noise map.
+
+    Frames are sampled uniformly across the requested analysis window. The
+    Median absolute deviation captures recurring reflection/compression flicker
+    without treating a mouse that visits a pixel in a minority of samples as
+    persistent noise. It is used as a per-pixel floor by ``BackgroundSubtractor``.
+    """
+    cap = open_video_capture(video_path, orientation_override=orientation_override)
+    if not cap.isOpened():
+        cap.release()
+        raise ValueError("Failed to open video for temporal background")
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    indices = uniform_temporal_sample_indices(
+        total_frames,
+        num_samples=num_samples,
+        start_frame=start_frame,
+        end_frame=end_frame,
+    )
+    frames = []
+    target_size = None
+    if analysis_size:
+        width, height = int(analysis_size[0]), int(analysis_size[1])
+        if width > 0 and height > 0:
+            target_size = (width, height)
+    try:
+        for frame_index in indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_index))
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            if target_size and (frame.shape[1], frame.shape[0]) != target_size:
+                frame = cv2.resize(frame, target_size, interpolation=cv2.INTER_AREA)
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+    finally:
+        cap.release()
+
+    if not frames:
+        raise ValueError("Failed to read frames for temporal background")
+    stack = np.stack(frames, axis=0)
+    background = np.median(stack, axis=0).astype(np.uint8)
+    deviations = np.abs(stack.astype(np.int16) - background.astype(np.int16))
+    noise_map = np.median(deviations, axis=0).astype(np.uint8)
+    return background, noise_map, indices

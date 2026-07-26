@@ -18,6 +18,7 @@ import cv2
 from flask import Response, after_this_request, jsonify, request, send_file, stream_with_context, url_for
 
 from services.api_errors import build_api_error
+from services.browser_video import BrowserVideoError, ensure_browser_video
 from services.analysis_builders import build_analysis_config
 from services.analysis_windows import effective_video_duration_seconds, validate_analysis_windows, validate_roi_windows
 from services.analysis_sessions import (
@@ -62,6 +63,7 @@ def register_api_routes(app, ctx) -> None:
     project_store = getattr(ctx, "project_store", None)
     visual_style_store = getattr(ctx, "visual_style_store", None)
     experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
+    manual_video_cache_dir = Path(getattr(ctx, "DATA_DIR", tempfile.gettempdir())) / "manual_video_cache"
     app_version = str(getattr(ctx, "APP_VERSION", ""))
     RESULT_DIR = ctx.RESULT_DIR
     _resolve_result_dir = ctx._resolve_result_dir
@@ -989,6 +991,57 @@ def register_api_routes(app, ctx) -> None:
             'total_frames': video_info['total_frames'],
             'video_info': video_info,
         })
+
+    @app.route('/api/video_source/<session_id>')
+    def video_source(session_id):
+        """Serve one session video inline with HTTP Range support."""
+        sess = analysis_sessions.get(session_id)
+        if not sess:
+            return _api_error('会话不存在', 404, code='session_not_found')
+        try:
+            video_idx = _nonnegative_int(request.args.get('video', 0), 'video')
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        video_paths = sess.get('video_paths') or []
+        if video_idx >= len(video_paths):
+            return _api_error(
+                '会话没有对应视频文件',
+                404,
+                code='video_not_found',
+                message_en='The requested session video does not exist.',
+            )
+        video_path = Path(video_paths[video_idx])
+        if not video_path.is_file():
+            return _api_error(
+                '视频文件不存在',
+                404,
+                code='video_not_found',
+                message_en='The requested session video file is missing.',
+            )
+        video_info = _session_video_info(sess, video_idx)
+        try:
+            browser_path, is_proxy = ensure_browser_video(
+                video_path,
+                manual_video_cache_dir,
+                orientation_degrees=int(video_info.get('orientation_degrees') or 0),
+            )
+        except BrowserVideoError as exc:
+            logger.exception('Failed to prepare browser video: %s', video_path)
+            return _api_error(
+                f'无法准备人工评分视频：{exc}',
+                500,
+                code='browser_video_failed',
+                message_en='The video could not be prepared for manual scoring playback.',
+            )
+        response = send_file(
+            browser_path,
+            conditional=True,
+            as_attachment=False,
+            download_name=f'{video_path.stem}.mp4' if is_proxy else video_path.name,
+            mimetype='video/mp4' if is_proxy else None,
+        )
+        response.headers['X-MouseScope-Video-Proxy'] = '1' if is_proxy else '0'
+        return response
 
 
     @app.route('/api/batch_state/<session_id>')

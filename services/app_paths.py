@@ -35,6 +35,8 @@ def _user_data_directory(environ: Mapping[str, str]) -> Path:
     local_root = environ.get('LOCALAPPDATA') or environ.get('APPDATA')
     if local_root:
         return Path(local_root).expanduser() / 'MouseScope' / 'data'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'MouseScope' / 'data'
     return Path.home() / '.mousescope' / 'data'
 
 
@@ -70,10 +72,10 @@ def resolve_application_data_directory(
     if override:
         return _ensure_writable_directory(Path(os.path.expandvars(override)).expanduser())
 
-    portable = Path(base_dir) / 'data'
     if not frozen:
-        return _ensure_writable_directory(portable)
+        return _ensure_writable_directory(Path(base_dir) / 'data')
 
+    portable = Path(base_dir) / 'data'
     if (platform_name or sys.platform) == 'darwin':
         stable = _ensure_writable_directory(_macos_data_directory(env))
         legacy_candidates = (

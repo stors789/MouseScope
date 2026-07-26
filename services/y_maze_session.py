@@ -1,4 +1,5 @@
 from services.analysis_runtime import *
+from y_maze import build_manual_y_maze_summary, normalize_manual_arm_entries
 
 
 class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
@@ -33,6 +34,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             'report': [],
             'heatmap': [],
             'trackmap': [],
+            'events_csv': [],
         }
 
     def _parse_rois(self, config=None):
@@ -52,12 +54,22 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             detection_points = None
             if isinstance(roi, dict) and roi.get('detection_points'):
                 detection_points = _coerce_point_list(roi.get('detection_points'), min_points=DETECTION_MASK_MIN_POINTS)
+            scoring_mode = str(roi.get('scoring_mode') or 'automatic').strip().lower()
+            if scoring_mode not in {'automatic', 'manual'}:
+                raise ValueError(f'Y-maze ROI {idx + 1} has an invalid scoring mode.')
+            manual_events = copy.deepcopy(roi.get('manual_events') or [])
+            if scoring_mode == 'manual' and not manual_events:
+                raise ValueError(f'Y-maze manual ROI {idx + 1} has no arm-entry events.')
+            if scoring_mode == 'manual':
+                normalize_manual_arm_entries(manual_events)
             parsed.append({
                 'roi_id': idx + 1,
                 'name': roi_name,
                 'zones': zone_polygons,
                 'time_config': time_config,
                 'detection_points': detection_points,
+                'scoring_mode': scoring_mode,
+                'manual_events': manual_events,
             })
 
         if not parsed:
@@ -106,12 +118,18 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 fps=fps,
                 movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
                 entry_depth_ratio=float(vision_config.get('entry_depth_ratio', 0.2)),
+                tracking_max_jump_cm=float(vision_config.get('tracking_max_jump_cm', 12.0)),
+                occlusion_hold_s=float(vision_config.get('occlusion_hold_s', 0.4)),
+                zone_confirm_s=float(vision_config.get('zone_confirm_s', 0.12)),
+                center_reset_s=float(vision_config.get('center_reset_s', 0.2)),
+                require_center_passage=bool(vision_config.get('require_center_passage', True)),
                 roi_id=roi['roi_id'],
                 roi_name=roi['name'],
                 time_config=roi.get('time_config'),
                 global_start_time_s=global_start_time_s,
             )
             for roi in roi_configs
+            if roi.get('scoring_mode', 'automatic') == 'automatic'
         ]
 
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
@@ -169,26 +187,47 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         )
         self._log_video_sampling(sampling)
 
-        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
-            video_path,
-            vision_config,
-            sampling,
-            static_frames=15,
-            erosion_default=1,
-            dilation_default=2,
-            min_area_default=120,
-        )
-
         start_sec = vision_config.get('start_sec')
         end_sec = vision_config.get('end_sec')
+        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
         global_start_time_s = float(start_sec) if start_sec is not None else 0.0
         source_roi_configs = self._parse_rois(vision_config)
         roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
 
         trackers = self._create_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
-        self._log(f"Configured {len(trackers)} Y-maze arenas")
+        bg_subtractor = morph_processor = detector = None
+        if trackers:
+            bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
+                video_path,
+                vision_config,
+                sampling,
+                static_frames=15,
+                erosion_default=1,
+                dilation_default=2,
+                min_area_default=120,
+                temporal_start_frame=start_frame,
+                temporal_end_frame=end_frame,
+            )
+        self._log(
+            f"Configured {len(trackers)} automatic and "
+            f"{sum(roi.get('scoring_mode') == 'manual' for roi in roi_configs)} manual Y-maze arenas"
+        )
 
-        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
+        annotated_writer = None
+        if generate_video:
+            annotated_writer = create_annotated_video_writer(
+                output_video_path,
+                sampling['effective_fps'],
+                sampling['analysis_width'],
+                sampling['analysis_height'],
+                label='Y-maze video',
+                source_video_path=video_path,
+                logger=self._log,
+                async_write=True,
+            )
+            if annotated_writer is None:
+                self._log("Y-maze annotated video disabled because no writer is available.")
+
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             self._log(f"Start Y-maze analysis from frame {start_frame} ({timebase.time_at(start_frame):.1f}s)")
@@ -219,7 +258,8 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             )
             analysis_frame = self._resize_for_sampling(frame, sampling)
             gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
-            begin_frame_cache(bg_subtractor, current_frame_no)
+            if bg_subtractor is not None:
+                begin_frame_cache(bg_subtractor, current_frame_no)
             results = [
                 tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector, dt_s=current_dt)
                 for tracker in trackers
@@ -228,13 +268,20 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             for result in results:
                 self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
 
+            if annotated_writer is not None:
+                result_frame = draw_y_maze_results(analysis_frame, list(zip(trackers, results)))
+                self._draw_manual_overlays(result_frame, roi_configs, current_time)
+                annotated_writer.write(result_frame)
+            else:
+                result_frame = analysis_frame
+
             if frame_idx % 15 == 0:
                 rows = [self._live_row(tracker, result) for tracker, result in zip(trackers, results)]
                 self.realtime_data = rows
                 self.live_metrics = self._build_live_metrics(rows)
 
             if frame_idx % 30 == 0:
-                self.current_frame = analysis_frame
+                self.current_frame = result_frame
 
             frame_idx += 1
             skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
@@ -244,14 +291,15 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
 
             if frame_idx % 20 == 0:
                 analysis_fraction = source_frames_done / max(frames_to_process, 1)
-                analysis_phase = 0.82 if generate_video else 0.94
                 self._set_video_progress(
                     batch_index,
-                    analysis_fraction * analysis_phase,
+                    analysis_fraction * 0.94,
                     f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
                 )
 
         cap.release()
+        if annotated_writer is not None:
+            annotated_writer.release()
         if not self.is_running:
             return
         self._ensure_analysis_frames_processed(
@@ -264,22 +312,52 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         summary_rows = []
         track_rows = []
         bins_rows = []
-        for tracker in trackers:
-            summary = tracker.build_summary()
+        manual_event_rows = []
+        tracker_by_roi = {tracker.roi_id: tracker for tracker in trackers}
+        analysis_end_time_s = float(timebase.time_at(end_frame))
+        for roi in roi_configs:
+            tracker = tracker_by_roi.get(roi['roi_id'])
+            if tracker is None:
+                time_config = roi.get('time_config') or {}
+                manual_start = global_start_time_s
+                manual_end = analysis_end_time_s
+                if time_config.get('mode') == 'precise':
+                    if time_config.get('start') is not None:
+                        manual_start = max(manual_start, float(time_config['start']))
+                    if time_config.get('end') is not None:
+                        manual_end = min(manual_end, float(time_config['end']))
+                summary, event_rows = build_manual_y_maze_summary(
+                    roi_id=roi['roi_id'],
+                    roi_name=roi['name'],
+                    events=roi.get('manual_events') or [],
+                    window_start_s=manual_start,
+                    window_end_s=manual_end,
+                    time_mode=time_config.get('mode', 'global'),
+                )
+                if not event_rows:
+                    raise ValueError(
+                        f"Y-maze manual ROI {roi['roi_id']} has no events inside its analysis window."
+                    )
+                for event_row in event_rows:
+                    event_row['video_name'] = video_info.get('original_name', video_name)
+                    manual_event_rows.append(event_row)
+            else:
+                summary = tracker.build_summary()
+                for row in tracker.frame_records:
+                    record = dict(row)
+                    record['video_name'] = video_info.get('original_name', video_name)
+                    record['scoring_method'] = 'automatic'
+                    track_rows.append(record)
+
+                for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 60.0))):
+                    bucket = dict(row)
+                    bucket['video_name'] = video_info.get('original_name', video_name)
+                    bucket['scoring_method'] = 'automatic'
+                    bins_rows.append(bucket)
             self._add_sampling_summary_fields(summary, sampling)
             self._add_timebase_summary_fields(summary, timebase_summary)
             summary['video_name'] = video_info.get('original_name', video_name)
             summary_rows.append(summary)
-
-            for row in tracker.frame_records:
-                record = dict(row)
-                record['video_name'] = video_info.get('original_name', video_name)
-                track_rows.append(record)
-
-            for row in tracker.build_time_bins(bin_seconds=float(vision_config.get('bin_seconds', 60.0))):
-                bucket = dict(row)
-                bucket['video_name'] = video_info.get('original_name', video_name)
-                bins_rows.append(bucket)
 
         if HAS_PANDAS and track_rows:
             track_csv_work_path = f"{output_base}_track.csv"
@@ -292,6 +370,12 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
             if _write_dataframe_csv(summary_rows, summary_csv_work_path):
                 summary_csv_path = _export_result_file(summary_csv_work_path, f"{final_base}_summary.csv")
                 self._append_result_file(summary_csv_path, 'summary_csv')
+
+        if HAS_PANDAS and manual_event_rows:
+            events_csv_work_path = f"{output_base}_manual_events.csv"
+            if _write_dataframe_csv(manual_event_rows, events_csv_work_path):
+                events_csv_path = _export_result_file(events_csv_work_path, f"{final_base}_manual_events.csv")
+                self._append_result_file(events_csv_path, 'events_csv')
 
         if HAS_PANDAS and bins_rows:
             bins_csv_work_path = f"{output_base}_bins.csv"
@@ -358,24 +442,6 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 else:
                     self._log(f"Failed to save Y-maze trackmap grid: {trackmap_grid_final_path}")
 
-        if generate_video and self.is_running:
-            self._render_annotated_video(
-                video_path,
-                output_video_path,
-                vision_config,
-                roi_configs,
-                sampling['effective_fps'],
-                sampling['analysis_width'],
-                sampling['analysis_height'],
-                start_frame,
-                end_frame,
-                frames_to_process,
-                global_start_time_s,
-                sampling,
-                timebase,
-                batch_index=batch_index,
-            )
-
         if generate_video and os.path.exists(output_video_path):
             exported_video = _export_result_file(output_video_path, final_output_video_path)
             self._append_result_file(exported_video, 'video')
@@ -411,102 +477,30 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
         import gc
         gc.collect()
 
-    def _render_annotated_video(
-        self,
-        video_path,
-        output_video_path,
-        vision_config,
-        roi_configs,
-        fps,
-        width,
-        height,
-        start_frame,
-        end_frame,
-        frames_to_process,
-        global_start_time_s,
-        sampling,
-        timebase,
-        batch_index=None,
-    ):
-        cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
-        if not cap.isOpened():
-            self._log(f"Unable to reopen Y-maze video for rendering: {video_path}")
-            return False
-
-        writer = create_annotated_video_writer(
-            output_video_path,
-            fps,
-            width,
-            height,
-            label='Y-maze video',
-            source_video_path=video_path,
-            logger=self._log,
-            async_write=True,
-        )
-        if writer is None:
-            cap.release()
-            self._log("Y-maze annotated video disabled because no writer is available.")
-            return False
-
-        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
-            video_path,
-            vision_config,
-            sampling,
-            static_frames=15,
-            erosion_default=1,
-            dilation_default=2,
-            min_area_default=120,
-        )
-        render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        frame_idx = 0
-        source_frames_done = 0
-        previous_analyzed_frame = None
-        try:
-            while self.is_running:
-                ret, frame = cap.read()
-                if not ret:
+    @staticmethod
+    def _draw_manual_overlays(frame, roi_configs, current_time):
+        for roi in roi_configs:
+            if roi.get('scoring_mode') != 'manual':
+                continue
+            events, _ = normalize_manual_arm_entries(roi.get('manual_events') or [])
+            current_arm = None
+            for event in events:
+                if event['timestamp_s'] > float(current_time):
                     break
-                try:
-                    current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
-                except Exception:
-                    current_frame_no = start_frame + source_frames_done
-                if current_frame_no > end_frame:
-                    break
-
-                current_time = timebase.time_at(current_frame_no)
-                current_dt = timebase.duration_between(
-                    previous_analyzed_frame,
-                    current_frame_no,
-                    sample_fps=fps,
-                )
-                analysis_frame = self._resize_for_sampling(frame, sampling)
-                gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
-                begin_frame_cache(bg_subtractor, current_frame_no)
-                results = [
-                    tracker.update(analysis_frame, current_time, gray, bg_subtractor, morph_processor, detector, dt_s=current_dt)
-                    for tracker in render_trackers
-                ]
-                previous_analyzed_frame = current_frame_no
-                result_frame = draw_y_maze_results(analysis_frame, list(zip(render_trackers, results)))
-                writer.write(result_frame)
-                if frame_idx % 30 == 0:
-                    self.current_frame = result_frame
-                frame_idx += 1
-                skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
-                covered = 1 + skipped
-                source_frames_done += covered
-                self._advance_frame_counters(covered, processed=False)
-                if frame_idx % 60 == 0:
-                    self._set_video_progress(
-                        batch_index,
-                        0.82 + 0.16 * source_frames_done / max(frames_to_process, 1),
-                        f'Rendering Y-maze video {source_frames_done}/{frames_to_process} ({{progress}}%)',
-                    )
-        finally:
-            cap.release()
-            writer.release()
-        return os.path.exists(output_video_path)
+                current_arm = event['arm']
+            center = np.asarray(roi['zones']['center'], dtype=np.float32).mean(axis=0)
+            label = f"Manual: {YMazeTracker.ARM_LABELS.get(current_arm, '-')}"
+            cv2.putText(
+                frame,
+                label,
+                (max(4, int(center[0]) - 45), max(18, int(center[1]))),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 165, 255),
+                2,
+                cv2.LINE_AA,
+            )
+        return frame
 
     def _generate_txt_report(self, summaries, txt_path):
         try:
@@ -527,6 +521,7 @@ class YMazeMultiArenaAnalysisSession(AnalysisSessionBase):
                 for summary in summaries:
                     f.write(f"[ROI {summary.get('roi_id')}] {summary.get('roi_name', '')}\n")
                     _write_report_metric_lines(f, summary, [
+                        ('评分方式', 'Scoring Method', 'scoring_method', ''),
                         ('总时长', 'Total Time', 'total_time_s', ' s'),
                         ('检测率', 'Detected Rate', 'detected_rate_percent', '%'),
                         ('总距离', 'Total Distance', 'total_distance_cm', ' cm'),
