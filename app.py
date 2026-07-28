@@ -98,6 +98,7 @@ from services.debug_preview import cleanup_debug_preview_cache
 from services.visual_style_store import VisualStyleStore
 from services.experiment_defaults_store import ExperimentDefaultsStore
 from services.roi_templates import RoiTemplateStore
+from services.pose_model_profiles import PoseModelProfileStore
 from services.reproducibility import finalize_reproducibility_artifacts
 from services.version import APP_VERSION, APP_VERSION_TAG
 from services.app_paths import resolve_application_data_directory
@@ -139,7 +140,7 @@ for d in [DATA_DIR, UPLOAD_DIR, RESULT_DIR, WORK_DIR, HISTORY_DIR, PROJECTS_DIR]
 
 CHINA_TZ = timezone(timedelta(hours=8))
 CSV_ENCODING = 'utf-8-sig'
-VALID_VIDEO_EXTS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
+VALID_VIDEO_EXTS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.mpg', '.mpeg'}
 staged_original_names = {}
 SESSION_PENDING_TTL_SECONDS = 2 * 60 * 60
 SESSION_FINISHED_TTL_SECONDS = 12 * 60 * 60
@@ -739,6 +740,7 @@ roi_template_store = RoiTemplateStore(
     DATA_DIR / 'roi_templates.json',
     legacy_y_maze_path=DATA_DIR / 'y_maze_roi_templates.json',
 )
+pose_model_profile_store = PoseModelProfileStore(DATA_DIR / 'pose_model_profiles.json')
 desktop_preferences_store = DesktopPreferencesStore(DATA_DIR / 'desktop_preferences.json')
 
 project_store = ProjectStore(
@@ -1032,6 +1034,7 @@ route_context = SimpleNamespace(
     visual_style_store=visual_style_store,
     experiment_defaults_store=experiment_defaults_store,
     roi_template_store=roi_template_store,
+    pose_model_profile_store=pose_model_profile_store,
     desktop_preferences_store=desktop_preferences_store,
     BUNDLE_DIR=BUNDLE_DIR,
     VALID_VIDEO_EXTS=VALID_VIDEO_EXTS,

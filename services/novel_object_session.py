@@ -1,4 +1,5 @@
 from services.analysis_runtime import *
+from services.pose_tracking import PoseInferenceCoordinator
 
 
 class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
@@ -33,6 +34,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             'report': [],
             'heatmap': [],
             'trackmap': [],
+            'exploration_cumulative': [],
         }
 
     def _parse_rois(self, config=None):
@@ -182,6 +184,12 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         video_start_time = time.time()
         video_index = 0 if batch_index is None else int(batch_index)
         vision_config = self._config_for_video(video_index)
+        if vision_config.get('tracking_backend') != vision_config.get('tracking_backend_effective', 'classical'):
+            self._log(
+                "NOR tracking backend fallback: "
+                f"{vision_config.get('tracking_backend')} -> classical "
+                f"({vision_config.get('tracking_fallback_reason') or 'unavailable'})."
+            )
         result_folder = vision_config.get('output_dir') or str(RESULT_DIR)
         output_info = _prepare_output_paths(
             self.session_id,
@@ -255,6 +263,9 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
 
         trackers = self._create_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
+        pose_coordinator = PoseInferenceCoordinator(vision_config, trackers)
+        if pose_coordinator.enabled:
+            self._log("NOR DeepLabCut tracking enabled: body/nose/ears drive position, head direction, and exploration scoring.")
         self._log(f"Configured {len(trackers)} NOR arenas")
 
         if generate_video:
@@ -291,19 +302,30 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             analysis_frame = self._resize_for_sampling(frame, sampling)
             gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
             begin_frame_cache(bg_subtractor, current_frame_no)
-            results = [
-                tracker.update(
-                    analysis_frame,
-                    current_time,
-                    gray,
-                    bg_subtractor,
-                    morph_processor,
-                    detector,
-                    include_trajectory=False,
-                    dt_s=current_dt,
+            pose_frame = pose_coordinator.infer(analysis_frame)
+            fallback_active = str(vision_config.get('tracking_backend') or 'classical') != 'classical'
+            results = []
+            for tracker in trackers:
+                pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
+                results.append(
+                    tracker.update(
+                        analysis_frame,
+                        current_time,
+                        gray,
+                        bg_subtractor,
+                        morph_processor,
+                        detector,
+                        include_trajectory=False,
+                        dt_s=current_dt,
+                        pose_observation=pose_observation,
+                        tracking_source='classical_fallback' if fallback_active else 'classical',
+                        fallback_reason=(
+                            pose_frame.error
+                            or vision_config.get('tracking_fallback_reason')
+                            or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
+                        ) if pose_observation is None else None,
+                    )
                 )
-                for tracker in trackers
-            ]
             previous_analyzed_frame = current_frame_no
             for result in results:
                 self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
@@ -331,6 +353,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                     f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
                 )
 
+        pose_coordinator.close()
         cap.release()
         if not self.is_running:
             return
@@ -346,6 +369,15 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         bins_rows = []
         for tracker in trackers:
             summary = tracker.build_summary()
+            summary['tracking_backend_requested'] = vision_config.get('tracking_backend', 'classical')
+            summary['tracking_backend_effective'] = vision_config.get('tracking_backend_effective', 'classical')
+            summary['tracking_fallback_reason'] = vision_config.get('tracking_fallback_reason')
+            dlc_frames = int(summary.get('deeplabcut_frames') or 0)
+            fallback_frames = int(summary.get('classical_fallback_frames') or 0)
+            summary['tracking_backend_observed'] = (
+                'mixed' if dlc_frames and fallback_frames
+                else ('deeplabcut' if dlc_frames else 'classical')
+            )
             self._add_sampling_summary_fields(summary, sampling)
             self._add_timebase_summary_fields(summary, timebase_summary)
             summary['video_name'] = video_info.get('original_name', video_name)
@@ -388,13 +420,17 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         heatmap_final_paths = []
         trackmap_work_paths = []
         trackmap_final_paths = []
+        exploration_cumulative_work_paths = []
+        exploration_cumulative_final_paths = []
         visual_style = vision_config.get('visual_style')
         for tracker in trackers:
             roi_slug = sanitize_name(f"{tracker.roi_id:02d}_{tracker.roi_name}", fallback=f"roi_{tracker.roi_id:02d}")
             heatmap_work_path = f"{output_base}_{roi_slug}_heatmap.png"
             trackmap_work_path = f"{output_base}_{roi_slug}_trackmap.png"
+            exploration_cumulative_work_path = f"{output_base}_{roi_slug}_exploration_cumulative.png"
             heatmap_final_path = f"{final_base}_{roi_slug}_heatmap.png"
             trackmap_final_path = f"{final_base}_{roi_slug}_trackmap.png"
+            exploration_cumulative_final_path = f"{final_base}_{roi_slug}_exploration_cumulative.png"
 
             if render_novel_object_heatmap(tracker, heatmap_work_path, style=visual_style):
                 exported_heatmap = _export_result_file(heatmap_work_path, heatmap_final_path)
@@ -411,6 +447,21 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                 self._append_result_file(exported_trackmap)
             else:
                 self._log(f"Failed to save NOR trackmap: {trackmap_final_path}")
+
+            if render_novel_object_exploration_cumulative(
+                tracker,
+                exploration_cumulative_work_path,
+                style=visual_style,
+            ):
+                exported_cumulative = _export_result_file(
+                    exploration_cumulative_work_path,
+                    exploration_cumulative_final_path,
+                )
+                exploration_cumulative_work_paths.append(exploration_cumulative_work_path)
+                exploration_cumulative_final_paths.append(exported_cumulative)
+                self._append_result_file(exported_cumulative)
+            else:
+                self._log(f"Failed to save NOR cumulative exploration chart: {exploration_cumulative_final_path}")
 
         if heatmap_work_paths:
             if len(heatmap_final_paths) == 1:
@@ -433,6 +484,28 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                     self._append_result_file(_export_result_file(trackmap_grid_work_path, trackmap_grid_final_path), 'trackmap')
                 else:
                     self._log(f"Failed to save NOR trackmap grid: {trackmap_grid_final_path}")
+
+        if exploration_cumulative_work_paths:
+            if len(exploration_cumulative_final_paths) == 1:
+                self._append_result_file(
+                    exploration_cumulative_final_paths[0],
+                    'exploration_cumulative',
+                )
+            else:
+                cumulative_grid_work_path = f"{output_base}_exploration_cumulative_grid.png"
+                cumulative_grid_final_path = f"{final_base}_exploration_cumulative_grid.png"
+                if render_open_field_image_grid(
+                    exploration_cumulative_work_paths,
+                    cumulative_grid_work_path,
+                    title=f"{video_name} | NOR Cumulative Object Exploration",
+                    style=visual_style,
+                ):
+                    self._append_result_file(
+                        _export_result_file(cumulative_grid_work_path, cumulative_grid_final_path),
+                        'exploration_cumulative',
+                    )
+                else:
+                    self._log(f"Failed to save NOR cumulative exploration grid: {cumulative_grid_final_path}")
 
         if generate_video and self.is_running:
             self._render_annotated_video(
@@ -539,6 +612,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             temporal_end_frame=end_frame,
         )
         render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
+        pose_coordinator = PoseInferenceCoordinator(vision_config, render_trackers)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         frame_idx = 0
         source_frames_done = 0
@@ -564,19 +638,30 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                 analysis_frame = self._resize_for_sampling(frame, sampling)
                 gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
                 begin_frame_cache(bg_subtractor, current_frame_no)
-                results = [
-                    tracker.update(
-                        analysis_frame,
-                        current_time,
-                        gray,
-                        bg_subtractor,
-                        morph_processor,
-                        detector,
-                        include_trajectory=True,
-                        dt_s=current_dt,
+                pose_frame = pose_coordinator.infer(analysis_frame)
+                fallback_active = str(vision_config.get('tracking_backend') or 'classical') != 'classical'
+                results = []
+                for tracker in render_trackers:
+                    pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
+                    results.append(
+                        tracker.update(
+                            analysis_frame,
+                            current_time,
+                            gray,
+                            bg_subtractor,
+                            morph_processor,
+                            detector,
+                            include_trajectory=True,
+                            dt_s=current_dt,
+                            pose_observation=pose_observation,
+                            tracking_source='classical_fallback' if fallback_active else 'classical',
+                            fallback_reason=(
+                                pose_frame.error
+                                or vision_config.get('tracking_fallback_reason')
+                                or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
+                            ) if pose_observation is None else None,
+                        )
                     )
-                    for tracker in render_trackers
-                ]
                 previous_analyzed_frame = current_frame_no
                 result_frame = draw_novel_object_results(analysis_frame, list(zip(render_trackers, results)))
                 writer.write(result_frame)
@@ -594,6 +679,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                         f'Rendering NOR video {source_frames_done}/{frames_to_process} ({{progress}}%)',
                     )
         finally:
+            pose_coordinator.close()
             cap.release()
             writer.release()
         return os.path.exists(output_video_path)

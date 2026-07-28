@@ -34,6 +34,18 @@ MouseScope 是一套面向实验室日常工作的本地桌面平台，用于把
 
 MouseScope is a local desktop platform for practical lab workflows. It connects project organization, video import, analysis-range setup, calibration, ROI or maze setup, parameter preview, batch analysis, and result review in one interface. It covers common assays including TST, FST, Morris Water Maze, OFT, NOR, EPM, Y-Maze, and Light-Dark Box while the `Project Workspace` and `Quick Analysis` entry points remain available.
 
+OFT/NOR 的第三阶段配置页还提供独立的 DeepLabCut 姿态后端入口和可复用、不可变版本的姿态模型档案；当前第一版已接通零样本/自定义模型预览、正式逐帧分析、纠错标注继承和外部训练登记。
+
+DeepLabCut/PyTorch 使用独立环境，不进入 MouseScope 或 PyInstaller 主依赖。首次使用运行：
+
+```bash
+python tools/setup_dlc_worker.py
+```
+
+脚本创建 `.venv-dlc` 并安装官方 PyTorch DeepLabCut；MouseScope 重启后会自动发现它。已有独立环境也可设置 `MOUSESCOPE_DLC_PYTHON=/path/to/python`。worker 使用官方 `superanimal_topviewmouse`、`hrnet_w32` 和 `fasterrcnn_resnet50_fpn_v2`，通过常驻协议复用模型；可用 `MOUSESCOPE_DLC_DEVICE=cuda:0` 指定设备。模型首次运行会下载官方权重。
+
+SuperAnimal 模型权重按其官方模型卡仅供学术、非商业研究使用；部署前请核对适用许可。
+
 ## 两种入口 | Two Entry Points
 
 ### 项目工作台 | Project Workspace
@@ -411,8 +423,8 @@ MouseScope/
   MouseScope is a research-assistance tool. Raw videos and annotated outputs should still be checked before formal interpretation.
 - 跟踪效果会受到光照、背景、阴影、反光、视角稳定性和视频质量影响。
   Tracking quality depends on lighting, background, shadows, glare, camera stability, and video quality.
-- MouseScope 主要基于经典计算机视觉方法，不等同于完整姿态估计。
-  MouseScope mainly uses classical computer vision and is not equivalent to full pose estimation.
+- MouseScope 默认使用经典计算机视觉；OFT/NOR 可选独立 DeepLabCut 姿态 worker，并在不可用或低置信度时逐帧回退经典视觉。
+  MouseScope defaults to classical computer vision; OFT/NOR can optionally use an isolated DeepLabCut pose worker with per-frame classical fallback.
 - NOR 探索判定包含头向和尾部证据的启发式逻辑，不能完全替代人工专业判断。
   NOR exploration scoring uses heuristic head-direction and tail-evidence logic and should not fully replace expert review.
 

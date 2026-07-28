@@ -81,6 +81,24 @@ class UserEntrypointGuardTest(unittest.TestCase):
         finally:
             mousescope_app.analysis_sessions.delete(session_id)
 
+    def test_mpeg_extensions_are_accepted_by_local_path_validation(self):
+        with TemporaryDirectory() as temp_dir:
+            paths = []
+            for filename in ("recording.mpg", "recording.mpeg"):
+                path = Path(temp_dir) / filename
+                path.write_bytes(b"mpeg")
+                paths.append(str(path))
+
+            response = self.client.post(
+                "/api/validate_local_paths",
+                json={"local_paths": "\n".join(paths)},
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["valid_count"], 2)
+
     def test_single_video_settings_are_validated_on_analysis_config_api(self):
         session_id = self._seed_single_session()
         try:

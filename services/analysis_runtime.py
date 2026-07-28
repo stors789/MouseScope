@@ -39,6 +39,7 @@ from open_field import (
 from novel_object import (
     NovelObjectTracker,
     draw_novel_object_results,
+    render_novel_object_exploration_cumulative,
     render_novel_object_heatmap,
     render_novel_object_trackmap,
 )

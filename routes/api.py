@@ -57,6 +57,13 @@ from services.roi_templates import (
     canonical_assay,
     materialize_template,
 )
+from services.pose_model_profiles import (
+    DEFAULT_KEYPOINT_SCHEMA,
+    SUPERANIMAL_MODEL_REF,
+    PoseModelValidationError,
+)
+from services.deeplabcut_runtime import DeepLabCutRuntime, DeepLabCutRuntimeError
+from services.pose_tracking import resolve_pose_runtime_config
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +76,7 @@ def register_api_routes(app, ctx) -> None:
     visual_style_store = getattr(ctx, "visual_style_store", None)
     experiment_defaults_store = getattr(ctx, "experiment_defaults_store", None)
     roi_template_store = getattr(ctx, "roi_template_store", None)
+    pose_model_profile_store = getattr(ctx, "pose_model_profile_store", None)
     # Compatibility for embedders that still inject the old store.
     legacy_y_maze_roi_template_store = getattr(ctx, "y_maze_roi_template_store", None)
     manual_video_cache_dir = Path(getattr(ctx, "DATA_DIR", tempfile.gettempdir())) / "manual_video_cache"
@@ -123,6 +131,14 @@ def register_api_routes(app, ctx) -> None:
             sess.get('draft_payload'),
             sess.get('video_infos'),
             project_context=sess.get('project_context'),
+        )
+
+    def _resolve_pose_runtime_config(config: dict, assay: str) -> None:
+        resolve_pose_runtime_config(
+            config,
+            assay,
+            profile_store=pose_model_profile_store,
+            runtime_status=DeepLabCutRuntime().status(),
         )
 
     def _ensure_writable_output_directory(value: str | os.PathLike) -> str:
@@ -242,6 +258,173 @@ def register_api_routes(app, ctx) -> None:
         if not deleted:
             return _api_error('ROI 模板不存在。', 404)
         return jsonify({'success': True})
+
+    @app.route('/api/pose_models/runtime', methods=['GET'])
+    def pose_model_runtime_status():
+        return jsonify({'success': True, **DeepLabCutRuntime().status()})
+
+    @app.route('/api/pose_models', methods=['GET'])
+    def list_pose_model_profiles():
+        if pose_model_profile_store is None:
+            return _api_error('姿态模型档案存储未配置。', 500, code='pose_store_missing')
+        try:
+            profiles = pose_model_profile_store.list_profiles(request.args.get('assay'))
+        except PoseModelValidationError as exc:
+            return _api_error(str(exc), 400, code='pose_profile_invalid')
+        return jsonify({'success': True, 'profiles': profiles})
+
+    @app.route('/api/pose_models/<profile_id>', methods=['GET'])
+    def get_pose_model_profile(profile_id):
+        if pose_model_profile_store is None:
+            return _api_error('姿态模型档案存储未配置。', 500, code='pose_store_missing')
+        try:
+            profile = pose_model_profile_store.get_profile(
+                profile_id,
+                version_id=request.args.get('version'),
+                include_annotations=request.args.get('include_annotations') in {'1', 'true', 'yes'},
+            )
+        except KeyError:
+            return _api_error('姿态模型档案或版本不存在。', 404, code='pose_profile_not_found')
+        return jsonify({'success': True, 'profile': profile})
+
+    @app.route('/api/pose_models', methods=['POST'])
+    def create_pose_model_profile():
+        if pose_model_profile_store is None:
+            return _api_error('姿态模型档案存储未配置。', 500, code='pose_store_missing')
+        data = request.get_json(silent=True) or {}
+        try:
+            profile = pose_model_profile_store.create_profile(
+                name=data.get('name'),
+                assays=data.get('assays') or [data.get('assay')],
+                metadata=data.get('metadata'),
+                keypoint_schema=data.get('keypoint_schema'),
+            )
+        except PoseModelValidationError as exc:
+            return _api_error(str(exc), 400, code='pose_profile_invalid')
+        return jsonify({'success': True, 'profile': profile})
+
+    @app.route('/api/pose_models/<profile_id>/versions', methods=['POST'])
+    def create_pose_model_version(profile_id):
+        if pose_model_profile_store is None:
+            return _api_error('姿态模型档案存储未配置。', 500, code='pose_store_missing')
+        data = request.get_json(silent=True) or {}
+        try:
+            version = pose_model_profile_store.create_version(
+                profile_id,
+                parent_version=str(data.get('parent_version') or ''),
+                annotations=data.get('annotations'),
+                metadata=data.get('metadata'),
+                weight_reference=data.get('weights'),
+                training_status=data.get('training_status') or 'awaiting_external_training',
+            )
+        except KeyError:
+            return _api_error('父模型版本不存在。', 404, code='pose_parent_not_found')
+        except PoseModelValidationError as exc:
+            return _api_error(str(exc), 400, code='pose_version_invalid')
+        return jsonify({'success': True, 'version': version})
+
+    @app.route('/api/pose_preview/<session_id>', methods=['POST'])
+    def pose_model_preview(session_id):
+        """Run one zero-shot/custom-model pose preview through an optional worker."""
+        sess = analysis_sessions.get(session_id)
+        if not sess:
+            return _api_error('会话不存在', 404, code='session_not_found')
+        assay = str(sess.get('experiment_type') or '')
+        if assay not in {'open_field', 'novel_object'}:
+            return _api_error('当前实验不支持姿态模型预览。', 400, code='pose_assay_unsupported')
+        data = request.get_json(silent=True) or {}
+        try:
+            video_index = int(data.get('video') or 0)
+            frame_index = max(0, int(data.get('frame') or 0))
+        except (TypeError, ValueError):
+            return _api_error('视频或帧索引无效。', 400, code='pose_frame_invalid')
+        paths = sess.get('video_paths') or []
+        if not 0 <= video_index < len(paths):
+            return _api_error('视频索引超出范围。', 400, code='pose_video_invalid')
+
+        model_reference = SUPERANIMAL_MODEL_REF
+        keypoint_schema = DEFAULT_KEYPOINT_SCHEMA
+        profile_id = str(data.get('profile_id') or '').strip()
+        version_id = str(data.get('version_id') or '').strip() or None
+        if profile_id:
+            if pose_model_profile_store is None:
+                return _api_error('姿态模型档案存储未配置。', 500, code='pose_store_missing')
+            try:
+                profile = pose_model_profile_store.get_profile(
+                    profile_id,
+                    version_id=version_id,
+                    include_annotations=False,
+                )
+            except KeyError:
+                return _api_error('姿态模型档案或版本不存在。', 404, code='pose_profile_not_found')
+            if assay not in (profile.get('assays') or []):
+                return _api_error('所选姿态模型不适用于当前实验。', 400, code='pose_profile_assay_mismatch')
+            version = (profile.get('versions') or [])[-1]
+            weights = version.get('weights') or {}
+            training_status = str((version.get('training') or {}).get('status') or '')
+            if training_status not in {'pretrained', 'ready'} or weights.get('kind') == 'pending':
+                return jsonify(
+                    {
+                        'success': False,
+                        'fallback': True,
+                        'effective_backend': 'classical',
+                        'error': '所选模型版本尚未完成训练并登记权重，当前预览继续使用经典视觉。',
+                        'code': 'pose_model_training_incomplete',
+                    }
+                )
+            model_reference = str(weights.get('reference') or model_reference)
+            keypoint_schema = version.get('keypoint_schema') or keypoint_schema
+
+        runtime = DeepLabCutRuntime()
+        runtime_status = runtime.status()
+        if not runtime_status.get('available'):
+            return jsonify(
+                {
+                    'success': False,
+                    'fallback': True,
+                    'effective_backend': 'classical',
+                    'error': runtime_status.get('message'),
+                    'code': runtime_status.get('code'),
+                }
+            )
+        orientation = None
+        fps = None
+        raw_configs = (sess.get('draft_payload') or {}).get('per_video_configs') or []
+        if video_index < len(raw_configs) and isinstance(raw_configs[video_index], dict):
+            orientation = raw_configs[video_index].get('orientation_override')
+            fps = raw_configs[video_index].get('fps_override')
+        frame = read_video_frame(paths[video_index], frame_index, fps=fps, orientation_override=orientation)
+        if frame is None:
+            return _api_error('无法读取所选预览帧。', 400, code='pose_frame_read_failed')
+        try:
+            result = runtime.preview_frame(
+                frame,
+                model_reference=model_reference,
+                keypoint_schema=keypoint_schema,
+                max_individuals=max(1, len(data.get('rois') or [])),
+            )
+        except DeepLabCutRuntimeError as exc:
+            logger.warning('DLC preview failed: %s', exc)
+            return jsonify(
+                {
+                    'success': False,
+                    'fallback': True,
+                    'effective_backend': 'classical',
+                    'error': str(exc),
+                    'code': 'pose_preview_failed',
+                }
+            )
+        return jsonify(
+            {
+                'success': True,
+                'effective_backend': 'deeplabcut',
+                'profile_id': profile_id or None,
+                'version_id': version_id,
+                'frame': frame_index,
+                'frame_size': {'width': int(frame.shape[1]), 'height': int(frame.shape[0])},
+                **result,
+            }
+        )
 
     # Keep old API paths working for integrations while the UI uses the generic API.
     @app.route('/api/y_maze_roi_templates', methods=['GET', 'POST'])
@@ -1774,6 +1957,8 @@ def register_api_routes(app, ctx) -> None:
             vision_config = build_analysis_config(experiment_type, sess, data, global_defaults=global_defaults)
             if visual_style_store is not None:
                 vision_config['visual_style'] = visual_style_store.get_style()
+
+        _resolve_pose_runtime_config(vision_config, experiment_type)
 
         reproducibility_seed = apply_deterministic_seed(
             sess.get('reproducibility_seed') or vision_config.get('reproducibility_seed') or DEFAULT_RANDOM_SEED

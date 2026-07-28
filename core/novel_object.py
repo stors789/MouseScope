@@ -99,6 +99,11 @@ def sanitize_name(text: str, fallback: str = "nor") -> str:
 
 _TEXT_FONT_CACHE: Dict[int, Any] = {}
 _TEXT_FONT_CANDIDATES = [
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     r"C:\Windows\Fonts\msyh.ttc",
     r"C:\Windows\Fonts\msyhbd.ttc",
     r"C:\Windows\Fonts\simhei.ttf",
@@ -1261,6 +1266,86 @@ class NovelObjectTracker:
 
         return empty
 
+    def _head_state_from_pose(self, pose_observation: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not isinstance(pose_observation, dict):
+            return None
+        points = pose_observation.get("keypoints") or {}
+        body = points.get("body_center")
+        nose = points.get("nose")
+        threshold = float(pose_observation.get("confidence_threshold", 0.8))
+
+        def usable(point: Any) -> bool:
+            return bool(
+                isinstance(point, dict)
+                and point.get("visible", True)
+                and float(point.get("confidence", 0.0)) >= threshold
+            )
+
+        if not usable(body) or not usable(nose):
+            return None
+        body_px = (float(body["x"]), float(body["y"]))
+        nose_px = (float(nose["x"]), float(nose["y"]))
+        body_cm = self.project_point_to_cm(body_px)
+        nose_cm = self.project_point_to_cm(nose_px)
+        left_ear = points.get("left_ear")
+        right_ear = points.get("right_ear")
+        if usable(left_ear) and usable(right_ear):
+            origin_px = (
+                (float(left_ear["x"]) + float(right_ear["x"])) / 2.0,
+                (float(left_ear["y"]) + float(right_ear["y"])) / 2.0,
+            )
+            origin_cm = self.project_point_to_cm(origin_px)
+            confidence = min(
+                float(body["confidence"]),
+                float(nose["confidence"]),
+                float(left_ear["confidence"]),
+                float(right_ear["confidence"]),
+            )
+            method = "deeplabcut_ears"
+        else:
+            origin_cm = body_cm
+            confidence = min(float(body["confidence"]), float(nose["confidence"]))
+            method = "deeplabcut_body"
+        vector_cm = (
+            float(nose_cm[0] - origin_cm[0]),
+            float(nose_cm[1] - origin_cm[1]),
+        )
+        if _unit_vector(vector_cm) is None:
+            return None
+        nose_distances_cm: List[Optional[float]] = []
+        object_angles_deg: List[Optional[float]] = []
+        for obj in self.objects:
+            nose_vec = (
+                float(obj["point_cm"][0] - nose_cm[0]),
+                float(obj["point_cm"][1] - nose_cm[1]),
+            )
+            nose_distances_cm.append(float(math.hypot(nose_vec[0], nose_vec[1])))
+            object_vec = (
+                float(obj["point_cm"][0] - origin_cm[0]),
+                float(obj["point_cm"][1] - origin_cm[1]),
+            )
+            object_angles_deg.append(_angle_deg(vector_cm, object_vec))
+        return {
+            "point_px": nose_px,
+            "point_cm": nose_cm,
+            "vector_cm": vector_cm,
+            "tail_point_px": None,
+            "tail_point_cm": None,
+            "tail_root_px": None,
+            "confidence": confidence,
+            "estimated": True,
+            "axis_ratio": None,
+            "method": method,
+            "body_contour": None,
+            "body_centroid": body_px,
+            "body_centroid_cm": body_cm,
+            "body_threshold_polarity": None,
+            "tail_contour": None,
+            "tail_confidence": None,
+            "nose_distances_cm": nose_distances_cm,
+            "object_angles_deg": object_angles_deg,
+        }
+
     def update(
         self,
         frame: np.ndarray,
@@ -1271,6 +1356,9 @@ class NovelObjectTracker:
         detector,
         include_trajectory: bool = True,
         dt_s: Optional[float] = None,
+        pose_observation: Optional[Dict[str, Any]] = None,
+        tracking_source: Optional[str] = None,
+        fallback_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         try:
@@ -1278,7 +1366,22 @@ class NovelObjectTracker:
         except (TypeError, ValueError):
             current_dt = 1.0 / max(float(self.fps), 1e-6)
         current_dt = max(current_dt, 1e-6)
-        detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
+        pose_body = (
+            (pose_observation.get("keypoints") or {}).get("body_center")
+            if isinstance(pose_observation, dict)
+            else None
+        )
+        if isinstance(pose_body, dict) and pose_body.get("visible", True):
+            detection = {
+                "centroid": (float(pose_body["x"]), float(pose_body["y"])),
+                "bbox": None,
+                "contour": None,
+            }
+            fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            frame_tracking_source = "deeplabcut"
+        else:
+            detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
+            frame_tracking_source = tracking_source or "classical"
 
         detected = detection is not None
         contour = detection.get("contour") if detection else None
@@ -1376,7 +1479,9 @@ class NovelObjectTracker:
             if centroid_px is not None:
                 self.trajectory_px_live.append(centroid_px)
 
-        head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm, gray=gray)
+        head_state = self._head_state_from_pose(pose_observation)
+        if head_state is None:
+            head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm, gray=gray)
         head_confidence = float(head_state.get("confidence") or 0.0)
         head_confident = bool(
             self.use_head_direction
@@ -1400,9 +1505,11 @@ class NovelObjectTracker:
         distances_cm = self._object_distances_cm(contour, arena_xy_cm)
         nose_distances_cm = head_state.get("nose_distances_cm") or [None for _ in self.objects]
         object_angles_deg = head_state.get("object_angles_deg") or [None for _ in self.objects]
+        pose_head = str(head_state.get("method") or "").startswith("deeplabcut")
+        near_distances_cm = nose_distances_cm if pose_head else distances_cm
         near_flags = [
             bool(detected) and dist is not None and dist <= self.interaction_radius_cm
-            for dist in distances_cm
+            for dist in near_distances_cm
         ]
         head_aligned_flags = [
             bool(detected)
@@ -1505,6 +1612,13 @@ class NovelObjectTracker:
             "body_threshold_polarity": head_state.get("body_threshold_polarity"),
             "tail_confidence": round(float(head_state["tail_confidence"]), 3) if head_state.get("tail_confidence") is not None else None,
             "exploration_mode": exploration_mode,
+            "tracking_source": frame_tracking_source,
+            "tracking_fallback_reason": fallback_reason,
+            "body_center_confidence": (
+                round(float(pose_body.get("confidence", 0.0)), 4)
+                if isinstance(pose_body, dict)
+                else None
+            ),
         }
 
         for idx, obj in enumerate(self.objects):
@@ -1556,6 +1670,8 @@ class NovelObjectTracker:
             "head_direction_method": head_state.get("method"),
             "exploration_mode": exploration_mode,
             "record": record,
+            "tracking_source": frame_tracking_source,
+            "tracking_fallback_reason": fallback_reason,
         }
 
     def build_summary(self) -> Dict[str, Any]:
@@ -1600,6 +1716,19 @@ class NovelObjectTracker:
             "min_valid_exploration_s": self.min_valid_exploration_s,
             "arena_width_cm": self.arena_width_cm,
             "arena_height_cm": self.arena_height_cm,
+            "deeplabcut_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "deeplabcut"
+            ),
+            "classical_fallback_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "classical_fallback"
+            ),
+            "frame_tracking_fallback_reasons": ";".join(
+                sorted({
+                    str(record.get("tracking_fallback_reason"))
+                    for record in self.frame_records
+                    if record.get("tracking_fallback_reason")
+                })
+            ) or None,
         }
 
         total_exploration = 0.0
@@ -2009,5 +2138,165 @@ def render_novel_object_trackmap(
         cv2.circle(canvas, (ox, oy), max(2, border_thickness), color, -1, cv2.LINE_AA)
 
     if write_image_unicode(output_path, canvas):
+        return output_path
+    return None
+
+
+def _exploration_curve_label(obj: Dict[str, Any], phase: str) -> str:
+    """Build an object-first legend label that remains useful outside recognition."""
+    name = str(obj.get("name") or "Object").strip() or "Object"
+    role = str(obj.get("role") or "").strip().lower()
+    if str(phase or "").strip().lower() == "recognition" and role in {"familiar", "novel"}:
+        return f"{name} ({'Familiar' if role == 'familiar' else 'Novel'})"
+    return name
+
+
+def build_exploration_cumulative_series(
+    tracker: NovelObjectTracker,
+) -> Tuple[List[float], List[float], List[float]]:
+    """Return elapsed seconds and dt-weighted cumulative exploration for both objects."""
+    rows = [row for row in tracker.frame_records if bool(row.get("in_stats_window"))]
+    if not rows:
+        return [], [], []
+
+    default_dt = 1.0 / max(float(tracker.fps), 1e-6)
+    x_values: List[float] = [0.0]
+    object_1: List[float] = [0.0]
+    object_2: List[float] = [0.0]
+    cumulative = [0.0, 0.0]
+    first_time = float(rows[0].get("time_s") or 0.0)
+    previous_x = 0.0
+
+    for row in rows:
+        try:
+            duration = max(0.0, float(row.get("dt_s") or default_dt))
+        except (TypeError, ValueError):
+            duration = default_dt
+
+        window_time = row.get("window_time_s")
+        try:
+            raw_start_x = (
+                float(window_time)
+                if window_time is not None
+                else float(row.get("time_s") or first_time) - first_time
+            )
+        except (TypeError, ValueError):
+            raw_start_x = previous_x
+
+        # Each observation occupies [start_x, end_x].  Append the old value at
+        # its start before adding dt so gaps remain horizontal instead of
+        # becoming a misleading diagonal.  Clamp overlapping/non-monotonic
+        # timestamps to the preceding endpoint while preserving their dt.
+        start_x = max(previous_x, max(0.0, raw_start_x))
+        x_values.append(start_x)
+        object_1.append(cumulative[0])
+        object_2.append(cumulative[1])
+
+        for idx in range(2):
+            if bool(row.get(f"object_{idx + 1}_exploring")):
+                cumulative[idx] += duration
+
+        end_x = start_x + duration
+        x_values.append(end_x)
+        object_1.append(cumulative[0])
+        object_2.append(cumulative[1])
+        previous_x = end_x
+
+    return x_values, object_1, object_2
+
+
+def render_novel_object_exploration_cumulative(
+    tracker: NovelObjectTracker,
+    output_path: str,
+    style: Any | None = None,
+) -> Optional[str]:
+    """Render a publication-style, real-time cumulative exploration chart."""
+    canvas_width, canvas_height = 960, 600
+    canvas = np.full(
+        (canvas_height, canvas_width, 3),
+        style_color(style, "trackmap", "background"),
+        dtype=np.uint8,
+    )
+    painter = _UnicodeTextPainter(canvas)
+    axis_color = style_color(style, "trackmap", "border")
+    grid_color = style_color(style, "trackmap", "grid_border")
+    text_color = style_color(style, "trackmap", "text")
+    series_colors = [
+        _paper_role_color(tracker.objects[0].get("role"), style),
+        _paper_role_color(tracker.objects[1].get("role"), style),
+    ]
+    if series_colors[0] == series_colors[1]:
+        series_colors[1] = style_color(style, "trackmap", "track")
+
+    left, top, right, bottom = 110, 118, 910, 500
+    plot_width = right - left
+    plot_height = bottom - top
+    times, cumulative_1, cumulative_2 = build_exploration_cumulative_series(tracker)
+    max_time = max(times[-1] if times else 0.0, 1.0)
+    max_cumulative = max(
+        cumulative_1[-1] if cumulative_1 else 0.0,
+        cumulative_2[-1] if cumulative_2 else 0.0,
+        1.0,
+    )
+
+    painter.text((left, 24), f"{tracker.roi_name} | Cumulative Object Exploration", text_color, 28, 0)
+    labels = [
+        _exploration_curve_label(tracker.objects[0], tracker.phase),
+        _exploration_curve_label(tracker.objects[1], tracker.phase),
+    ]
+    legend_x = left
+    for idx, label in enumerate(labels):
+        cv2.line(canvas, (legend_x, 86), (legend_x + 36, 86), series_colors[idx], 5, cv2.LINE_AA)
+        painter.text((legend_x + 45, 71), label, text_color, 18, 0)
+        label_width, _ = painter.measure(label, 18)
+        legend_x += 45 + label_width + 32
+
+    for tick in range(6):
+        ratio = tick / 5.0
+        x = int(round(left + ratio * plot_width))
+        y = int(round(bottom - ratio * plot_height))
+        cv2.line(canvas, (x, top), (x, bottom), grid_color, 1, cv2.LINE_AA)
+        cv2.line(canvas, (left, y), (right, y), grid_color, 1, cv2.LINE_AA)
+        painter.text((x - 18, bottom + 13), f"{max_time * ratio:.0f}", text_color, 16, 0)
+        painter.text((42, y - 10), f"{max_cumulative * ratio:.1f}", text_color, 16, 0)
+
+    cv2.line(canvas, (left, bottom), (right, bottom), axis_color, 2, cv2.LINE_AA)
+    cv2.line(canvas, (left, top), (left, bottom), axis_color, 2, cv2.LINE_AA)
+    painter.text((left + plot_width // 2 - 55, 548), "Time (s)", text_color, 19, 0)
+    painter.text((10, 92), "Cumulative exploration time (s)", text_color, 17, 0)
+
+    if times:
+        def _points(values: List[float]) -> np.ndarray:
+            return np.asarray(
+                [
+                    [
+                        int(round(left + (time_value / max_time) * plot_width)),
+                        int(round(bottom - (value / max_cumulative) * plot_height)),
+                    ]
+                    for time_value, value in zip(times, values)
+                ],
+                dtype=np.int32,
+            ).reshape(-1, 1, 2)
+
+        for idx, values in enumerate((cumulative_1, cumulative_2)):
+            points = _points(values)
+            cv2.polylines(canvas, [points], False, series_colors[idx], 4, cv2.LINE_AA)
+            end_x, end_y = tuple(int(v) for v in points[-1, 0])
+            cv2.circle(canvas, (end_x, end_y), 5, series_colors[idx], -1, cv2.LINE_AA)
+            label_y = end_y - 24 if idx == 0 else end_y + 8
+            label_y = int(np.clip(label_y, top + 4, bottom - 20))
+            painter.text((max(left + 8, end_x - 72), label_y), f"{values[-1]:.2f} s", series_colors[idx], 17, 0)
+    else:
+        message = "No records in the statistics window"
+        message_width, _ = painter.measure(message, 21)
+        painter.text(
+            (left + (plot_width - message_width) // 2, top + plot_height // 2),
+            message,
+            text_color,
+            21,
+            0,
+        )
+
+    if write_image_unicode(output_path, painter.finish()):
         return output_path
     return None

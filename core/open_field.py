@@ -382,6 +382,9 @@ class OpenFieldTracker:
         morph_processor,
         detector,
         dt_s: Optional[float] = None,
+        pose_observation: Optional[Dict[str, Any]] = None,
+        tracking_source: Optional[str] = None,
+        fallback_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         try:
@@ -389,7 +392,22 @@ class OpenFieldTracker:
         except (TypeError, ValueError):
             current_dt = 1.0 / max(float(self.fps), 1e-6)
         current_dt = max(current_dt, 1e-6)
-        detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
+        pose_body = (
+            (pose_observation.get("keypoints") or {}).get("body_center")
+            if isinstance(pose_observation, dict)
+            else None
+        )
+        if isinstance(pose_body, dict) and pose_body.get("visible", True):
+            detection = {
+                "centroid": (float(pose_body["x"]), float(pose_body["y"])),
+                "bbox": None,
+                "contour": None,
+            }
+            fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            frame_tracking_source = "deeplabcut"
+        else:
+            detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
+            frame_tracking_source = tracking_source or "classical"
 
         centroid_px: Optional[Tuple[float, float]] = None
         bbox = None
@@ -525,6 +543,13 @@ class OpenFieldTracker:
             "in_outer": bool(zone_flags["in_outer"]) if in_stats_window else False,
             "in_wall": bool(zone_flags["in_wall"]) if in_stats_window else False,
             "zone": zone_label if arena_xy_cm is not None else "Unknown",
+            "tracking_source": frame_tracking_source,
+            "tracking_fallback_reason": fallback_reason,
+            "body_center_confidence": (
+                round(float(pose_body.get("confidence", 0.0)), 4)
+                if isinstance(pose_body, dict)
+                else None
+            ),
         }
         self.frame_records.append(record)
 
@@ -545,6 +570,8 @@ class OpenFieldTracker:
             "trajectory_px": list(self.trajectory_px_live),
             "in_stats_window": bool(in_stats_window),
             "record": record,
+            "tracking_source": frame_tracking_source,
+            "tracking_fallback_reason": fallback_reason,
         }
 
     def build_summary(self) -> Dict[str, Any]:
@@ -588,6 +615,19 @@ class OpenFieldTracker:
             "center_ratio_y": self.center_ratio_y,
             "wall_margin_cm": self.wall_margin_cm,
             "movement_threshold_cm_s": self.movement_threshold_cm_s,
+            "deeplabcut_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "deeplabcut"
+            ),
+            "classical_fallback_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "classical_fallback"
+            ),
+            "frame_tracking_fallback_reasons": ";".join(
+                sorted({
+                    str(record.get("tracking_fallback_reason"))
+                    for record in self.frame_records
+                    if record.get("tracking_fallback_reason")
+                })
+            ) or None,
         }
         return summary
 

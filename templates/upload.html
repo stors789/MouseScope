@@ -121,7 +121,7 @@
     <section class="card upload-panel">
         <div class="card-header">
             <h5 class="cyber-text mb-0" data-i18n="upload.title">视频文件上传</h5>
-            <span class="upload-format-note" data-page-i18n="panel.formats">支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件</span>
+            <span class="upload-format-note" data-page-i18n="panel.formats">支持 .mp4 .avi .mov .mkv .wmv .mpg .mpeg，可一次选择多个文件</span>
         </div>
         <div class="card-body">
             <form method="POST" action="{{ url_for('do_upload') }}" enctype="multipart/form-data" id="uploadForm">
@@ -149,8 +149,8 @@
                     <div class="local-drop-zone upload-drop-main" id="localDropZone" data-tour-id="upload-local-drop">
                         <div class="text-center">
                             <h5 data-i18n="upload.local.drag.hint">拖拽视频文件到这里</h5>
-                            <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv .wmv 格式，可同时拖入多个文件</p>
-                            <input type="file" class="d-none" id="localFileInput" name="videos" accept=".mp4,.avi,.mov,.mkv,.wmv" multiple>
+                            <p class="text-muted mb-3" data-i18n="upload.local.drag.sub">支持 .mp4 .avi .mov .mkv .wmv .mpg .mpeg 格式，可同时拖入多个文件</p>
+                            <input type="file" class="d-none" id="localFileInput" name="videos" accept=".mp4,.avi,.mov,.mkv,.wmv,.mpg,.mpeg" multiple>
                             <button type="button" class="btn btn-primary" onclick="document.getElementById('localFileInput').click()">
                                 <i class="fas fa-folder-open me-2"></i><span data-i18n="upload.local.or.select">或点击选择文件</span>
                             </button>
@@ -215,7 +215,7 @@
             zh: {
                 'hero.title': '快速分析',
                 'hero.copy': '选择实验模块并导入视频；起止时间、FPS 和画面方向将在下一页统一设置。',
-                'panel.formats': '支持 .mp4 .avi .mov .mkv .wmv，可一次选择多个文件',
+                'panel.formats': '支持 .mp4 .avi .mov .mkv .wmv .mpg .mpeg，可一次选择多个文件',
                 'next.title': '下一步：分析配置',
                 'next.copy': '起止时间、FPS、画面方向和输出目录将在下一页统一设置。',
                 'next.action': '进入分析配置'
@@ -223,7 +223,7 @@
             en: {
                 'hero.title': 'Quick Analysis',
                 'hero.copy': 'Choose an experiment module and import videos. Set timing, FPS, and orientation together on the next page.',
-                'panel.formats': 'Supports .mp4 .avi .mov .mkv .wmv, with multiple files at once',
+                'panel.formats': 'Supports .mp4 .avi .mov .mkv .wmv .mpg .mpeg, with multiple files at once',
                 'next.title': 'Next: Analysis Configuration',
                 'next.copy': 'Timing, FPS, orientation, and the output folder are configured together on the next page.',
                 'next.action': 'Open Analysis Configuration'
@@ -278,7 +278,7 @@
                     .then(({ok, data}) => {
                         if (data.normalized_paths) localPathsEl.value = data.normalized_paths;
                         if (!ok || !data.success) {
-                            throw new Error(data.error || trUploadGlobal('upload.validate.novideo', '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv）'));
+                            throw new Error(data.error || trUploadGlobal('upload.validate.novideo', '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv .mpg .mpeg）'));
                         }
                         const validCount = Number(data.valid_count || 0);
                         const invalidEntries = Array.isArray(data.invalid_entries) ? data.invalid_entries : [];
@@ -308,7 +308,7 @@
 
         const localDropZone = document.getElementById('localDropZone');
         const localFileInput = document.getElementById('localFileInput');
-        const validVideoExts = ['.mp4', '.avi', '.mov', '.mkv', '.wmv'];
+        const validVideoExts = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.mpg', '.mpeg'];
         const uploadForm = document.getElementById('uploadForm');
         const submitBtn = document.getElementById('submitBtn');
         let uploadInProgress = false;
@@ -420,7 +420,7 @@
         function selectVideoFiles(files) {
             const acceptedCount = mergeSelectedVideoFiles(files);
             if (acceptedCount === 0 && selectedVideoFiles.length === 0) {
-                alert((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.novideo'] : '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv）');
+                alert((typeof I18N !== 'undefined' && getLang) ? I18N[getLang()]['upload.validate.novideo'] : '没有检测到支持的视频文件（.mp4 .avi .mov .mkv .wmv .mpg .mpeg）');
                 return;
             }
             assignFilesToInput(selectedVideoFiles);

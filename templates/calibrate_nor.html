@@ -227,12 +227,14 @@
                 <div class="param-stack">
                     <div class="nor-panel mb-0" data-tour-id="nor-detection-params">
                         <h6 data-nor-i18n="detect.title">检测参数</h6>
+                        {% include "_pose_model_controls.html" %}
                         <div class="compact-grid">
                             <div>
                                 <label class="form-label" data-nor-i18n="detect.method">检测方式</label>
                                 <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">
                                     <option value="threshold" data-nor-i18n="detect.method.threshold">灰度阈值</option>
                                     <option value="static" data-nor-i18n="detect.method.static">静态背景减除</option>
+                                    <option value="temporal" data-nor-i18n="detect.method.temporal">时序背景</option>
                                 </select>
                             </div>
                             <div id="bgTypeWrap">
@@ -251,6 +253,15 @@
                                 <label class="form-label" data-nor-i18n="detect.gray_threshold">灰度阈值</label>
                                 <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
                                 <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                            </div>
+                            <div id="temporalSamplesWrap" style="display:none">
+                                <label class="form-label" data-nor-i18n="detect.temporal_samples">时序背景抽样帧数</label>
+                                <input type="number" class="form-control" id="temporalBgSamples" min="5" max="500" step="1" value="90" onchange="updateDebugPreview()">
+                            </div>
+                            <div id="temporalThresholdWrap" style="display:none">
+                                <label class="form-label" data-nor-i18n="detect.temporal_threshold">时序背景差分阈值</label>
+                                <input type="range" class="form-range" id="temporalDiffThreshold" min="1" max="255" value="25" oninput="syncRangeLabel('temporalDiffThreshold'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="temporalDiffThresholdLabel">25</span><span>255</span></div>
                             </div>
                             <div data-tour-id="nor-body-threshold">
                                 <label class="form-label" data-nor-i18n="detect.body_gray_threshold">第二灰度阈值（躯干/尾巴）</label>
@@ -356,6 +367,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/pose_model_controls.js') }}"></script>
 <script>
 const sessionId = '{{ session_id }}';
 const videoInfo = {{ video_info | tojson }};
@@ -438,9 +450,12 @@ const NOR_I18N = {
         'detect.method': '检测方式',
         'detect.method.threshold': '灰度阈值',
         'detect.method.static': '静态背景减除',
+        'detect.method.temporal': '时序背景',
         'detect.bg_type': '背景类型',
         'detect.bg_light': '浅色背景 / 深色鼠',
         'detect.bg_dark': '深色背景 / 浅色鼠',
+        'detect.temporal_samples': '时序背景抽样帧数',
+        'detect.temporal_threshold': '时序背景差分阈值',
         'detect.min_area': '最小面积',
         'detect.gray_threshold': '灰度阈值',
         'detect.body_gray_threshold': '第二灰度阈值（躯干/尾巴）',
@@ -548,9 +563,12 @@ const NOR_I18N = {
         'detect.method': 'Detection Method',
         'detect.method.threshold': 'Gray Threshold',
         'detect.method.static': 'Static Background Subtraction',
+        'detect.method.temporal': 'Temporal Background',
         'detect.bg_type': 'Background Type',
         'detect.bg_light': 'Light Background / Dark Mouse',
         'detect.bg_dark': 'Dark Background / Light Mouse',
+        'detect.temporal_samples': 'Temporal Background Samples',
+        'detect.temporal_threshold': 'Temporal Difference Threshold',
         'detect.min_area': 'Minimum Area',
         'detect.gray_threshold': 'Gray Threshold',
         'detect.body_gray_threshold': 'Second Gray Threshold (Body/Tail)',
@@ -668,9 +686,15 @@ function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
 }
 function defaultNorTuningParams() {
     return {
+        tracking_backend: 'classical',
+        pose_model_profile_id: null,
+        pose_model_version_id: null,
+        pose_confidence_threshold: 0.8,
         bg_method: 'threshold',
         bg_type: 'light',
         gray_threshold: 127,
+        temporal_bg_samples: 90,
+        temporal_diff_threshold: 25,
         body_gray_threshold: 95,
         erosion_kernel: 3,
         erosion_iter: 1,
@@ -692,9 +716,12 @@ function defaultNorTuningParams() {
 }
 function readNorTuningParamsFromControls() {
     return {
+        ...(window.MouseScopePoseModels ? window.MouseScopePoseModels.readConfig() : {}),
         bg_method: document.getElementById('bgMethod')?.value || 'threshold',
         bg_type: document.getElementById('bgType')?.value || 'light',
         gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        temporal_bg_samples: parseInt(document.getElementById('temporalBgSamples')?.value || '90', 10),
+        temporal_diff_threshold: parseInt(document.getElementById('temporalDiffThreshold')?.value || '25', 10),
         body_gray_threshold: parseInt(document.getElementById('bodyGrayThreshold')?.value || '95', 10),
         erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
         erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
@@ -715,10 +742,13 @@ function readNorTuningParamsFromControls() {
 }
 function applyNorTuningParamsToControls(params) {
     const merged = { ...defaultNorTuningParams(), ...(params || {}) };
+    if (window.MouseScopePoseModels) window.MouseScopePoseModels.applyConfig(merged);
     const fieldMap = {
         bgMethod: merged.bg_method,
         bgType: merged.bg_type,
         grayThreshold: merged.gray_threshold,
+        temporalBgSamples: merged.temporal_bg_samples,
+        temporalDiffThreshold: merged.temporal_diff_threshold,
         bodyGrayThreshold: merged.body_gray_threshold,
         erosionKernel: merged.erosion_kernel,
         erosionIter: merged.erosion_iter,
@@ -741,7 +771,7 @@ function applyNorTuningParamsToControls(params) {
     });
     const useHeadDirection = document.getElementById('useHeadDirection');
     if (useHeadDirection) useHeadDirection.checked = Boolean(merged.use_head_direction);
-    ['grayThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    ['grayThreshold', 'temporalDiffThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
 }
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
@@ -1140,6 +1170,11 @@ function updateBgMethodUI() {
     const grayThresholdWrap = document.getElementById('grayThresholdWrap');
     if (bgTypeWrap) bgTypeWrap.style.display = thresholdVisible ? '' : 'none';
     if (grayThresholdWrap) grayThresholdWrap.style.display = thresholdVisible ? '' : 'none';
+    const temporalVisible = method === 'temporal';
+    ['temporalSamplesWrap', 'temporalThresholdWrap'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.style.display = temporalVisible ? '' : 'none';
+    });
 }
 
 function debounce(key, fn, delay) {
@@ -1196,7 +1231,7 @@ window.onload = function () {
     applyCurrentVideoState();
     syncFrameControls();
     document.getElementById('phaseText').textContent = phaseLabel();
-    ['grayThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    ['grayThreshold', 'temporalDiffThreshold', 'bodyGrayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
     updateROIList();
     loadFrame(0);
@@ -1876,10 +1911,16 @@ function buildRequestBody(frameIdx) {
     return {
         frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
         video: currentVideoIdx,
+        tracking_backend: currentTuningParams.tracking_backend,
+        pose_model_profile_id: currentTuningParams.pose_model_profile_id,
+        pose_model_version_id: currentTuningParams.pose_model_version_id,
+        pose_confidence_threshold: currentTuningParams.pose_confidence_threshold,
         phase: phase,
         bg_method: currentTuningParams.bg_method,
         bg_type: currentTuningParams.bg_type,
         gray_threshold: currentTuningParams.gray_threshold,
+        temporal_bg_samples: currentTuningParams.temporal_bg_samples,
+        temporal_diff_threshold: currentTuningParams.temporal_diff_threshold,
         body_gray_threshold: currentTuningParams.body_gray_threshold,
         erosion_kernel: currentTuningParams.erosion_kernel,
         erosion_iter: currentTuningParams.erosion_iter,

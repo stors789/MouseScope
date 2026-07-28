@@ -65,7 +65,35 @@ def _coerce_bool(value: Any, default: bool = True) -> bool:
     return bool(value)
 
 
+def _tracking_backend(value: Any) -> str:
+    backend = str(value or "classical").strip().lower()
+    return backend if backend in {"classical", "deeplabcut", "auto"} else "classical"
+
+
+def _pose_tracking_fields(raw: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
+    requested = _tracking_backend(raw.get("tracking_backend", defaults.get("tracking_backend")))
+    return {
+        "tracking_backend": requested,
+        # Route startup resolves this requested backend against the optional
+        # DLC sidecar and selected immutable model version.
+        "tracking_backend_effective": "classical",
+        "tracking_fallback_reason": (
+            None if requested == "classical" else "deeplabcut_analysis_adapter_pending"
+        ),
+        "pose_model_profile_id": str(
+            raw.get("pose_model_profile_id", defaults.get("pose_model_profile_id")) or ""
+        ).strip() or None,
+        "pose_model_version_id": str(
+            raw.get("pose_model_version_id", defaults.get("pose_model_version_id")) or ""
+        ).strip() or None,
+        "pose_confidence_threshold": float(
+            raw.get("pose_confidence_threshold", defaults.get("pose_confidence_threshold", 0.8))
+        ),
+    }
+
+
 def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    tracking_defaults = _pose_tracking_fields({}, data)
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
     default_gray_threshold = int(data.get("gray_threshold", 127))
@@ -85,6 +113,7 @@ def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[
         sess,
         data,
         lambda raw_cfg: {
+            **_pose_tracking_fields(raw_cfg, tracking_defaults),
             "bg_method": raw_cfg.get("bg_method", default_bg_method),
             "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
             "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
@@ -104,6 +133,7 @@ def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[
     )
 
     return {
+        **tracking_defaults,
         "bg_method": default_bg_method,
         "gray_threshold": default_gray_threshold,
         "invert": str(default_bg_type).lower() == "dark",
@@ -128,6 +158,7 @@ def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[
 
 
 def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    tracking_defaults = _pose_tracking_fields({}, data)
     default_phase = data.get("phase", "recognition")
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
@@ -155,6 +186,7 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
         sess,
         data,
         lambda raw_cfg: {
+            **_pose_tracking_fields(raw_cfg, tracking_defaults),
             "bg_method": raw_cfg.get("bg_method", default_bg_method),
             "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
             "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",
@@ -182,6 +214,7 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
     )
 
     return {
+        **tracking_defaults,
         "bg_method": default_bg_method,
         "gray_threshold": default_gray_threshold,
         "invert": str(default_bg_type).lower() == "dark",

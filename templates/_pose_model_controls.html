@@ -1,0 +1,57 @@
+<div class="pose-model-controls border rounded-3 p-3 mb-3"
+     data-pose-model-controls
+     data-assay="{{ experiment_type }}"
+     data-session-id="{{ session_id }}">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+            <strong>姿态识别后端</strong>
+            <div class="mini-note mt-1">DeepLabCut 与背景建模彼此独立；不可用时会明确回退经典视觉。</div>
+        </div>
+        <span class="badge text-bg-secondary" id="poseRuntimeBadge">正在检查 DLC…</span>
+    </div>
+    <div class="compact-grid">
+        <div>
+            <label class="form-label" for="trackingBackend">追踪后端</label>
+            <select class="form-select" id="trackingBackend">
+                <option value="classical">经典视觉</option>
+                <option value="deeplabcut">DeepLabCut</option>
+                <option value="auto">自动回退</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="poseConfidenceThreshold">关键点置信度</label>
+            <input class="form-control" type="number" id="poseConfidenceThreshold"
+                   min="0" max="1" step="0.01" value="0.8">
+        </div>
+        <div>
+            <label class="form-label" for="poseModelProfile">姿态模型档案</label>
+            <select class="form-select" id="poseModelProfile">
+                <option value="">SuperAnimal-TopViewMouse（零样本）</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="poseModelVersion">不可变版本</label>
+            <select class="form-select" id="poseModelVersion">
+                <option value="">预训练基础版本</option>
+            </select>
+        </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+        <button class="btn btn-sm btn-outline-primary" type="button" id="posePreviewButton">
+            <i class="fas fa-wand-magic-sparkles me-1"></i>零样本/模型预览
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" id="poseCreateProfileButton">
+            <i class="fas fa-save me-1"></i>另存为模型档案
+        </button>
+        <button class="btn btn-sm btn-outline-warning" type="button" id="poseAddCorrectionButton" disabled>
+            <i class="fas fa-location-dot me-1"></i>保存当前纠错帧
+        </button>
+        <button class="btn btn-sm btn-outline-success" type="button" id="poseCreateVersionButton" disabled>
+            <i class="fas fa-code-branch me-1"></i>基于所选版本生成新版本
+        </button>
+    </div>
+    <div class="mini-note mt-2" id="poseModelStatus">
+        预览成功后可在右侧结果图中拖动关键点，再保存纠错帧。新版本只登记训练任务，不会伪造训练完成。
+    </div>
+    <div class="mini-note mt-1" id="poseCorrectionStatus"></div>
+</div>

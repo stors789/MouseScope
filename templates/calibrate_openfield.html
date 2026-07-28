@@ -202,12 +202,14 @@
                 <div class="param-stack">
                     <div class="oft-panel mb-0">
                         <h6 data-i18n="oft.calib.detect.title">检测参数</h6>
+                        {% include "_pose_model_controls.html" %}
                         <div class="compact-grid">
                             <div>
-                                <label class="form-label">检测方式</label>
+                                <label class="form-label" data-i18n="oft.calib.detect.method">检测方式</label>
                                 <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">
-                                    <option value="threshold">灰度阈值</option>
-                                    <option value="static">静态背景减除</option>
+                                    <option value="threshold" data-i18n="oft.calib.detect.method_threshold">灰度阈值</option>
+                                    <option value="static" data-i18n="oft.calib.detect.method_static">静态背景减除</option>
+                                    <option value="temporal" data-i18n="oft.calib.detect.method_temporal">时序背景</option>
                                 </select>
                             </div>
                             <div id="bgTypeWrap">
@@ -226,6 +228,15 @@
                                 <label class="form-label" data-i18n="oft.calib.detect.gray_threshold">灰度阈值</label>
                                 <input type="range" class="form-range" id="grayThreshold" min="0" max="255" value="127" oninput="syncRangeLabel('grayThreshold'); updateDebugPreview()">
                                 <div class="range-line"><span>0</span><span id="grayThresholdLabel">127</span><span>255</span></div>
+                            </div>
+                            <div id="temporalSamplesWrap" style="display:none">
+                                <label class="form-label" data-i18n="oft.calib.detect.temporal_samples">时序背景抽样帧数</label>
+                                <input type="number" class="form-control" id="temporalBgSamples" min="5" max="500" step="1" value="90" onchange="updateDebugPreview()">
+                            </div>
+                            <div id="temporalThresholdWrap" style="display:none">
+                                <label class="form-label" data-i18n="oft.calib.detect.temporal_threshold">时序背景差分阈值</label>
+                                <input type="range" class="form-range" id="temporalDiffThreshold" min="1" max="255" value="25" oninput="syncRangeLabel('temporalDiffThreshold'); updateDebugPreview()">
+                                <div class="range-line"><span>1</span><span id="temporalDiffThresholdLabel">25</span><span>255</span></div>
                             </div>
                             <div>
                                 <label class="form-label" data-i18n="oft.calib.detect.erosion_kernel">腐蚀核</label>
@@ -294,6 +305,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/pose_model_controls.js') }}"></script>
 <script>
 const sessionId = '{{ session_id }}';
 const videoInfo = {{ video_info | tojson }};
@@ -383,9 +395,15 @@ function projectSubjectSelectMarkup(index, roi, updateNameFn, fallbackLabel) {
 }
 function defaultTuningParams() {
     return {
+        tracking_backend: 'classical',
+        pose_model_profile_id: null,
+        pose_model_version_id: null,
+        pose_confidence_threshold: 0.8,
         bg_method: 'threshold',
         bg_type: 'light',
         gray_threshold: 127,
+        temporal_bg_samples: 90,
+        temporal_diff_threshold: 25,
         erosion_kernel: 3,
         erosion_iter: 1,
         dilation_kernel: 5,
@@ -401,9 +419,12 @@ function defaultTuningParams() {
 }
 function readTuningParamsFromControls() {
     return {
+        ...(window.MouseScopePoseModels ? window.MouseScopePoseModels.readConfig() : {}),
         bg_method: document.getElementById('bgMethod')?.value || 'threshold',
         bg_type: document.getElementById('bgType')?.value || 'light',
         gray_threshold: parseInt(document.getElementById('grayThreshold')?.value || '127', 10),
+        temporal_bg_samples: parseInt(document.getElementById('temporalBgSamples')?.value || '90', 10),
+        temporal_diff_threshold: parseInt(document.getElementById('temporalDiffThreshold')?.value || '25', 10),
         erosion_kernel: parseInt(document.getElementById('erosionKernel')?.value || '3', 10),
         erosion_iter: parseInt(document.getElementById('erosionIter')?.value || '1', 10),
         dilation_kernel: parseInt(document.getElementById('dilationKernel')?.value || '5', 10),
@@ -418,10 +439,13 @@ function readTuningParamsFromControls() {
 }
 function applyTuningParamsToControls(params) {
     const merged = { ...defaultTuningParams(), ...(params || {}) };
+    if (window.MouseScopePoseModels) window.MouseScopePoseModels.applyConfig(merged);
     const fieldMap = {
         bgMethod: merged.bg_method,
         bgType: merged.bg_type,
         grayThreshold: merged.gray_threshold,
+        temporalBgSamples: merged.temporal_bg_samples,
+        temporalDiffThreshold: merged.temporal_diff_threshold,
         erosionKernel: merged.erosion_kernel,
         erosionIter: merged.erosion_iter,
         dilationKernel: merged.dilation_kernel,
@@ -437,7 +461,7 @@ function applyTuningParamsToControls(params) {
         const el = document.getElementById(id);
         if (el) el.value = String(value);
     });
-    ['grayThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
+    ['grayThreshold', 'temporalDiffThreshold', 'erosionKernel', 'erosionIter', 'dilationKernel', 'dilationIter', 'minArea'].forEach(syncRangeLabel);
     updateBgMethodUI();
 }
 let videoConfigs = Array.from({ length: totalVideoCount }, () => ({
@@ -725,6 +749,11 @@ function updateBgMethodUI() {
     const grayThresholdWrap = document.getElementById('grayThresholdWrap');
     if (bgTypeWrap) bgTypeWrap.style.display = thresholdVisible ? '' : 'none';
     if (grayThresholdWrap) grayThresholdWrap.style.display = thresholdVisible ? '' : 'none';
+    const temporalVisible = method === 'temporal';
+    ['temporalSamplesWrap', 'temporalThresholdWrap'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.style.display = temporalVisible ? '' : 'none';
+    });
 }
 
 function debounce(key, fn, delay) {
@@ -737,6 +766,7 @@ window.onload = function () {
     applyCurrentVideoState();
     syncFrameControls();
     syncRangeLabel('grayThreshold');
+    syncRangeLabel('temporalDiffThreshold');
     syncRangeLabel('erosionKernel');
     syncRangeLabel('erosionIter');
     syncRangeLabel('dilationKernel');
@@ -1304,9 +1334,15 @@ function buildRequestBody(frameIdx) {
     return {
         frame: frameIdx === undefined ? parseInt(document.getElementById('frameSliderDebug').value || '0', 10) : frameIdx,
         video: currentVideoIdx,
+        tracking_backend: currentTuningParams.tracking_backend,
+        pose_model_profile_id: currentTuningParams.pose_model_profile_id,
+        pose_model_version_id: currentTuningParams.pose_model_version_id,
+        pose_confidence_threshold: currentTuningParams.pose_confidence_threshold,
         bg_method: currentTuningParams.bg_method,
         bg_type: currentTuningParams.bg_type,
         gray_threshold: currentTuningParams.gray_threshold,
+        temporal_bg_samples: currentTuningParams.temporal_bg_samples,
+        temporal_diff_threshold: currentTuningParams.temporal_diff_threshold,
         erosion_kernel: currentTuningParams.erosion_kernel,
         erosion_iter: currentTuningParams.erosion_iter,
         dilation_kernel: currentTuningParams.dilation_kernel,

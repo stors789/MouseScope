@@ -57,6 +57,8 @@ a = Analysis(
         (os.path.join(PROJECT_DIR, 'static'), 'static'),
         # core 模块
         (os.path.join(PROJECT_DIR, 'core'), 'core'),
+        # Optional DeepLabCut sidecar launcher (the heavy DLC environment stays external)
+        (os.path.join(PROJECT_DIR, 'tools', 'mousescope_dlc_worker.py'), 'tools'),
         # 许可证
         (os.path.join(PROJECT_DIR, 'LICENSE'), '.'),
     ] + IMAGEIO_FFMPEG_DATAS,
@@ -119,6 +121,9 @@ a = Analysis(
         'services.novel_object_session',
         'services.output_runs',
         'services.open_field_session',
+        'services.deeplabcut_runtime',
+        'services.pose_model_profiles',
+        'services.pose_tracking',
         'services.payload_geometry',
         'services.project_store',
         'services.resource_policy',

@@ -142,6 +142,7 @@
                     <a href="#" id="dlReport" class="btn btn-outline-primary" data-i18n="nor.monitor.download.report">TXT 报告</a>
                     <a href="#" id="dlHeatmap" class="btn btn-outline-primary" data-i18n="nor.monitor.download.heatmap">热图</a>
                     <a href="#" id="dlTrackmap" class="btn btn-outline-primary" data-i18n="nor.monitor.download.trackmap">轨迹图</a>
+                    <a href="#" id="dlExplorationCumulative" class="btn btn-outline-primary" data-i18n="nor.monitor.download.exploration_cumulative">双物体探索时间累积图</a>
                 </div>
                 <div class="text-secondary small mt-3" id="resultPathInfo" style="display:none;">
                     <span data-i18n="nor.monitor.download.save_path">保存位置:</span> <code id="resultPathText"></code>
@@ -407,6 +408,7 @@ function showDownloads() {
     document.getElementById('dlReport').href = `/api/download/${sessionId}/report`;
     document.getElementById('dlHeatmap').href = `/api/download/${sessionId}/heatmap`;
     document.getElementById('dlTrackmap').href = `/api/download/${sessionId}/trackmap`;
+    document.getElementById('dlExplorationCumulative').href = `/api/download/${sessionId}/exploration_cumulative`;
 }
 
 function stopAnalysis() {
