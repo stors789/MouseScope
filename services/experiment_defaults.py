@@ -49,6 +49,7 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "arena_side_cm": 50.0, "center_ratio_x": 0.5, "center_ratio_y": 0.5,
         "wall_margin_cm": 8.0, "movement_threshold_cm_s": 2.0,
         "bin_seconds": 300.0, "generate_video": True,
+        "temporal_bg_samples": 90, "temporal_diff_threshold": 25,
     },
     "novel_object": {
         "phase": "recognition", "bg_method": "threshold", "bg_type": "light",
@@ -61,6 +62,7 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
         "head_confidence_threshold": 0.35, "movement_threshold_cm_s": 2.0,
         "min_valid_exploration_s": 20.0, "bin_seconds": 300.0,
         "generate_video": True,
+        "temporal_bg_samples": 90, "temporal_diff_threshold": 25,
     },
     "elevated_plus": {
         "bg_method": "threshold", "bg_type": "light", "gray_threshold": 127,
@@ -249,6 +251,20 @@ _SELECT_OPTIONS.update({
 
 _EXPERIMENT_SELECT_OPTIONS: dict[tuple[str, str], list[tuple[str, str, str]]] = {
     ("y_maze", "bg_method"): [
+        ("threshold", "阈值", "Threshold"),
+        ("static", "静态背景", "Static background"),
+        ("mog2", "MOG2", "MOG2"),
+        ("knn", "KNN", "KNN"),
+        ("temporal", "时序背景", "Temporal background"),
+    ],
+    ("open_field", "bg_method"): [
+        ("threshold", "阈值", "Threshold"),
+        ("static", "静态背景", "Static background"),
+        ("mog2", "MOG2", "MOG2"),
+        ("knn", "KNN", "KNN"),
+        ("temporal", "时序背景", "Temporal background"),
+    ],
+    ("novel_object", "bg_method"): [
         ("threshold", "阈值", "Threshold"),
         ("static", "静态背景", "Static background"),
         ("mog2", "MOG2", "MOG2"),

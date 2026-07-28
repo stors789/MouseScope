@@ -21,9 +21,11 @@ from core.vision_tracker import (
     create_temporal_background,
     uniform_temporal_sample_indices,
 )
+from core.novel_object import NovelObjectTracker
+from core.open_field import OpenFieldTracker
 from core.y_maze import YMazeTracker
 from services.analysis_runtime import FrameCachedBackgroundSubtractor, begin_frame_cache
-from services.experiment_defaults import experiment_defaults_schema
+from services.experiment_defaults import BUILTIN_EXPERIMENT_DEFAULTS, experiment_defaults_schema
 
 
 class FakeCapture:
@@ -184,7 +186,50 @@ def test_temporal_mask_is_cached_once_for_multiple_y_maze_rois() -> None:
     assert call_count == 1
 
 
-def test_old_background_modes_remain_unchanged_and_temporal_is_ymaze_only() -> None:
+def test_temporal_background_uses_full_frame_for_open_field_and_novel_object_rois() -> None:
+    background = np.full((100, 100), 100, dtype=np.uint8)
+    gray = background.copy()
+    cv2.circle(gray, (50, 50), 5, 20, -1)
+    frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    subtractor = BackgroundSubtractor(
+        method='temporal',
+        threshold=20,
+        static_bg=background,
+        temporal_noise_map=np.zeros_like(background),
+    )
+    morph = MorphologyProcessor(
+        erosion_iterations=0,
+        dilation_iterations=0,
+        use_closing=False,
+    )
+    detector = MouseDetector(min_area=20, max_area=500)
+    arena = [[20, 20], [80, 20], [80, 80], [20, 80]]
+    trackers = [
+        OpenFieldTracker(arena, arena_side_cm=50),
+        NovelObjectTracker(
+            arena,
+            [
+                {'point': {'x': 35, 'y': 35}},
+                {'point': {'x': 65, 'y': 65}},
+            ],
+            arena_width_cm=50,
+            arena_height_cm=50,
+            interaction_radius_cm=4,
+        ),
+    ]
+
+    detections = [
+        tracker.detect_mouse(frame, gray, subtractor, morph, detector)[0]
+        for tracker in trackers
+    ]
+
+    assert [detection['centroid'] for detection in detections if detection] == [
+        (50.0, 50.0),
+        (50.0, 50.0),
+    ]
+
+
+def test_old_background_modes_remain_unchanged_and_temporal_is_scoped_to_supported_assays() -> None:
     gray = np.array([[20, 200]], dtype=np.uint8)
     threshold = BackgroundSubtractor(method='threshold', threshold=100, invert=False)
     assert threshold.apply(gray, gray=gray).tolist() == [[255, 0]]
@@ -193,8 +238,13 @@ def test_old_background_modes_remain_unchanged_and_temporal_is_ymaze_only() -> N
     assert static.apply(np.array([[60, 200]], dtype=np.uint8)).tolist() == [[255, 0]]
 
     schema = experiment_defaults_schema()
-    ymaze_bg = next(field for field in schema['modules']['y_maze'] if field['key'] == 'bg_method')
+    supported = ('y_maze', 'open_field', 'novel_object')
+    for assay in supported:
+        bg_method = next(field for field in schema['modules'][assay] if field['key'] == 'bg_method')
+        assert 'temporal' in {option['value'] for option in bg_method['options']}
+        assert BUILTIN_EXPERIMENT_DEFAULTS[assay]['temporal_bg_samples'] == 90
+        assert BUILTIN_EXPERIMENT_DEFAULTS[assay]['temporal_diff_threshold'] == 25
+
     epm_bg = next(field for field in schema['modules']['elevated_plus'] if field['key'] == 'bg_method')
-    assert 'temporal' in {option['value'] for option in ymaze_bg['options']}
     assert 'temporal' not in {option['value'] for option in epm_bg['options']}
     assert uniform_temporal_sample_indices(4, num_samples=90) == [0, 1, 2, 3]

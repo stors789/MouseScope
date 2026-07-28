@@ -234,6 +234,11 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         if width * height >= 1920 * 1080 and not sampling.get('active'):
             self._log("High-resolution NOR input detected; segmentation, contours, and video encoding will be slower.")
 
+        start_sec = vision_config.get('start_sec')
+        end_sec = vision_config.get('end_sec')
+        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
+        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
+
         bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
             video_path,
             vision_config,
@@ -242,11 +247,10 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             erosion_default=1,
             dilation_default=2,
             min_area_default=120,
+            temporal_start_frame=start_frame,
+            temporal_end_frame=end_frame,
         )
 
-        start_sec = vision_config.get('start_sec')
-        end_sec = vision_config.get('end_sec')
-        global_start_time_s = float(start_sec) if start_sec is not None else 0.0
         source_roi_configs = self._parse_rois(vision_config)
         roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
 
@@ -256,7 +260,6 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         if generate_video:
             self._log("NOR annotated video is rendered after scoring; CSV and statistics export independently of video encoding.")
 
-        start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
         if start_frame > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             self._log(f"Start NOR analysis from frame {start_frame} ({timebase.time_at(start_frame):.1f}s)")
@@ -532,6 +535,8 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             erosion_default=1,
             dilation_default=2,
             min_area_default=120,
+            temporal_start_frame=start_frame,
+            temporal_end_frame=end_frame,
         )
         render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)

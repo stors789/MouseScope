@@ -539,7 +539,7 @@ class NovelObjectTracker:
         arena_frame = frame[y : y + h, x : x + w]
         arena_gray = gray[y : y + h, x : x + w]
 
-        if getattr(bg_subtractor, "method", "") == "static":
+        if getattr(bg_subtractor, "method", "") in ("static", "temporal"):
             full_fg_mask = bg_subtractor.apply(frame, gray=gray)
             fg_mask = full_fg_mask[y : y + h, x : x + w]
         else:
