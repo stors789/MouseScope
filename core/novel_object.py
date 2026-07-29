@@ -261,6 +261,8 @@ class NovelObjectTracker:
         use_head_direction: bool = True,
         head_angle_threshold_deg: float = 50.0,
         head_confidence_threshold: float = 0.35,
+        pose_head_hold_s: float = 0.12,
+        pose_head_smoothing: float = 0.35,
         body_gray_threshold: int = 95,
         mouse_is_light: bool = False,
         movement_threshold_cm_s: float = 2.0,
@@ -297,6 +299,8 @@ class NovelObjectTracker:
         self.use_head_direction = bool(use_head_direction)
         self.head_angle_threshold_deg = float(np.clip(head_angle_threshold_deg, 5.0, 180.0))
         self.head_confidence_threshold = _clip01(head_confidence_threshold)
+        self.pose_head_hold_s = float(np.clip(float(pose_head_hold_s), 0.0, 1.0))
+        self.pose_head_smoothing = _clip01(pose_head_smoothing)
         self.body_gray_threshold = int(np.clip(int(body_gray_threshold), 0, 255))
         self.mouse_is_light = bool(mouse_is_light)
         self.movement_threshold_cm_s = max(0.0, float(movement_threshold_cm_s))
@@ -354,6 +358,10 @@ class NovelObjectTracker:
         self.prev_head_vector_cm: Optional[Tuple[float, float]] = None
         self.last_head_point_px: Optional[Tuple[float, float]] = None
         self.last_head_point_cm: Optional[Tuple[float, float]] = None
+        self.pose_head_unit_vector: Optional[Tuple[float, float]] = None
+        self.pose_head_confidence = 0.0
+        self.pose_head_vector_length_cm = 0.0
+        self.pose_head_missing_time_s = 0.0
         self.head_estimated_frames = 0
         self.head_confident_frames = 0
         self.head_supported_exploration_frames = 0
@@ -1346,6 +1354,140 @@ class NovelObjectTracker:
             "object_angles_deg": object_angles_deg,
         }
 
+    def _project_point_to_px(self, point_cm: Sequence[float]) -> Tuple[float, float]:
+        src = np.array([[[float(point_cm[0]), float(point_cm[1])]]], dtype=np.float32)
+        dst = cv2.perspectiveTransform(src, self.h_cm_to_img)[0, 0]
+        return (float(dst[0]), float(dst[1]))
+
+    def _rebuild_pose_head_state(
+        self,
+        *,
+        origin_cm: Sequence[float],
+        body_px: Sequence[float],
+        body_cm: Sequence[float],
+        unit_vector: Sequence[float],
+        vector_length_cm: float,
+        confidence: float,
+        method: str,
+    ) -> Dict[str, Any]:
+        vector_cm = (
+            float(unit_vector[0]) * float(vector_length_cm),
+            float(unit_vector[1]) * float(vector_length_cm),
+        )
+        nose_cm = (
+            float(origin_cm[0]) + vector_cm[0],
+            float(origin_cm[1]) + vector_cm[1],
+        )
+        nose_px = self._project_point_to_px(nose_cm)
+        nose_distances_cm: List[Optional[float]] = []
+        object_angles_deg: List[Optional[float]] = []
+        for obj in self.objects:
+            nose_vec = (
+                float(obj["point_cm"][0] - nose_cm[0]),
+                float(obj["point_cm"][1] - nose_cm[1]),
+            )
+            nose_distances_cm.append(float(math.hypot(nose_vec[0], nose_vec[1])))
+            object_vec = (
+                float(obj["point_cm"][0] - origin_cm[0]),
+                float(obj["point_cm"][1] - origin_cm[1]),
+            )
+            object_angles_deg.append(_angle_deg(vector_cm, object_vec))
+        return {
+            "point_px": nose_px,
+            "point_cm": nose_cm,
+            "vector_cm": vector_cm,
+            "tail_point_px": None,
+            "tail_point_cm": None,
+            "tail_root_px": None,
+            "confidence": float(confidence),
+            "estimated": True,
+            "axis_ratio": None,
+            "method": method,
+            "body_contour": None,
+            "body_centroid": (float(body_px[0]), float(body_px[1])),
+            "body_centroid_cm": (float(body_cm[0]), float(body_cm[1])),
+            "body_threshold_polarity": None,
+            "tail_contour": None,
+            "tail_confidence": None,
+            "nose_distances_cm": nose_distances_cm,
+            "object_angles_deg": object_angles_deg,
+        }
+
+    def _stabilize_pose_head_state(
+        self,
+        head_state: Optional[Dict[str, Any]],
+        body_px: Optional[Sequence[float]],
+        body_cm: Optional[Sequence[float]],
+        dt_s: float,
+    ) -> Optional[Dict[str, Any]]:
+        is_reliable = bool(
+            head_state
+            and str(head_state.get("method") or "").startswith("deeplabcut")
+            and head_state.get("estimated")
+            and float(head_state.get("confidence") or 0.0) >= self.head_confidence_threshold
+        )
+        if is_reliable:
+            observed_vector = head_state.get("vector_cm")
+            observed_unit = _unit_vector(observed_vector) if observed_vector is not None else None
+            if observed_unit is not None:
+                if self.pose_head_unit_vector is not None:
+                    alpha = self.pose_head_smoothing
+                    previous_angle = math.atan2(
+                        self.pose_head_unit_vector[1],
+                        self.pose_head_unit_vector[0],
+                    )
+                    observed_angle = math.atan2(observed_unit[1], observed_unit[0])
+                    angle_delta = (
+                        (observed_angle - previous_angle + math.pi) % (2.0 * math.pi)
+                    ) - math.pi
+                    smoothed_angle = previous_angle + alpha * angle_delta
+                    observed_unit = (
+                        math.cos(smoothed_angle),
+                        math.sin(smoothed_angle),
+                    )
+                vector_length = float(np.linalg.norm(np.asarray(observed_vector, dtype=np.float32)))
+                point_cm = head_state.get("point_cm")
+                body_state_cm = head_state.get("body_centroid_cm") or body_cm
+                body_state_px = head_state.get("body_centroid") or body_px
+                if point_cm is not None and body_state_cm is not None and body_state_px is not None:
+                    origin_cm = (
+                        float(point_cm[0]) - float(observed_vector[0]),
+                        float(point_cm[1]) - float(observed_vector[1]),
+                    )
+                    confidence = float(head_state.get("confidence") or 0.0)
+                    self.pose_head_unit_vector = (float(observed_unit[0]), float(observed_unit[1]))
+                    self.pose_head_confidence = confidence
+                    self.pose_head_vector_length_cm = vector_length
+                    self.pose_head_missing_time_s = 0.0
+                    return self._rebuild_pose_head_state(
+                        origin_cm=origin_cm,
+                        body_px=body_state_px,
+                        body_cm=body_state_cm,
+                        unit_vector=observed_unit,
+                        vector_length_cm=vector_length,
+                        confidence=confidence,
+                        method=str(head_state.get("method")),
+                    )
+
+        self.pose_head_missing_time_s += float(dt_s)
+        if not (
+            body_px is not None
+            and body_cm is not None
+            and self.pose_head_unit_vector is not None
+            and self.pose_head_vector_length_cm > 0.0
+            and self.pose_head_missing_time_s <= self.pose_head_hold_s + 1e-9
+        ):
+            return None
+        return self._rebuild_pose_head_state(
+            origin_cm=body_cm,
+            body_px=body_px,
+            body_cm=body_cm,
+            unit_vector=self.pose_head_unit_vector,
+            vector_length_cm=self.pose_head_vector_length_cm,
+            confidence=self.pose_head_confidence,
+            method="deeplabcut_held",
+        )
+
     def update(
         self,
         frame: np.ndarray,
@@ -1360,8 +1502,10 @@ class NovelObjectTracker:
         tracking_source: Optional[str] = None,
         fallback_reason: Optional[str] = None,
         allow_classical_fallback: bool = True,
+        strict_pose_only: bool = False,
     ) -> Dict[str, Any]:
         self.total_frames += 1
+        allow_classical_fallback = bool(allow_classical_fallback and not strict_pose_only)
         try:
             current_dt = float(dt_s) if dt_s is not None else 1.0 / max(float(self.fps), 1e-6)
         except (TypeError, ValueError):
@@ -1485,6 +1629,13 @@ class NovelObjectTracker:
                 self.trajectory_px_live.append(centroid_px)
 
         head_state = self._head_state_from_pose(pose_observation)
+        if isinstance(pose_observation, dict):
+            head_state = self._stabilize_pose_head_state(
+                head_state,
+                centroid_px if detected else None,
+                arena_xy_cm if detected else None,
+                current_dt,
+            )
         if head_state is None and allow_classical_fallback:
             head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm, gray=gray)
         elif head_state is None:
@@ -1557,8 +1708,12 @@ class NovelObjectTracker:
                                     distances_cm[idx] if distances_cm[idx] is not None else 1e9,
                                 ),
                             )
-                            exploration_mode = "head"
-                    else:
+                            exploration_mode = (
+                                "head_held"
+                                if head_state.get("method") == "deeplabcut_held"
+                                else "head"
+                            )
+                    elif not strict_pose_only:
                         exploring_idx = min(
                             candidates,
                             key=lambda idx: distances_cm[idx] if distances_cm[idx] is not None else 1e9,
@@ -1582,7 +1737,7 @@ class NovelObjectTracker:
             if exploring_idx is not None:
                 self.object_exploration_frames[exploring_idx] += 1
                 self.object_exploration_time_s[exploring_idx] += current_dt
-                if exploration_mode == "head":
+                if exploration_mode in {"head", "head_held"}:
                     self.head_supported_exploration_frames += 1
                     self.head_supported_exploration_time_s += current_dt
                 elif exploration_mode == "fallback":
@@ -1730,6 +1885,8 @@ class NovelObjectTracker:
             "use_head_direction": self.use_head_direction,
             "head_angle_threshold_deg": self.head_angle_threshold_deg,
             "head_confidence_threshold": self.head_confidence_threshold,
+            "pose_head_hold_s": self.pose_head_hold_s,
+            "pose_head_smoothing": self.pose_head_smoothing,
             "body_gray_threshold": self.body_gray_threshold,
             "head_estimated_rate_percent": round(head_estimated_rate, 2),
             "head_confident_rate_percent": round(head_confident_rate, 2),

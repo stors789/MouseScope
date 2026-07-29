@@ -172,6 +172,8 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                 use_head_direction=bool(vision_config.get('use_head_direction', True)),
                 head_angle_threshold_deg=float(vision_config.get('head_angle_threshold_deg', 50.0)),
                 head_confidence_threshold=float(vision_config.get('head_confidence_threshold', 0.35)),
+                pose_head_hold_s=float(vision_config.get('pose_head_hold_s', 0.12)),
+                pose_head_smoothing=float(vision_config.get('pose_head_smoothing', 0.35)),
                 body_gray_threshold=int(vision_config.get('body_gray_threshold', 95)),
                 mouse_is_light=bool(vision_config.get('invert', False)),
                 movement_threshold_cm_s=float(vision_config.get('movement_threshold_cm_s', 2.0)),
@@ -370,6 +372,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                                 or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
                             ) if pose_observation is None else None,
                             allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
+                            strict_pose_only=strict_pose_only,
                         )
                     )
                 previous_analyzed_frame = current_frame_no
@@ -744,6 +747,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                                 or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
                             ) if pose_observation is None else None,
                             allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
+                            strict_pose_only=strict_pose_only,
                         )
                     )
                 previous_analyzed_frame = current_frame_no
