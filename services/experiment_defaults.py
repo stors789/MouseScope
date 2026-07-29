@@ -44,6 +44,7 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "open_field": {
         "tracking_backend": "classical", "pose_confidence_threshold": 0.8,
+        "pose_batch_size": 4,
         "bg_method": "threshold", "bg_type": "light", "gray_threshold": 127,
         "erosion_kernel": 3, "erosion_iter": 1, "dilation_kernel": 5,
         "dilation_iter": 2, "min_area": 120, "max_area": 50000,
@@ -54,6 +55,7 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "novel_object": {
         "tracking_backend": "classical", "pose_confidence_threshold": 0.8,
+        "pose_batch_size": 4,
         "phase": "recognition", "bg_method": "threshold", "bg_type": "light",
         "gray_threshold": 127, "body_gray_threshold": 95, "erosion_kernel": 3,
         "erosion_iter": 1, "dilation_kernel": 5, "dilation_iter": 2,
@@ -200,6 +202,7 @@ _SELECT_OPTIONS: dict[str, list[tuple[str, str, str]]] = {
 _FIELD_LABELS.update({
     "tracking_backend": ("追踪后端", "Tracking backend"),
     "pose_confidence_threshold": ("姿态关键点置信度阈值", "Pose keypoint confidence threshold"),
+    "pose_batch_size": ("DLC 批大小", "DLC batch size"),
     "bg_method": ("背景建模方法", "Background method"), "bg_type": ("背景类型", "Background type"),
     "gray_threshold": ("灰度阈值", "Gray threshold"), "body_gray_threshold": ("身体灰度阈值", "Body gray threshold"),
     "erosion_kernel": ("腐蚀核大小", "Erosion kernel"), "erosion_iter": ("腐蚀次数", "Erosion iterations"),
@@ -312,6 +315,7 @@ _FIELD_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "temporal_diff_threshold": {"min": 1, "max": 255, "step": 1},
     "center_ratio_x": {"min": 0.01, "max": 1.0, "step": 0.01}, "center_ratio_y": {"min": 0.01, "max": 1.0, "step": 0.01},
     "pose_confidence_threshold": {"min": 0.0, "max": 1.0, "step": 0.01},
+    "pose_batch_size": {"min": 1, "max": 16, "step": 1},
     "entry_depth_ratio": {"min": 0.0, "max": 1.0, "step": 0.01}, "head_confidence_threshold": {"min": 0.0, "max": 1.0, "step": 0.01},
     "head_angle_threshold_deg": {"min": 0.0, "max": 180.0, "step": 1},
     "behavior_threshold_sensitivity": {"min": -3.0, "max": 3.0, "step": 0.1}, "threshold_sensitivity": {"min": -3.0, "max": 3.0, "step": 0.1},
@@ -333,7 +337,7 @@ def _select_options(experiment: str, key: str) -> list[tuple[str, str, str]]:
 
 
 def _field_group(key: str) -> str:
-    if key in {"tracking_backend", "pose_confidence_threshold", "bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "temporal_bg_samples", "temporal_diff_threshold", "exclude_platform_from_detection"}:
+    if key in {"tracking_backend", "pose_confidence_threshold", "pose_batch_size", "bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "temporal_bg_samples", "temporal_diff_threshold", "exclude_platform_from_detection"}:
         return "detection"
     if key in {"arena_side_cm", "arena_width_cm", "arena_height_cm", "center_size_cm", "open_arm_length_cm", "closed_arm_length_cm", "arm_length_cm", "arm_width_cm", "cylinder_diameter_cm", "pool_diameter_cm", "platform_radius_cm", "light_box_length_cm", "light_box_width_cm", "dark_box_length_cm", "dark_box_width_cm", "shared_edge_length_cm", "open_axis"}:
         return "geometry"

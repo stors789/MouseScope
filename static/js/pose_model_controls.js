@@ -51,6 +51,7 @@
             pose_model_profile_id: byId('poseModelProfile')?.value || null,
             pose_model_version_id: byId('poseModelVersion')?.value || null,
             pose_confidence_threshold: Number(byId('poseConfidenceThreshold')?.value || 0.8),
+            pose_batch_size: Math.max(1, Math.min(16, Number(byId('poseBatchSize')?.value || 4))),
         };
     }
 
@@ -58,8 +59,10 @@
         const raw = config || {};
         const backend = byId('trackingBackend');
         const confidence = byId('poseConfidenceThreshold');
+        const batchSize = byId('poseBatchSize');
         if (backend && raw.tracking_backend) backend.value = raw.tracking_backend;
         if (confidence && raw.pose_confidence_threshold != null) confidence.value = String(raw.pose_confidence_threshold);
+        if (batchSize && raw.pose_batch_size != null) batchSize.value = String(raw.pose_batch_size);
         state.requestedSelection = {
             profileId: raw.pose_model_profile_id || '',
             versionId: raw.pose_model_version_id || '',

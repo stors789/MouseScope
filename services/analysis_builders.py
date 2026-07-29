@@ -72,6 +72,12 @@ def _tracking_backend(value: Any) -> str:
 
 def _pose_tracking_fields(raw: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     requested = _tracking_backend(raw.get("tracking_backend", defaults.get("tracking_backend")))
+    try:
+        pose_batch_size = int(
+            raw.get("pose_batch_size", defaults.get("pose_batch_size", 4))
+        )
+    except (TypeError, ValueError):
+        pose_batch_size = 4
     return {
         "tracking_backend": requested,
         # Route startup resolves this requested backend against the optional
@@ -89,6 +95,7 @@ def _pose_tracking_fields(raw: dict[str, Any], defaults: dict[str, Any]) -> dict
         "pose_confidence_threshold": float(
             raw.get("pose_confidence_threshold", defaults.get("pose_confidence_threshold", 0.8))
         ),
+        "pose_batch_size": max(1, min(16, pose_batch_size)),
     }
 
 
