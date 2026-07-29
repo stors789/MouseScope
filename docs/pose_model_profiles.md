@@ -2,7 +2,7 @@
 
 OFT 与 NOR 的第三阶段配置页现在把“追踪后端”和“背景建模方法”作为两个独立配置：
 
-- `tracking_backend`: `classical`、`deeplabcut` 或 `auto`
+- `tracking_backend`: `classical`、`deeplabcut`、`auto`；NOR 额外支持 `hybrid`
 - `bg_method`: 灰度阈值、静态/时序背景等经典视觉背景模型
 
 选择 DeepLabCut 不会修改 `bg_method`。如果 DLC 依赖、模型或工作进程不可用，预览会返回明确的回退状态，经典视觉预览和分析仍可继续。
@@ -72,13 +72,23 @@ python tools/mousescope_dlc_worker.py serve
 
 - OFT：DLC `body_center` 直接进入坐标变换、路程、速度和区域统计。
 - NOR：DLC `body_center` 用于轨迹；`nose` 与双耳中点用于鼻尖距离、头向夹角和探索评分。
+- NOR `hybrid`：经典视觉负责全程轨迹；经典轮廓进入“探索半径 + DLC
+  触发余量”后，按小鼠外接框扩边裁切，只对小图运行 DLC。裁切关键点会还原到
+  全帧坐标，DLC 只负责近物体姿态和探索判定。
 - 某个 ROI 的身体中心、鼻尖或耳部低于置信度阈值时，仅该 ROI/帧回退经典视觉。
 - 工作进程连续失败 3 次后，本视频剩余帧停止重复启动 DLC，统一回退经典视觉。
 
 轨迹 CSV 每帧记录 `tracking_source`、`tracking_fallback_reason` 和身体中心置信度；汇总 CSV 同时记录请求后端、启动时解析出的后端、实际观察到的后端、DLC 帧数和回退帧数。因此不会把经典视觉结果误标为 DLC 结果。
 
-### 性能限制
+### 性能与缓存
 
-MouseScope 按已有帧采样频率逐帧请求常驻 worker，并在多个 ROI 间共享同一次推理；模型只在 worker 首次收到对应模型/动物数量的请求时加载。若生成标注视频，渲染阶段仍会再次推理，以确保叠加画面与正式评分使用相同来源。当前帧仍需编码为临时 PNG，且评分与渲染尚未共享预测缓存；GPU、降低有效 FPS、缩小最大边长会明显改善速度。
+正式分析会按 `pose_batch_size` 进行批量推理。评分阶段的姿态结果保存在内存中，
+标注视频直接复用，不会再次请求 DLC。
+
+NOR `hybrid` 还会把近物体裁切结果持久化到应用数据目录相邻的
+`dlc_pose_cache`。缓存身份包含视频内容采样指纹、模型/权重版本、关键点 schema、
+ROI、采样、经典检测、触发距离和裁切扩边配置；帧号、ROI 与实际裁切框也必须一致。
+因此重复分析相同输入时可跳过已有 DLC 推理，相关配置变化时会自动使用新的缓存
+命名空间。运行时失败不写入持久缓存，以免临时故障污染后续分析。
 
 官方当前推荐顶视小鼠使用 `superanimal_topviewmouse`、`hrnet_w32` 和 `fasterrcnn_resnet50_fpn_v2`；SuperAnimal 输出应由 sidecar 映射为 MouseScope 的规范名称 `nose`、`left_ear`、`right_ear`、`body_center`、`tail_base`。参考 [DeepLabCut Model Zoo](https://deeplabcut.github.io/DeepLabCut/docs/ModelZoo.html) 与 [SuperAnimal 推理文档](https://deeplabcut.github.io/DeepLabCut/dev/latest-release/reference/deeplabcut/modelzoo/video_inference/)。
