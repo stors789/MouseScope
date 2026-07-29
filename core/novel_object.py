@@ -1503,6 +1503,9 @@ class NovelObjectTracker:
         fallback_reason: Optional[str] = None,
         allow_classical_fallback: bool = True,
         strict_pose_only: bool = False,
+        precomputed_detection: Optional[Tuple[Optional[Dict[str, Any]], np.ndarray]] = None,
+        prefer_classical_position: bool = False,
+        require_pose_for_exploration: bool = False,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         allow_classical_fallback = bool(allow_classical_fallback and not strict_pose_only)
@@ -1516,7 +1519,23 @@ class NovelObjectTracker:
             if isinstance(pose_observation, dict)
             else None
         )
-        if isinstance(pose_body, dict) and pose_body.get("visible", True):
+        if prefer_classical_position:
+            if precomputed_detection is None:
+                detection, fg_mask = self.detect_mouse(
+                    frame,
+                    gray,
+                    bg_subtractor,
+                    morph_processor,
+                    detector,
+                )
+            else:
+                detection, fg_mask = precomputed_detection
+            frame_tracking_source = (
+                "hybrid_dlc"
+                if isinstance(pose_observation, dict)
+                else (tracking_source or "classical")
+            )
+        elif isinstance(pose_body, dict) and pose_body.get("visible", True):
             detection = {
                 "centroid": (float(pose_body["x"]), float(pose_body["y"])),
                 "bbox": None,
@@ -1713,7 +1732,7 @@ class NovelObjectTracker:
                                 if head_state.get("method") == "deeplabcut_held"
                                 else "head"
                             )
-                    elif not strict_pose_only:
+                    elif not strict_pose_only and not require_pose_for_exploration:
                         exploring_idx = min(
                             candidates,
                             key=lambda idx: distances_cm[idx] if distances_cm[idx] is not None else 1e9,
@@ -1895,7 +1914,9 @@ class NovelObjectTracker:
             "arena_width_cm": self.arena_width_cm,
             "arena_height_cm": self.arena_height_cm,
             "deeplabcut_frames": sum(
-                1 for record in self.frame_records if record.get("tracking_source") == "deeplabcut"
+                1
+                for record in self.frame_records
+                if record.get("tracking_source") in {"deeplabcut", "hybrid_dlc"}
             ),
             "classical_fallback_frames": sum(
                 1 for record in self.frame_records if record.get("tracking_source") == "classical_fallback"

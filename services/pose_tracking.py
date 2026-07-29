@@ -30,6 +30,8 @@ def resolve_pose_runtime_config(
 
     def resolve_one(target: dict[str, Any]) -> None:
         requested = str(target.get("tracking_backend") or "classical").strip().lower()
+        if requested == "hybrid" and assay != "novel_object":
+            requested = "classical"
         model_ready = True
         model_reference = SUPERANIMAL_MODEL_REF
         keypoint_schema = DEFAULT_KEYPOINT_SCHEMA
@@ -211,6 +213,119 @@ class PoseInferenceCoordinator:
         else:
             self.frames_failed += 1
         return PoseFrameResult(assigned)
+
+    def _assign_crop_observation(
+        self,
+        payload: dict[str, Any],
+        *,
+        roi_id: int,
+        offset: tuple[int, int],
+        valid_size: tuple[int, int] | None = None,
+    ) -> PoseFrameResult:
+        observations = normalise_pose_output(payload)
+        candidates: list[tuple[float, dict[str, Any]]] = []
+        for observation in observations:
+            body = observation["keypoints"].get("body_center")
+            if (
+                not body
+                or not body.get("visible")
+                or float(body.get("confidence", 0.0)) < self.confidence_threshold
+            ):
+                continue
+            if valid_size is not None:
+                valid_width, valid_height = valid_size
+                if not (
+                    0.0 <= float(body["x"]) < float(valid_width)
+                    and 0.0 <= float(body["y"]) < float(valid_height)
+                ):
+                    continue
+            candidates.append((float(body.get("confidence", 0.0)), observation))
+        if not candidates:
+            self.frames_failed += 1
+            return PoseFrameResult({})
+
+        _confidence, selected = max(candidates, key=lambda item: item[0])
+        translated = copy.deepcopy(selected)
+        offset_x, offset_y = int(offset[0]), int(offset[1])
+        for point in (translated.get("keypoints") or {}).values():
+            if valid_size is not None:
+                valid_width, valid_height = valid_size
+                if not (
+                    0.0 <= float(point["x"]) < float(valid_width)
+                    and 0.0 <= float(point["y"]) < float(valid_height)
+                ):
+                    point["visible"] = False
+            point["x"] = float(point["x"]) + offset_x
+            point["y"] = float(point["y"]) + offset_y
+        translated["confidence_threshold"] = self.confidence_threshold
+        self.frames_succeeded += 1
+        return PoseFrameResult({int(roi_id): translated})
+
+    def infer_crops(
+        self,
+        frames,
+        *,
+        roi_ids: list[int],
+        offsets: list[tuple[int, int]],
+        valid_sizes: list[tuple[int, int]] | None = None,
+    ) -> list[PoseFrameResult]:
+        """Infer one mouse crop per ROI and restore full-frame coordinates."""
+        frame_list = list(frames or [])
+        if not frame_list:
+            return []
+        if len(frame_list) != len(roi_ids) or len(frame_list) != len(offsets):
+            raise ValueError("Crop frames, ROI ids, and offsets must have equal lengths.")
+        if valid_sizes is not None and len(frame_list) != len(valid_sizes):
+            raise ValueError("Crop frames and valid sizes must have equal lengths.")
+        if not self.enabled or self.disabled_reason:
+            return [
+                PoseFrameResult({}, error=self.disabled_reason)
+                for _frame in frame_list
+            ]
+        self.frames_requested += len(frame_list)
+        try:
+            if hasattr(self.runtime, "infer_frames"):
+                payloads = self.runtime.infer_frames(
+                    frame_list,
+                    model_reference=self.model_reference,
+                    keypoint_schema=self.keypoint_schema,
+                    max_individuals=1,
+                    batch_size=self.batch_size,
+                )
+            else:
+                payloads = [
+                    self.runtime.infer_frame(
+                        frame,
+                        model_reference=self.model_reference,
+                        keypoint_schema=self.keypoint_schema,
+                        max_individuals=1,
+                    )
+                    for frame in frame_list
+                ]
+        except DeepLabCutRuntimeError as exc:
+            self.frames_failed += len(frame_list)
+            self.consecutive_worker_errors += 1
+            if self.consecutive_worker_errors >= 3:
+                self.disabled_reason = f"DLC worker disabled after repeated errors: {exc}"
+            return [
+                PoseFrameResult({}, error=self.disabled_reason or str(exc))
+                for _frame in frame_list
+            ]
+        self.consecutive_worker_errors = 0
+        effective = getattr(self.runtime, "effective_batch_size", None)
+        if effective is not None:
+            self.effective_batch_size = max(1, int(effective))
+        return [
+            self._assign_crop_observation(
+                payload,
+                roi_id=roi_id,
+                offset=offset,
+                valid_size=(valid_sizes[index] if valid_sizes is not None else None),
+            )
+            for index, (payload, roi_id, offset) in enumerate(
+                zip(payloads, roi_ids, offsets)
+            )
+        ]
 
     def infer_many(self, frames) -> list[PoseFrameResult]:
         frame_list = list(frames or [])

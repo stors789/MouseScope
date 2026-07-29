@@ -103,6 +103,40 @@ def test_short_pose_gap_holds_head_and_counts_exploration() -> None:
     assert tracker.object_exploration_time_s[0] == pytest.approx(0.08)
 
 
+def test_hybrid_mode_keeps_classical_centroid_and_uses_dlc_head() -> None:
+    tracker = make_tracker(pose_head_hold_s=0.0, pose_head_smoothing=1.0)
+    classical_detection = {
+        "centroid": (20.0, 30.0),
+        "bbox": (10, 20, 20, 20),
+        "contour": np.array(
+            [[[10, 20]], [[30, 20]], [[30, 40]], [[10, 40]]],
+            dtype=np.int32,
+        ),
+    }
+    result = tracker.update(
+        FRAME,
+        0.0,
+        GRAY,
+        None,
+        None,
+        None,
+        dt_s=0.04,
+        pose_observation=pose(),
+        allow_classical_fallback=False,
+        precomputed_detection=(
+            classical_detection,
+            np.zeros((100, 100), dtype=np.uint8),
+        ),
+        prefer_classical_position=True,
+        require_pose_for_exploration=True,
+    )
+
+    assert result["centroid"] == pytest.approx((20.0, 30.0))
+    assert result["body_centroid"] == pytest.approx((70.0, 50.0))
+    assert result["tracking_source"] == "hybrid_dlc"
+    assert result["head_direction_method"].startswith("deeplabcut")
+
+
 def test_pose_gap_expires_using_accumulated_dt() -> None:
     tracker = make_tracker(pose_head_hold_s=0.12, pose_head_smoothing=1.0)
     update(tracker, pose(), 0.0)

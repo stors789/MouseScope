@@ -67,11 +67,22 @@ def _coerce_bool(value: Any, default: bool = True) -> bool:
 
 def _tracking_backend(value: Any) -> str:
     backend = str(value or "classical").strip().lower()
-    return backend if backend in {"classical", "deeplabcut", "auto"} else "classical"
+    return (
+        backend
+        if backend in {"classical", "deeplabcut", "auto", "hybrid"}
+        else "classical"
+    )
 
 
-def _pose_tracking_fields(raw: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
+def _pose_tracking_fields(
+    raw: dict[str, Any],
+    defaults: dict[str, Any],
+    *,
+    allow_hybrid: bool = False,
+) -> dict[str, Any]:
     requested = _tracking_backend(raw.get("tracking_backend", defaults.get("tracking_backend")))
+    if requested == "hybrid" and not allow_hybrid:
+        requested = "classical"
     try:
         pose_batch_size = int(
             raw.get("pose_batch_size", defaults.get("pose_batch_size", 4))
@@ -96,6 +107,42 @@ def _pose_tracking_fields(raw: dict[str, Any], defaults: dict[str, Any]) -> dict
             raw.get("pose_confidence_threshold", defaults.get("pose_confidence_threshold", 0.8))
         ),
         "pose_batch_size": max(1, min(16, pose_batch_size)),
+    }
+
+
+def _nor_hybrid_fields(
+    raw: dict[str, Any],
+    defaults: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "pose_trigger_margin_cm": max(
+            0.0,
+            min(
+                20.0,
+                float(
+                    raw.get(
+                        "pose_trigger_margin_cm",
+                        defaults.get("pose_trigger_margin_cm", 2.0),
+                    )
+                ),
+            ),
+        ),
+        "pose_crop_padding_ratio": max(
+            0.0,
+            min(
+                3.0,
+                float(
+                    raw.get(
+                        "pose_crop_padding_ratio",
+                        defaults.get("pose_crop_padding_ratio", 0.5),
+                    )
+                ),
+            ),
+        ),
+        "pose_cache_enabled": _coerce_bool(
+            raw.get("pose_cache_enabled", defaults.get("pose_cache_enabled")),
+            True,
+        ),
     }
 
 
@@ -165,7 +212,10 @@ def build_open_field_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[
 
 
 def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
-    tracking_defaults = _pose_tracking_fields({}, data)
+    tracking_defaults = {
+        **_pose_tracking_fields({}, data, allow_hybrid=True),
+        **_nor_hybrid_fields({}, data),
+    }
     default_phase = data.get("phase", "recognition")
     default_bg_method = data.get("bg_method", "threshold")
     default_bg_type = data.get("bg_type", "light")
@@ -195,7 +245,12 @@ def build_novel_object_config(sess: dict[str, Any], data: dict[str, Any]) -> dic
         sess,
         data,
         lambda raw_cfg: {
-            **_pose_tracking_fields(raw_cfg, tracking_defaults),
+            **_pose_tracking_fields(
+                raw_cfg,
+                tracking_defaults,
+                allow_hybrid=True,
+            ),
+            **_nor_hybrid_fields(raw_cfg, tracking_defaults),
             "bg_method": raw_cfg.get("bg_method", default_bg_method),
             "gray_threshold": int(raw_cfg.get("gray_threshold", default_gray_threshold)),
             "invert": str(raw_cfg.get("bg_type", default_bg_type)).lower() == "dark",

@@ -507,7 +507,7 @@ def resolve_tracking_backend(
     model_ready: bool = False,
 ) -> dict[str, Any]:
     value = str(requested or "classical").strip().lower()
-    if value not in {"classical", "deeplabcut", "auto"}:
+    if value not in {"classical", "deeplabcut", "auto", "hybrid"}:
         value = "classical"
     status = runtime_status or DeepLabCutRuntime().status()
     dlc_ready = bool(status.get("available")) and bool(model_ready)

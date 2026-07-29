@@ -1,4 +1,7 @@
+import sqlite3
+
 from services.analysis_runtime import *
+from services.nor_pose_cache import PersistentNorPoseCache, video_identity
 from services.pose_tracking import PoseFrameResult, PoseInferenceCoordinator
 
 
@@ -182,6 +185,228 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             for roi in roi_configs
         ]
 
+    @staticmethod
+    def _hybrid_crop_box(frame_shape, bbox, padding_ratio):
+        frame_height, frame_width = frame_shape[:2]
+        x, y, width, height = (int(value) for value in bbox)
+        pad_x = max(8, int(round(width * float(padding_ratio))))
+        pad_y = max(8, int(round(height * float(padding_ratio))))
+        x0 = max(0, x - pad_x)
+        y0 = max(0, y - pad_y)
+        x1 = min(frame_width, x + width + pad_x)
+        y1 = min(frame_height, y + height + pad_y)
+        return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
+
+    @staticmethod
+    def _pad_hybrid_crop_batch(requests):
+        if not requests:
+            return [], []
+        max_height = max(int(request['frame'].shape[0]) for request in requests)
+        max_width = max(int(request['frame'].shape[1]) for request in requests)
+        target_height = max(32, ((max_height + 31) // 32) * 32)
+        target_width = max(32, ((max_width + 31) // 32) * 32)
+        padded_frames = []
+        valid_sizes = []
+        for request in requests:
+            crop = request['frame']
+            height, width = crop.shape[:2]
+            valid_sizes.append((int(width), int(height)))
+            pad_bottom = target_height - int(height)
+            pad_right = target_width - int(width)
+            if pad_bottom or pad_right:
+                background = tuple(
+                    int(value)
+                    for value in np.median(crop, axis=(0, 1)).tolist()
+                )
+                crop = cv2.copyMakeBorder(
+                    crop,
+                    0,
+                    pad_bottom,
+                    0,
+                    pad_right,
+                    cv2.BORDER_CONSTANT,
+                    value=background,
+                )
+            padded_frames.append(crop)
+        return padded_frames, valid_sizes
+
+    @staticmethod
+    def _hybrid_pose_triggered(tracker, detection, trigger_margin_cm):
+        if not isinstance(detection, dict):
+            return False
+        centroid = detection.get('centroid')
+        if centroid is None:
+            return False
+        arena_xy_cm = tracker.project_point_to_cm(
+            (float(centroid[0]), float(centroid[1]))
+        )
+        distances = tracker._object_distances_cm(
+            detection.get('contour'),
+            arena_xy_cm,
+        )
+        trigger_radius = tracker.interaction_radius_cm + max(
+            0.0,
+            float(trigger_margin_cm),
+        )
+        return any(
+            distance is not None and float(distance) <= trigger_radius
+            for distance in distances
+        )
+
+    @staticmethod
+    def _hybrid_cache_payload(
+        video_path,
+        vision_config,
+        roi_configs,
+        sampling,
+    ):
+        return {
+            'pipeline': 'nor-hybrid-crop-v2',
+            'video': video_identity(video_path),
+            'model_reference': vision_config.get('pose_model_reference'),
+            'model_checksum': vision_config.get('pose_model_weights_checksum'),
+            'keypoint_schema': vision_config.get('pose_keypoint_schema'),
+            'pose_confidence_threshold': vision_config.get('pose_confidence_threshold', 0.8),
+            'pose_trigger_margin_cm': vision_config.get('pose_trigger_margin_cm', 2.0),
+            'pose_crop_padding_ratio': vision_config.get('pose_crop_padding_ratio', 0.5),
+            'interaction_radius_cm': vision_config.get('interaction_radius_cm', 4.0),
+            'orientation_override': vision_config.get('orientation_override'),
+            'background': {
+                key: vision_config.get(key)
+                for key in (
+                    'bg_method',
+                    'gray_threshold',
+                    'invert',
+                    'erosion_kernel',
+                    'erosion_iter',
+                    'dilation_kernel',
+                    'dilation_iter',
+                    'min_area',
+                )
+            },
+            'sampling': {
+                key: sampling.get(key)
+                for key in (
+                    'frame_stride',
+                    'scale',
+                    'analysis_width',
+                    'analysis_height',
+                    'effective_fps',
+                )
+            },
+            'rois': roi_configs,
+        }
+
+    def _infer_hybrid_batch(
+        self,
+        batch,
+        trackers,
+        pose_coordinator,
+        bg_subtractor,
+        morph_processor,
+        detector,
+        vision_config,
+        persistent_pose_cache,
+    ):
+        prepared_detections = []
+        triggered_roi_ids = []
+        frame_observations = [dict() for _item in batch]
+        frame_errors = [None for _item in batch]
+        pending = []
+        trigger_margin_cm = float(vision_config.get('pose_trigger_margin_cm', 2.0))
+        crop_padding_ratio = float(vision_config.get('pose_crop_padding_ratio', 0.5))
+
+        for batch_offset, item in enumerate(batch):
+            current_frame_no = int(item['source_frame_no'])
+            analysis_frame = item['frame']
+            gray = item['gray']
+            begin_frame_cache(bg_subtractor, current_frame_no)
+            frame_detections = {}
+            frame_triggered = set()
+            for tracker in trackers:
+                roi_id = int(tracker.roi_id)
+                detection_result = tracker.detect_mouse(
+                    analysis_frame,
+                    gray,
+                    bg_subtractor,
+                    morph_processor,
+                    detector,
+                )
+                frame_detections[roi_id] = detection_result
+                detection = detection_result[0]
+                if (
+                    not self._hybrid_pose_triggered(
+                        tracker,
+                        detection,
+                        trigger_margin_cm,
+                    )
+                    or detection.get('bbox') is None
+                ):
+                    continue
+                frame_triggered.add(roi_id)
+                crop_box = self._hybrid_crop_box(
+                    analysis_frame.shape,
+                    detection['bbox'],
+                    crop_padding_ratio,
+                )
+                cached = (
+                    persistent_pose_cache.get(current_frame_no, roi_id, crop_box)
+                    if persistent_pose_cache is not None
+                    else None
+                )
+                if cached is not None:
+                    if cached.observation is not None:
+                        frame_observations[batch_offset][roi_id] = cached.observation
+                    if cached.error and frame_errors[batch_offset] is None:
+                        frame_errors[batch_offset] = cached.error
+                    continue
+                x, y, width, height = crop_box
+                pending.append(
+                    {
+                        'batch_offset': batch_offset,
+                        'frame_no': current_frame_no,
+                        'roi_id': roi_id,
+                        'crop_box': crop_box,
+                        'frame': analysis_frame[y:y + height, x:x + width],
+                        'offset': (x, y),
+                    }
+                )
+            prepared_detections.append(frame_detections)
+            triggered_roi_ids.append(frame_triggered)
+
+        if pending:
+            padded_frames, valid_sizes = self._pad_hybrid_crop_batch(pending)
+            inferred = pose_coordinator.infer_crops(
+                padded_frames,
+                roi_ids=[request['roi_id'] for request in pending],
+                offsets=[request['offset'] for request in pending],
+                valid_sizes=valid_sizes,
+            )
+            for request, pose_result in zip(pending, inferred):
+                batch_offset = int(request['batch_offset'])
+                roi_id = int(request['roi_id'])
+                observation = pose_result.by_roi_id.get(roi_id)
+                if observation is not None:
+                    frame_observations[batch_offset][roi_id] = observation
+                if pose_result.error and frame_errors[batch_offset] is None:
+                    frame_errors[batch_offset] = pose_result.error
+                if persistent_pose_cache is not None and pose_result.error is None:
+                    persistent_pose_cache.put(
+                        request['frame_no'],
+                        roi_id,
+                        request['crop_box'],
+                        observation,
+                    )
+
+        return (
+            [
+                PoseFrameResult(observations, error=error)
+                for observations, error in zip(frame_observations, frame_errors)
+            ],
+            prepared_detections,
+            triggered_roi_ids,
+        )
+
     def _analyze_single_video(self, video_path, video_info, batch_index=None):
         video_start_time = time.time()
         video_index = 0 if batch_index is None else int(batch_index)
@@ -259,13 +484,20 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         strict_pose_only = (
             pose_backend_active and requested_tracking_backend == 'deeplabcut'
         )
+        hybrid_mode = (
+            pose_backend_active and requested_tracking_backend == 'hybrid'
+        )
         allow_classical_fallback = (
             pose_backend_active and requested_tracking_backend == 'auto'
         )
         missing_tracking_source = (
-            'classical_fallback'
+            'classical'
+            if hybrid_mode
+            else (
+                'classical_fallback'
             if allow_classical_fallback
             else ('deeplabcut' if pose_backend_active else 'classical')
+            )
         )
         if strict_pose_only:
             bg_subtractor = morph_processor = detector = None
@@ -289,6 +521,23 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         pose_coordinator = PoseInferenceCoordinator(vision_config, trackers)
         requested_pose_batch_size = pose_coordinator.batch_size
         pose_cache = {}
+        persistent_pose_cache = None
+        if hybrid_mode:
+            try:
+                cache_root = Path(RESULT_DIR).parent / 'dlc_pose_cache'
+                persistent_pose_cache = PersistentNorPoseCache(
+                    cache_root,
+                    self._hybrid_cache_payload(
+                        video_path,
+                        vision_config,
+                        roi_configs,
+                        sampling,
+                    ),
+                    enabled=bool(vision_config.get('pose_cache_enabled', True)),
+                )
+            except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+                self._log(f"NOR persistent DLC cache unavailable: {exc}")
+                persistent_pose_cache = None
         if pose_coordinator.enabled:
             self._log(
                 "NOR DeepLabCut tracking enabled: "
@@ -299,6 +548,11 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                 self._log(
                     "NOR strict DeepLabCut mode: grayscale segmentation and "
                     "PCA head-direction fallback are disabled."
+                )
+            elif hybrid_mode:
+                self._log(
+                    "NOR hybrid tracking enabled: classical vision drives the "
+                    "full trajectory; expanded mouse crops use DLC only near objects."
                 )
         self._log(f"Configured {len(trackers)} NOR arenas")
 
@@ -325,9 +579,27 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         ):
             if not self.is_running:
                 break
-            pose_frames = pose_coordinator.infer_many(
-                [item['frame'] for item in batch]
-            )
+            hybrid_detections = None
+            hybrid_triggered_roi_ids = None
+            if hybrid_mode:
+                (
+                    pose_frames,
+                    hybrid_detections,
+                    hybrid_triggered_roi_ids,
+                ) = self._infer_hybrid_batch(
+                    batch,
+                    trackers,
+                    pose_coordinator,
+                    bg_subtractor,
+                    morph_processor,
+                    detector,
+                    vision_config,
+                    persistent_pose_cache,
+                )
+            else:
+                pose_frames = pose_coordinator.infer_many(
+                    [item['frame'] for item in batch]
+                )
             if (
                 pose_coordinator.enabled
                 and pose_coordinator.effective_batch_size != logged_effective_batch_size
@@ -338,7 +610,7 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                     f"{logged_effective_batch_size} "
                     f"(requested {requested_pose_batch_size})."
                 )
-            for item, pose_frame in zip(batch, pose_frames):
+            for batch_offset, (item, pose_frame) in enumerate(zip(batch, pose_frames)):
                 current_frame_no = int(item['source_frame_no'])
                 analysis_frame = item['frame']
                 gray = item['gray']
@@ -348,12 +620,28 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                     current_frame_no,
                     sample_fps=sampling['effective_fps'],
                 )
-                if bg_subtractor is not None:
+                if bg_subtractor is not None and not hybrid_mode:
                     begin_frame_cache(bg_subtractor, current_frame_no)
                 pose_cache[current_frame_no] = pose_frame
                 results = []
                 for tracker in trackers:
-                    pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
+                    roi_id = int(tracker.roi_id)
+                    pose_observation = pose_frame.by_roi_id.get(roi_id)
+                    hybrid_triggered = bool(
+                        hybrid_triggered_roi_ids is not None
+                        and roi_id in hybrid_triggered_roi_ids[batch_offset]
+                    )
+                    fallback_reason = None
+                    if pose_observation is None and (not hybrid_mode or hybrid_triggered):
+                        fallback_reason = (
+                            pose_frame.error
+                            or vision_config.get('tracking_fallback_reason')
+                            or (
+                                'pose_low_confidence_or_unassigned'
+                                if pose_backend_active
+                                else None
+                            )
+                        )
                     results.append(
                         tracker.update(
                             analysis_frame,
@@ -366,13 +654,16 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                             dt_s=current_dt,
                             pose_observation=pose_observation,
                             tracking_source=missing_tracking_source,
-                            fallback_reason=(
-                                pose_frame.error
-                                or vision_config.get('tracking_fallback_reason')
-                                or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
-                            ) if pose_observation is None else None,
+                            fallback_reason=fallback_reason,
                             allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
                             strict_pose_only=strict_pose_only,
+                            precomputed_detection=(
+                                hybrid_detections[batch_offset].get(roi_id)
+                                if hybrid_detections is not None
+                                else None
+                            ),
+                            prefer_classical_position=hybrid_mode,
+                            require_pose_for_exploration=hybrid_mode,
                         )
                     )
                 previous_analyzed_frame = current_frame_no
@@ -406,6 +697,35 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                         f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
                     )
 
+        persistent_cache_stats = {
+            'enabled': bool(
+                persistent_pose_cache is not None
+                and persistent_pose_cache.enabled
+            ),
+            'hits': int(
+                persistent_pose_cache.hits
+                if persistent_pose_cache is not None
+                else 0
+            ),
+            'misses': int(
+                persistent_pose_cache.misses
+                if persistent_pose_cache is not None
+                else 0
+            ),
+            'writes': int(
+                persistent_pose_cache.writes
+                if persistent_pose_cache is not None
+                else 0
+            ),
+        }
+        if persistent_pose_cache is not None:
+            persistent_pose_cache.close()
+            self._log(
+                "NOR persistent DLC cache: "
+                f"{persistent_cache_stats['hits']} hits, "
+                f"{persistent_cache_stats['misses']} misses, "
+                f"{persistent_cache_stats['writes']} writes."
+            )
         pose_coordinator.close()
         cap.release()
         if not self.is_running:
@@ -426,14 +746,29 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
             summary['tracking_backend_effective'] = vision_config.get('tracking_backend_effective', 'classical')
             summary['pose_batch_size_requested'] = requested_pose_batch_size
             summary['pose_batch_size_effective'] = pose_coordinator.effective_batch_size
+            summary['pose_trigger_margin_cm'] = float(
+                vision_config.get('pose_trigger_margin_cm', 2.0)
+            )
+            summary['pose_crop_padding_ratio'] = float(
+                vision_config.get('pose_crop_padding_ratio', 0.5)
+            )
+            summary['pose_cache_enabled'] = persistent_cache_stats['enabled']
+            summary['pose_cache_hits'] = persistent_cache_stats['hits']
+            summary['pose_cache_misses'] = persistent_cache_stats['misses']
+            summary['pose_cache_writes'] = persistent_cache_stats['writes']
             summary['tracking_fallback_reason'] = vision_config.get('tracking_fallback_reason')
             dlc_frames = int(summary.get('deeplabcut_frames') or 0)
             fallback_frames = int(summary.get('classical_fallback_frames') or 0)
             missing_dlc_frames = int(summary.get('deeplabcut_missing_frames') or 0)
-            summary['tracking_backend_observed'] = (
-                'mixed' if dlc_frames and fallback_frames
-                else ('deeplabcut' if dlc_frames or missing_dlc_frames else 'classical')
-            )
+            if hybrid_mode:
+                summary['tracking_backend_observed'] = (
+                    'hybrid' if dlc_frames else 'classical'
+                )
+            else:
+                summary['tracking_backend_observed'] = (
+                    'mixed' if dlc_frames and fallback_frames
+                    else ('deeplabcut' if dlc_frames or missing_dlc_frames else 'classical')
+                )
             self._add_sampling_summary_fields(summary, sampling)
             self._add_timebase_summary_fields(summary, timebase_summary)
             summary['video_name'] = video_info.get('original_name', video_name)
@@ -669,13 +1004,20 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
         strict_pose_only = (
             pose_backend_active and requested_tracking_backend == 'deeplabcut'
         )
+        hybrid_mode = (
+            pose_backend_active and requested_tracking_backend == 'hybrid'
+        )
         allow_classical_fallback = (
             pose_backend_active and requested_tracking_backend == 'auto'
         )
         missing_tracking_source = (
-            'classical_fallback'
+            'classical'
+            if hybrid_mode
+            else (
+                'classical_fallback'
             if allow_classical_fallback
             else ('deeplabcut' if pose_backend_active else 'classical')
+            )
         )
         if strict_pose_only:
             bg_subtractor = morph_processor = detector = None
@@ -744,10 +1086,17 @@ class NovelObjectMultiArenaAnalysisSession(AnalysisSessionBase):
                             fallback_reason=(
                                 pose_frame.error
                                 or vision_config.get('tracking_fallback_reason')
-                                or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
+                                or (
+                                    'pose_low_confidence_or_unassigned'
+                                    if pose_backend_active and not hybrid_mode
+                                    and pose_observation is None
+                                    else None
+                                )
                             ) if pose_observation is None else None,
                             allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
                             strict_pose_only=strict_pose_only,
+                            prefer_classical_position=hybrid_mode,
+                            require_pose_for_exploration=hybrid_mode,
                         )
                     )
                 previous_analyzed_frame = current_frame_no

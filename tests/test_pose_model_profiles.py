@@ -147,6 +147,28 @@ def test_tracking_backend_is_separate_from_background_method() -> None:
         assert config["per_video_configs"][0]["pose_model_profile_id"] == "profile-b"
 
 
+def test_nor_hybrid_settings_are_normalized_without_leaking_into_oft() -> None:
+    sess = {"video_infos": [{}], "start_seconds": None, "end_seconds": None}
+    data = {
+        "tracking_backend": "hybrid",
+        "pose_trigger_margin_cm": 3.5,
+        "pose_crop_padding_ratio": 0.75,
+        "pose_cache_enabled": False,
+        "per_video_configs": [{}],
+    }
+    nor = build_novel_object_config(sess, data)
+    oft = build_open_field_config(sess, data)
+
+    assert nor["tracking_backend"] == "hybrid"
+    assert nor["pose_trigger_margin_cm"] == 3.5
+    assert nor["pose_crop_padding_ratio"] == 0.75
+    assert nor["pose_cache_enabled"] is False
+    assert oft["tracking_backend"] == "classical"
+    assert "pose_trigger_margin_cm" not in oft
+    assert "pose_crop_padding_ratio" not in oft
+    assert "pose_cache_enabled" not in oft
+
+
 def _api_app(tmp_path: Path, sessions: dict | None = None) -> Flask:
     app = Flask(__name__)
     noop = lambda *args, **kwargs: None
@@ -231,6 +253,19 @@ def test_runtime_resolution_is_explicit_about_fallback() -> None:
         "fallback_reason": "dependency_missing",
     }
     assert DeepLabCutRuntime(command="").status()["available"] is False
+
+
+def test_runtime_resolution_accepts_nor_hybrid_backend() -> None:
+    available = {"available": True, "code": "external_worker_configured"}
+    assert resolve_tracking_backend(
+        "hybrid",
+        runtime_status=available,
+        model_ready=True,
+    ) == {
+        "requested": "hybrid",
+        "effective": "deeplabcut",
+        "fallback_reason": None,
+    }
 
 
 def test_frozen_runtime_discovers_dlc_venv_beside_executable(
@@ -516,6 +551,47 @@ def test_pose_coordinator_batch_preserves_frame_order_and_roi_assignment() -> No
     assert results[0].by_roi_id[1]["individual_id"] == "first"
     assert results[1].by_roi_id[2]["individual_id"] == "second"
     assert coordinator.effective_batch_size == 2
+
+
+def test_pose_coordinator_crop_inference_restores_full_frame_coordinates() -> None:
+    tracker = OpenFieldTracker(
+        arena_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        arena_side_cm=50,
+        roi_id=7,
+    )
+
+    class Runtime:
+        effective_batch_size = 2
+
+        def infer_frames(self, frames, **kwargs):
+            assert len(frames) == 2
+            assert kwargs["max_individuals"] == 1
+            return [
+                {"keypoints": _pose(body=(5, 6))["keypoints"]},
+                {"keypoints": _pose(body=(7, 8))["keypoints"]},
+            ]
+
+        def close(self):
+            pass
+
+    coordinator = PoseInferenceCoordinator(
+        {
+            "tracking_backend_effective": "deeplabcut",
+            "pose_confidence_threshold": 0.8,
+            "pose_batch_size": 2,
+        },
+        [tracker],
+        runtime=Runtime(),
+    )
+    results = coordinator.infer_crops(
+        [np.zeros((20, 20, 3), dtype=np.uint8) for _index in range(2)],
+        roi_ids=[7, 7],
+        offsets=[(100, 200), (300, 400)],
+    )
+    first_body = results[0].by_roi_id[7]["keypoints"]["body_center"]
+    second_body = results[1].by_roi_id[7]["keypoints"]["body_center"]
+    assert (first_body["x"], first_body["y"]) == (105.0, 206.0)
+    assert (second_body["x"], second_body["y"]) == (307.0, 408.0)
 
 
 def test_runtime_config_activates_ready_profile_and_rejects_pending_child(tmp_path: Path) -> None:
