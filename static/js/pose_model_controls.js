@@ -46,13 +46,19 @@
     }
 
     function readConfig() {
-        return {
+        const config = {
             tracking_backend: byId('trackingBackend')?.value || 'classical',
             pose_model_profile_id: byId('poseModelProfile')?.value || null,
             pose_model_version_id: byId('poseModelVersion')?.value || null,
             pose_confidence_threshold: Number(byId('poseConfidenceThreshold')?.value || 0.8),
             pose_batch_size: Math.max(1, Math.min(16, Number(byId('poseBatchSize')?.value || 4))),
         };
+        if (byId('poseTriggerMarginCm')) {
+            config.pose_trigger_margin_cm = Math.max(0, Math.min(20, Number(byId('poseTriggerMarginCm').value || 2)));
+            config.pose_crop_padding_ratio = Math.max(0, Math.min(3, Number(byId('poseCropPaddingRatio')?.value || 0.5)));
+            config.pose_cache_enabled = byId('poseCacheEnabled')?.checked ?? true;
+        }
+        return config;
     }
 
     function applyConfig(config) {
@@ -60,9 +66,15 @@
         const backend = byId('trackingBackend');
         const confidence = byId('poseConfidenceThreshold');
         const batchSize = byId('poseBatchSize');
+        const triggerMargin = byId('poseTriggerMarginCm');
+        const cropPadding = byId('poseCropPaddingRatio');
+        const cacheEnabled = byId('poseCacheEnabled');
         if (backend && raw.tracking_backend) backend.value = raw.tracking_backend;
         if (confidence && raw.pose_confidence_threshold != null) confidence.value = String(raw.pose_confidence_threshold);
         if (batchSize && raw.pose_batch_size != null) batchSize.value = String(raw.pose_batch_size);
+        if (triggerMargin && raw.pose_trigger_margin_cm != null) triggerMargin.value = String(raw.pose_trigger_margin_cm);
+        if (cropPadding && raw.pose_crop_padding_ratio != null) cropPadding.value = String(raw.pose_crop_padding_ratio);
+        if (cacheEnabled && raw.pose_cache_enabled != null) cacheEnabled.checked = Boolean(raw.pose_cache_enabled);
         state.requestedSelection = {
             profileId: raw.pose_model_profile_id || '',
             versionId: raw.pose_model_version_id || '',
