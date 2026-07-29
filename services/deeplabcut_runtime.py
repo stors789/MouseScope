@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+import atexit
 import importlib.util
 import json
 import os
@@ -45,6 +46,7 @@ class DeepLabCutRuntime:
         self._process_lock = threading.RLock()
         self._reader_thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
+        self.effective_batch_size: int | None = None
 
     @staticmethod
     def _main_module_installed() -> bool:
@@ -60,6 +62,11 @@ class DeepLabCutRuntime:
     @staticmethod
     def _python_candidates() -> list[tuple[Path, str]]:
         root = Path(__file__).resolve().parents[1]
+        application_root = (
+            Path(sys.executable).resolve().parent
+            if getattr(sys, "frozen", False)
+            else root
+        )
         home = Path.home()
         configured_python = str(os.environ.get("MOUSESCOPE_DLC_PYTHON") or "").strip()
         candidates: list[tuple[Path, str]] = []
@@ -67,6 +74,10 @@ class DeepLabCutRuntime:
             candidates.append((Path(configured_python).expanduser(), "MOUSESCOPE_DLC_PYTHON"))
         candidates.extend(
             [
+                (application_root / ".venv-dlc" / "bin" / "python", "application_dlc_venv"),
+                (application_root / ".venv-dlc" / "Scripts" / "python.exe", "application_dlc_venv"),
+                (application_root / "venv-dlc" / "bin" / "python", "application_dlc_venv"),
+                (application_root / "venv-dlc" / "Scripts" / "python.exe", "application_dlc_venv"),
                 (root / ".venv-dlc" / "bin" / "python", "project_dlc_venv"),
                 (root / ".venv-dlc" / "Scripts" / "python.exe", "project_dlc_venv"),
                 (root / "venv-dlc" / "bin" / "python", "project_dlc_venv"),
@@ -90,7 +101,10 @@ class DeepLabCutRuntime:
     def _resolve_command(self) -> tuple[list[str], str | None]:
         if self.command:
             try:
-                return shlex.split(self.command), "MOUSESCOPE_DLC_WORKER"
+                return shlex.split(
+                    self.command,
+                    posix=os.name != "nt",
+                ), "MOUSESCOPE_DLC_WORKER"
             except ValueError:
                 return [], None
         # command="" is an intentional opt-out used by diagnostics/tests.
@@ -380,12 +394,62 @@ class DeepLabCutRuntime:
         keypoint_schema: list[dict[str, Any]],
         max_individuals: int = 1,
     ) -> dict[str, Any]:
-        return self.preview_frame(
-            frame,
+        return self.infer_frames(
+            [frame],
             model_reference=model_reference,
             keypoint_schema=keypoint_schema,
             max_individuals=max_individuals,
-        )
+            batch_size=1,
+        )[0]
+
+    def infer_frames(
+        self,
+        frames,
+        *,
+        model_reference: str,
+        keypoint_schema: list[dict[str, Any]],
+        max_individuals: int = 1,
+        batch_size: int = 4,
+    ) -> list[dict[str, Any]]:
+        frame_list = list(frames or [])
+        if not frame_list:
+            return []
+        status = self.status()
+        if not status["available"]:
+            raise DeepLabCutRuntimeError(status["message"])
+        requested_batch_size = max(1, min(16, int(batch_size or 1)))
+        with tempfile.TemporaryDirectory(prefix="mousescope-dlc-batch-") as temp_dir:
+            image_paths: list[str] = []
+            for index, frame in enumerate(frame_list):
+                image_path = Path(temp_dir) / f"frame-{index:04d}.png"
+                if not cv2.imwrite(str(image_path), frame):
+                    raise DeepLabCutRuntimeError(
+                        f"Unable to prepare DLC batch frame {index}."
+                    )
+                image_paths.append(str(image_path))
+            payload = self._persistent_request(
+                {
+                    "operation": "infer_batch",
+                    "image_paths": image_paths,
+                    "model_reference": model_reference,
+                    "keypoint_schema": keypoint_schema,
+                    "max_individuals": max(1, int(max_individuals)),
+                    "batch_size": requested_batch_size,
+                }
+            )
+        items = payload.get("items")
+        if not isinstance(items, list) or len(items) != len(frame_list):
+            raise DeepLabCutRuntimeError(
+                "DLC worker batch result count does not match the input frame count."
+            )
+        try:
+            self.effective_batch_size = max(
+                1,
+                int(payload.get("effective_batch_size") or requested_batch_size),
+            )
+        except (TypeError, ValueError):
+            self.effective_batch_size = requested_batch_size
+        return items
 
     def close(self) -> None:
         with self._process_lock:
@@ -411,6 +475,29 @@ class DeepLabCutRuntime:
             self.close()
         except Exception:
             pass
+
+
+_SHARED_RUNTIME: DeepLabCutRuntime | None = None
+_SHARED_RUNTIME_LOCK = threading.Lock()
+
+
+def shared_deeplabcut_runtime() -> DeepLabCutRuntime:
+    global _SHARED_RUNTIME
+    with _SHARED_RUNTIME_LOCK:
+        if _SHARED_RUNTIME is None:
+            _SHARED_RUNTIME = DeepLabCutRuntime()
+        return _SHARED_RUNTIME
+
+
+def close_shared_deeplabcut_runtime() -> None:
+    global _SHARED_RUNTIME
+    with _SHARED_RUNTIME_LOCK:
+        runtime, _SHARED_RUNTIME = _SHARED_RUNTIME, None
+    if runtime is not None:
+        runtime.close()
+
+
+atexit.register(close_shared_deeplabcut_runtime)
 
 
 def resolve_tracking_backend(

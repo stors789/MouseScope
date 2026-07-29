@@ -62,7 +62,11 @@ from services.pose_model_profiles import (
     SUPERANIMAL_MODEL_REF,
     PoseModelValidationError,
 )
-from services.deeplabcut_runtime import DeepLabCutRuntime, DeepLabCutRuntimeError
+from services.deeplabcut_runtime import (
+    DeepLabCutRuntime,
+    DeepLabCutRuntimeError,
+    shared_deeplabcut_runtime,
+)
 from services.pose_tracking import resolve_pose_runtime_config
 
 
@@ -375,7 +379,7 @@ def register_api_routes(app, ctx) -> None:
             model_reference = str(weights.get('reference') or model_reference)
             keypoint_schema = version.get('keypoint_schema') or keypoint_schema
 
-        runtime = DeepLabCutRuntime()
+        runtime = shared_deeplabcut_runtime()
         runtime_status = runtime.status()
         if not runtime_status.get('available'):
             return jsonify(

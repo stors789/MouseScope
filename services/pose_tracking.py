@@ -11,6 +11,7 @@ from services.deeplabcut_runtime import (
     DeepLabCutRuntime,
     DeepLabCutRuntimeError,
     resolve_tracking_backend,
+    shared_deeplabcut_runtime,
 )
 from services.pose_model_profiles import DEFAULT_KEYPOINT_SCHEMA, SUPERANIMAL_MODEL_REF
 
@@ -156,9 +157,16 @@ class PoseInferenceCoordinator:
     ) -> None:
         self.config = config
         self.trackers = list(trackers)
-        self.runtime = runtime or DeepLabCutRuntime()
+        self.runtime = runtime or shared_deeplabcut_runtime()
+        self._owns_runtime = runtime is not None
         self.enabled = str(config.get("tracking_backend_effective") or "classical") == "deeplabcut"
         self.confidence_threshold = float(config.get("pose_confidence_threshold", 0.8))
+        try:
+            configured_batch_size = int(config.get("pose_batch_size") or 4)
+        except (TypeError, ValueError):
+            configured_batch_size = 4
+        self.batch_size = max(1, min(16, configured_batch_size))
+        self.effective_batch_size = self.batch_size
         self.model_reference = str(config.get("pose_model_reference") or SUPERANIMAL_MODEL_REF)
         self.keypoint_schema = config.get("pose_keypoint_schema") or DEFAULT_KEYPOINT_SCHEMA
         self.frames_requested = 0
@@ -168,24 +176,12 @@ class PoseInferenceCoordinator:
         self.disabled_reason: str | None = None
 
     def infer(self, frame) -> PoseFrameResult:
-        if not self.enabled or self.disabled_reason:
-            return PoseFrameResult({}, error=self.disabled_reason)
-        self.frames_requested += 1
-        try:
-            payload = self.runtime.infer_frame(
-                frame,
-                model_reference=self.model_reference,
-                keypoint_schema=self.keypoint_schema,
-                max_individuals=max(1, len(self.trackers)),
-            )
-        except DeepLabCutRuntimeError as exc:
-            self.frames_failed += 1
-            self.consecutive_worker_errors += 1
-            if self.consecutive_worker_errors >= 3:
-                self.disabled_reason = f"DLC worker disabled after repeated errors: {exc}"
-            return PoseFrameResult({}, error=self.disabled_reason or str(exc))
-        self.consecutive_worker_errors = 0
-        observations = normalise_pose_output(payload)
+        return self.infer_many([frame])[0]
+
+    def _assign_observations(
+        self,
+        observations: list[dict[str, Any]],
+    ) -> PoseFrameResult:
         assigned: dict[int, dict[str, Any]] = {}
         used: set[int] = set()
         for tracker in self.trackers:
@@ -216,8 +212,56 @@ class PoseInferenceCoordinator:
             self.frames_failed += 1
         return PoseFrameResult(assigned)
 
+    def infer_many(self, frames) -> list[PoseFrameResult]:
+        frame_list = list(frames or [])
+        if not frame_list:
+            return []
+        if not self.enabled or self.disabled_reason:
+            return [
+                PoseFrameResult({}, error=self.disabled_reason)
+                for _frame in frame_list
+            ]
+        self.frames_requested += len(frame_list)
+        try:
+            if hasattr(self.runtime, "infer_frames"):
+                payloads = self.runtime.infer_frames(
+                    frame_list,
+                    model_reference=self.model_reference,
+                    keypoint_schema=self.keypoint_schema,
+                    max_individuals=max(1, len(self.trackers)),
+                    batch_size=self.batch_size,
+                )
+            else:
+                payloads = [
+                    self.runtime.infer_frame(
+                        frame,
+                        model_reference=self.model_reference,
+                        keypoint_schema=self.keypoint_schema,
+                        max_individuals=max(1, len(self.trackers)),
+                    )
+                    for frame in frame_list
+                ]
+        except DeepLabCutRuntimeError as exc:
+            self.frames_failed += len(frame_list)
+            self.consecutive_worker_errors += 1
+            if self.consecutive_worker_errors >= 3:
+                self.disabled_reason = f"DLC worker disabled after repeated errors: {exc}"
+            return [
+                PoseFrameResult({}, error=self.disabled_reason or str(exc))
+                for _frame in frame_list
+            ]
+        self.consecutive_worker_errors = 0
+        effective = getattr(self.runtime, "effective_batch_size", None)
+        if effective is not None:
+            self.effective_batch_size = max(1, int(effective))
+        return [
+            self._assign_observations(normalise_pose_output(payload))
+            for payload in payloads
+        ]
+
     def close(self) -> None:
-        self.runtime.close()
+        if self._owns_runtime:
+            self.runtime.close()
 
     def __del__(self) -> None:
         try:

@@ -233,6 +233,22 @@ def test_runtime_resolution_is_explicit_about_fallback() -> None:
     assert DeepLabCutRuntime(command="").status()["available"] is False
 
 
+def test_frozen_runtime_discovers_dlc_venv_beside_executable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    executable = tmp_path / "MouseScope.exe"
+    monkeypatch.delenv("MOUSESCOPE_DLC_PYTHON", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(executable))
+    candidates = DeepLabCutRuntime._python_candidates()
+    assert (
+        tmp_path / ".venv-dlc" / "Scripts" / "python.exe",
+        "application_dlc_venv",
+    ) in candidates
+    assert all("E:\\MouseScope" not in str(path) for path, _origin in candidates)
+
+
 def test_oft_and_nor_pages_expose_pose_archive_controls() -> None:
     for filename in ("calibrate_openfield.html", "calibrate_nor.html"):
         text = (ROOT / "templates" / filename).read_text(encoding="utf-8")
@@ -348,6 +364,59 @@ def test_pose_coordinator_runs_once_and_assigns_individuals_to_rois() -> None:
     assert result.by_roi_id[1]["individual_id"] == "left"
     assert result.by_roi_id[2]["individual_id"] == "right"
     assert coordinator.frames_succeeded == 1
+
+
+def test_pose_coordinator_batch_preserves_frame_order_and_roi_assignment() -> None:
+    trackers = [
+        OpenFieldTracker(
+            arena_points=[[0, 0], [49, 0], [49, 100], [0, 100]],
+            arena_side_cm=50,
+            roi_id=1,
+        ),
+        OpenFieldTracker(
+            arena_points=[[51, 0], [100, 0], [100, 100], [51, 100]],
+            arena_side_cm=50,
+            roi_id=2,
+        ),
+    ]
+
+    class Runtime:
+        effective_batch_size = 2
+
+        def infer_frames(self, frames, **_kwargs):
+            assert len(frames) == 2
+            return [
+                {
+                    "individuals": [
+                        {"individual_id": "first", "keypoints": _pose(body=(25, 50))["keypoints"]}
+                    ]
+                },
+                {
+                    "individuals": [
+                        {"individual_id": "second", "keypoints": _pose(body=(75, 50))["keypoints"]}
+                    ]
+                },
+            ]
+
+        def close(self):
+            pass
+
+    coordinator = PoseInferenceCoordinator(
+        {
+            "tracking_backend_effective": "deeplabcut",
+            "pose_confidence_threshold": 0.8,
+            "pose_batch_size": 2,
+        },
+        trackers,
+        runtime=Runtime(),
+    )
+    results = coordinator.infer_many(
+        [np.zeros((8, 8, 3), dtype=np.uint8) for _index in range(2)]
+    )
+    assert len(results) == 2
+    assert results[0].by_roi_id[1]["individual_id"] == "first"
+    assert results[1].by_roi_id[2]["individual_id"] == "second"
+    assert coordinator.effective_batch_size == 2
 
 
 def test_runtime_config_activates_ready_profile_and_rejects_pending_child(tmp_path: Path) -> None:
