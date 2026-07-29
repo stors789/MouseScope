@@ -129,6 +129,59 @@ def test_official_predictor_initializes_runners_once_and_reuses_them() -> None:
     assert len([event for event in events if event[0] == "pose"]) == 2
 
 
+def test_official_predictor_keeps_empty_detection_frames_in_batch_order() -> None:
+    class FakeModelZoo:
+        @staticmethod
+        def load_super_animal_config(**_kwargs):
+            return {
+                "metadata": {"bodyparts": BODY_PARTS, "individuals": ["animal"]},
+                "detector": {"model": {}},
+            }
+
+        @staticmethod
+        def get_super_animal_snapshot_path(*, dataset, model_name):
+            return f"/weights/{dataset}/{model_name}.pt"
+
+    class DetectorRunner:
+        def inference(self, *, images):
+            return [
+                {"bboxes": [[0, 0, 20, 20]]},
+                {"bboxes": []},
+                {"bboxes": [[0, 0, 20, 20]]},
+            ]
+
+    class PoseRunner:
+        def inference(self, inputs):
+            assert [path for path, _boxes in inputs] == ["mouse-1.png", "mouse-2.png"]
+            return [
+                {"bodyparts": [_pose()]},
+                {"bodyparts": [_pose(20)]},
+            ]
+
+    api = {
+        "modelzoo": FakeModelZoo,
+        "superanimal_analyze_images": object(),
+        "update_config": lambda config, _count, _device: config,
+        "get_detector_inference_runner": lambda **_kwargs: DetectorRunner(),
+        "get_pose_inference_runner": lambda **_kwargs: PoseRunner(),
+    }
+    predictor = OfficialSuperAnimalPredictor(
+        parse_model_reference(
+            "deeplabcut://superanimal_topviewmouse/hrnet_w32?device=cpu"
+        ),
+        2,
+        batch_size=4,
+        api_loader=lambda: api,
+    )
+    predictions = predictor.predict_many(
+        ["mouse-1.png", "empty.png", "mouse-2.png"]
+    )
+    assert len(predictions) == 3
+    assert predictions[0]["bodyparts"]
+    assert predictions[1] == {"bodyparts": []}
+    assert predictions[2]["bodyparts"][0][0][0] == 30
+
+
 def test_preview_cli_contract_without_dlc_install(tmp_path: Path) -> None:
     image_path = tmp_path / "frame.png"
     image_path.write_bytes(b"fake image; predictor is monkeypatched")
@@ -185,6 +238,93 @@ def test_handle_request_rejects_non_superanimal_reference(tmp_path: Path) -> Non
         assert "deeplabcut://" in str(exc)
     else:
         raise AssertionError("custom artifact unexpectedly accepted by bundled worker")
+
+
+def test_batch_request_preserves_order_and_configures_runner_batch_size(
+    tmp_path: Path,
+) -> None:
+    image_paths = []
+    for index in range(3):
+        image_path = tmp_path / f"frame-{index}.png"
+        image_path.write_bytes(b"x")
+        image_paths.append(str(image_path))
+    created = []
+
+    class FakePredictor:
+        bodyparts = BODY_PARTS
+        api_backend = "fake-batch"
+
+        def __init__(self, batch_size):
+            self.batch_size = batch_size
+
+        def predict_many(self, paths):
+            return {
+                path: {"bodyparts": [_pose(index * 10)]}
+                for index, path in enumerate(paths)
+            }.values()
+
+    def factory(_spec, _count, batch_size):
+        created.append(batch_size)
+        return FakePredictor(batch_size)
+
+    payload = handle_request(
+        {
+            "operation": "infer_batch",
+            "image_paths": image_paths,
+            "model_reference": "deeplabcut://superanimal_topviewmouse/hrnet_w32",
+            "keypoint_schema": [{"name": "nose"}, {"name": "body_center"}],
+            "max_individuals": 2,
+            "batch_size": 4,
+            "request_id": "batch-1",
+        },
+        registry=PredictorRegistry(predictor_factory=factory),
+    )
+    assert created == [4]
+    assert payload["request_id"] == "batch-1"
+    assert payload["effective_batch_size"] == 4
+    assert [item["keypoints"]["nose"]["x"] for item in payload["items"]] == [
+        10.0,
+        20.0,
+        30.0,
+    ]
+
+
+def test_batch_request_downgrades_after_cuda_oom(tmp_path: Path) -> None:
+    image_paths = []
+    for index in range(3):
+        image_path = tmp_path / f"frame-{index}.png"
+        image_path.write_bytes(b"x")
+        image_paths.append(str(image_path))
+    created = []
+
+    class FakePredictor:
+        bodyparts = BODY_PARTS
+        api_backend = "fake-oom"
+
+        def __init__(self, batch_size):
+            self.batch_size = batch_size
+
+        def predict_many(self, paths):
+            if self.batch_size > 2:
+                raise RuntimeError("CUDA out of memory")
+            return [{"bodyparts": [_pose(index)]} for index, _path in enumerate(paths)]
+
+    def factory(_spec, _count, batch_size):
+        created.append(batch_size)
+        return FakePredictor(batch_size)
+
+    payload = handle_request(
+        {
+            "operation": "infer_batch",
+            "image_paths": image_paths,
+            "model_reference": "deeplabcut://superanimal_topviewmouse/hrnet_w32",
+            "batch_size": 4,
+        },
+        registry=PredictorRegistry(predictor_factory=factory),
+    )
+    assert created == [4, 2]
+    assert payload["effective_batch_size"] == 2
+    assert len(payload["items"]) == 3
 
 
 def test_runtime_status_and_persistent_preview_contract(tmp_path: Path) -> None:
