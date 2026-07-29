@@ -373,6 +373,7 @@ class AnalysisSessionBase:
         end_frame,
         sampling,
         batch_size,
+        prepare_gray=True,
     ):
         prepared = queue.Queue(maxsize=2)
         stop_event = threading.Event()
@@ -406,7 +407,11 @@ class AnalysisSessionBase:
                         {
                             'source_frame_no': current_frame_no,
                             'frame': analysis_frame,
-                            'gray': cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY),
+                            'gray': (
+                                cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+                                if prepare_gray
+                                else None
+                            ),
                         }
                     )
                     skipped = self._grab_skipped_frames(

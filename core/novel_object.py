@@ -1359,6 +1359,7 @@ class NovelObjectTracker:
         pose_observation: Optional[Dict[str, Any]] = None,
         tracking_source: Optional[str] = None,
         fallback_reason: Optional[str] = None,
+        allow_classical_fallback: bool = True,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         try:
@@ -1379,9 +1380,13 @@ class NovelObjectTracker:
             }
             fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
             frame_tracking_source = "deeplabcut"
-        else:
+        elif allow_classical_fallback:
             detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
             frame_tracking_source = tracking_source or "classical"
+        else:
+            detection = None
+            fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            frame_tracking_source = "deeplabcut_missing"
 
         detected = detection is not None
         contour = detection.get("contour") if detection else None
@@ -1480,8 +1485,24 @@ class NovelObjectTracker:
                 self.trajectory_px_live.append(centroid_px)
 
         head_state = self._head_state_from_pose(pose_observation)
-        if head_state is None:
+        if head_state is None and allow_classical_fallback:
             head_state = self._estimate_head_direction(contour, centroid_px, arena_xy_cm, motion_vector_cm, gray=gray)
+        elif head_state is None:
+            head_state = {
+                "estimated": False,
+                "confidence": 0.0,
+                "point_px": None,
+                "point_cm": None,
+                "vector_cm": None,
+                "body_contour": None,
+                "body_centroid": centroid_px,
+                "body_centroid_cm": arena_xy_cm,
+                "tail_contour": None,
+                "tail_point_px": None,
+                "tail_root_px": None,
+                "nose_distances_cm": [None for _obj in self.objects],
+                "object_angles_deg": [None for _obj in self.objects],
+            }
         head_confidence = float(head_state.get("confidence") or 0.0)
         head_confident = bool(
             self.use_head_direction
@@ -1721,6 +1742,9 @@ class NovelObjectTracker:
             ),
             "classical_fallback_frames": sum(
                 1 for record in self.frame_records if record.get("tracking_source") == "classical_fallback"
+            ),
+            "deeplabcut_missing_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "deeplabcut_missing"
             ),
             "frame_tracking_fallback_reasons": ";".join(
                 sorted({

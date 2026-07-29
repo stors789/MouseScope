@@ -67,7 +67,14 @@
             profileId: raw.pose_model_profile_id || '',
             versionId: raw.pose_model_version_id || '',
         };
+        syncBackendUi();
         applyRequestedSelection();
+    }
+
+    function syncBackendUi() {
+        const strictDlc = byId('trackingBackend')?.value === 'deeplabcut';
+        const classicalControls = byId('classicalDetectionControls');
+        if (classicalControls) classicalControls.hidden = strictDlc;
     }
 
     function applyRequestedSelection() {
@@ -338,11 +345,13 @@
         state.sessionId = state.root.dataset.sessionId || '';
         byId('poseModelProfile')?.addEventListener('change', rebuildVersionOptions);
         byId('poseModelVersion')?.addEventListener('change', syncButtons);
+        byId('trackingBackend')?.addEventListener('change', syncBackendUi);
         byId('posePreviewButton')?.addEventListener('click', runPreview);
         byId('poseCreateProfileButton')?.addEventListener('click', createProfile);
         byId('poseAddCorrectionButton')?.addEventListener('click', addCorrection);
         byId('poseCreateVersionButton')?.addEventListener('click', createVersion);
         installCanvasEditing();
+        syncBackendUi();
         try {
             let draftConfig = {};
             try {

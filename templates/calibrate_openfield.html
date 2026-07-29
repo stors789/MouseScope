@@ -203,7 +203,7 @@
                     <div class="oft-panel mb-0">
                         <h6 data-i18n="oft.calib.detect.title">检测参数</h6>
                         {% include "_pose_model_controls.html" %}
-                        <div class="compact-grid">
+                        <div class="compact-grid" id="classicalDetectionControls">
                             <div>
                                 <label class="form-label" data-i18n="oft.calib.detect.method">检测方式</label>
                                 <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">

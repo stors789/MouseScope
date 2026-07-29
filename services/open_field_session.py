@@ -203,17 +203,38 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         start_frame, end_frame = self._time_range_to_frames(timebase, total_frames, start_sec, end_sec)
         global_start_time_s = float(start_sec) if start_sec is not None else 0.0
 
-        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
-            video_path,
-            vision_config,
-            sampling,
-            static_frames=15,
-            erosion_default=1,
-            dilation_default=2,
-            min_area_default=120,
-            temporal_start_frame=start_frame,
-            temporal_end_frame=end_frame,
+        requested_tracking_backend = str(
+            vision_config.get('tracking_backend') or 'classical'
+        ).strip().lower()
+        pose_backend_active = (
+            str(vision_config.get('tracking_backend_effective') or 'classical')
+            == 'deeplabcut'
         )
+        strict_pose_only = (
+            pose_backend_active and requested_tracking_backend == 'deeplabcut'
+        )
+        allow_classical_fallback = (
+            pose_backend_active and requested_tracking_backend == 'auto'
+        )
+        missing_tracking_source = (
+            'classical_fallback'
+            if allow_classical_fallback
+            else ('deeplabcut' if pose_backend_active else 'classical')
+        )
+        if strict_pose_only:
+            bg_subtractor = morph_processor = detector = None
+        else:
+            bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
+                video_path,
+                vision_config,
+                sampling,
+                static_frames=15,
+                erosion_default=1,
+                dilation_default=2,
+                min_area_default=120,
+                temporal_start_frame=start_frame,
+                temporal_end_frame=end_frame,
+            )
 
         source_roi_configs = self._parse_rois(vision_config)
         roi_configs = self._scale_roi_configs_for_sampling(source_roi_configs, sampling)
@@ -225,9 +246,15 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         if pose_coordinator.enabled:
             self._log(
                 "OFT DeepLabCut tracking enabled: "
-                f"batch size {requested_pose_batch_size}, two-batch prefetch; "
-                "ROI-level classical fallback remains active."
+                f"batch size {requested_pose_batch_size}, two-batch prefetch."
             )
+            if strict_pose_only:
+                self._log(
+                    "OFT strict DeepLabCut mode: grayscale segmentation and "
+                    "classical fallback are disabled."
+                )
+            elif allow_classical_fallback:
+                self._log("OFT automatic mode: ROI-level classical fallback is active.")
         self._log(f"Configured {len(trackers)} OFT arenas")
 
         if start_frame > 0:
@@ -246,6 +273,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             end_frame=end_frame,
             sampling=sampling,
             batch_size=requested_pose_batch_size,
+            prepare_gray=not strict_pose_only,
         ):
             if not self.is_running:
                 break
@@ -262,9 +290,6 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                     f"{logged_effective_batch_size} "
                     f"(requested {requested_pose_batch_size})."
                 )
-            fallback_active = (
-                str(vision_config.get('tracking_backend') or 'classical') != 'classical'
-            )
             for item, pose_frame in zip(batch, pose_frames):
                 current_frame_no = int(item['source_frame_no'])
                 analysis_frame = item['frame']
@@ -275,7 +300,8 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                     current_frame_no,
                     sample_fps=sampling['effective_fps'],
                 )
-                begin_frame_cache(bg_subtractor, current_frame_no)
+                if bg_subtractor is not None:
+                    begin_frame_cache(bg_subtractor, current_frame_no)
                 pose_cache[current_frame_no] = pose_frame
                 results = []
                 for tracker in trackers:
@@ -283,7 +309,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                     fallback_reason = (
                         pose_frame.error
                         or vision_config.get('tracking_fallback_reason')
-                        or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
+                        or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
                     )
                     results.append(
                         tracker.update(
@@ -295,8 +321,9 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                             detector,
                             dt_s=current_dt,
                             pose_observation=pose_observation,
-                            tracking_source='classical_fallback' if fallback_active else 'classical',
+                            tracking_source=missing_tracking_source,
                             fallback_reason=fallback_reason if pose_observation is None else None,
+                            allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
                         )
                     )
                 previous_analyzed_frame = current_frame_no
@@ -353,9 +380,10 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             summary['tracking_fallback_reason'] = vision_config.get('tracking_fallback_reason')
             dlc_frames = int(summary.get('deeplabcut_frames') or 0)
             fallback_frames = int(summary.get('classical_fallback_frames') or 0)
+            missing_dlc_frames = int(summary.get('deeplabcut_missing_frames') or 0)
             summary['tracking_backend_observed'] = (
                 'mixed' if dlc_frames and fallback_frames
-                else ('deeplabcut' if dlc_frames else 'classical')
+                else ('deeplabcut' if dlc_frames or missing_dlc_frames else 'classical')
             )
             self._add_sampling_summary_fields(summary, sampling)
             self._add_timebase_summary_fields(summary, timebase_summary)
@@ -538,17 +566,38 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             self._log("OFT annotated video disabled because no writer is available.")
             return False
 
-        bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
-            video_path,
-            vision_config,
-            sampling,
-            static_frames=15,
-            erosion_default=1,
-            dilation_default=2,
-            min_area_default=120,
-            temporal_start_frame=start_frame,
-            temporal_end_frame=end_frame,
+        requested_tracking_backend = str(
+            vision_config.get('tracking_backend') or 'classical'
+        ).strip().lower()
+        pose_backend_active = (
+            str(vision_config.get('tracking_backend_effective') or 'classical')
+            == 'deeplabcut'
         )
+        strict_pose_only = (
+            pose_backend_active and requested_tracking_backend == 'deeplabcut'
+        )
+        allow_classical_fallback = (
+            pose_backend_active and requested_tracking_backend == 'auto'
+        )
+        missing_tracking_source = (
+            'classical_fallback'
+            if allow_classical_fallback
+            else ('deeplabcut' if pose_backend_active else 'classical')
+        )
+        if strict_pose_only:
+            bg_subtractor = morph_processor = detector = None
+        else:
+            bg_subtractor, morph_processor, detector = self._build_processors_for_sampling(
+                video_path,
+                vision_config,
+                sampling,
+                static_frames=15,
+                erosion_default=1,
+                dilation_default=2,
+                min_area_default=120,
+                temporal_start_frame=start_frame,
+                temporal_end_frame=end_frame,
+            )
         render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         frame_idx = 0
@@ -573,13 +622,17 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                     sample_fps=fps,
                 )
                 analysis_frame = self._resize_for_sampling(frame, sampling)
-                gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
-                begin_frame_cache(bg_subtractor, current_frame_no)
+                gray = (
+                    None
+                    if strict_pose_only
+                    else cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
+                )
+                if bg_subtractor is not None:
+                    begin_frame_cache(bg_subtractor, current_frame_no)
                 pose_frame = pose_cache.get(
                     current_frame_no,
                     PoseFrameResult({}, error='pose_cache_miss'),
                 )
-                fallback_active = str(vision_config.get('tracking_backend') or 'classical') != 'classical'
                 results = []
                 for tracker in render_trackers:
                     pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
@@ -593,12 +646,13 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                             detector,
                             dt_s=current_dt,
                             pose_observation=pose_observation,
-                            tracking_source='classical_fallback' if fallback_active else 'classical',
+                            tracking_source=missing_tracking_source,
                             fallback_reason=(
                                 pose_frame.error
                                 or vision_config.get('tracking_fallback_reason')
-                                or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
+                                or ('pose_low_confidence_or_unassigned' if pose_backend_active and pose_observation is None else None)
                             ) if pose_observation is None else None,
+                            allow_classical_fallback=allow_classical_fallback or not pose_backend_active,
                         )
                     )
                 previous_analyzed_frame = current_frame_no

@@ -228,7 +228,7 @@
                     <div class="nor-panel mb-0" data-tour-id="nor-detection-params">
                         <h6 data-nor-i18n="detect.title">检测参数</h6>
                         {% include "_pose_model_controls.html" %}
-                        <div class="compact-grid">
+                        <div class="compact-grid" id="classicalDetectionControls">
                             <div>
                                 <label class="form-label" data-nor-i18n="detect.method">检测方式</label>
                                 <select class="form-select" id="bgMethod" onchange="updateBgMethodUI(); updateDebugPreview();">

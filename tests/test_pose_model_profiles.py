@@ -324,6 +324,105 @@ def test_nor_pose_nose_and_ears_drive_head_gated_exploration() -> None:
     assert tracker.object_exploration_time_s[0] == pytest.approx(0.1)
 
 
+def test_strict_dlc_does_not_run_classical_detection_when_pose_is_missing(
+    monkeypatch,
+) -> None:
+    tracker = OpenFieldTracker(
+        arena_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        arena_side_cm=50,
+        fps=10,
+    )
+    monkeypatch.setattr(
+        tracker,
+        "detect_mouse",
+        lambda *_args, **_kwargs: pytest.fail("classical detector was called"),
+    )
+    result = tracker.update(
+        np.zeros((120, 120, 3), dtype=np.uint8),
+        0.0,
+        np.zeros((120, 120), dtype=np.uint8),
+        None,
+        None,
+        None,
+        pose_observation=None,
+        tracking_source="deeplabcut",
+        allow_classical_fallback=False,
+        fallback_reason="pose_low_confidence_or_unassigned",
+    )
+    assert result["detected"] is False
+    assert result["tracking_source"] == "deeplabcut_missing"
+    assert tracker.build_summary()["deeplabcut_missing_frames"] == 1
+    assert tracker.build_summary()["classical_fallback_frames"] == 0
+
+
+def test_auto_mode_still_runs_classical_detection_when_pose_is_missing(
+    monkeypatch,
+) -> None:
+    tracker = OpenFieldTracker(
+        arena_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        arena_side_cm=50,
+        fps=10,
+    )
+    monkeypatch.setattr(
+        tracker,
+        "detect_mouse",
+        lambda *_args, **_kwargs: (
+            {"centroid": (30.0, 40.0), "bbox": None, "contour": None},
+            np.zeros((120, 120), dtype=np.uint8),
+        ),
+    )
+    result = tracker.update(
+        np.zeros((120, 120, 3), dtype=np.uint8),
+        0.0,
+        np.zeros((120, 120), dtype=np.uint8),
+        None,
+        None,
+        None,
+        pose_observation=None,
+        tracking_source="classical_fallback",
+        allow_classical_fallback=True,
+    )
+    assert result["detected"] is True
+    assert result["tracking_source"] == "classical_fallback"
+
+
+def test_strict_nor_does_not_use_grayscale_head_estimation(
+    monkeypatch,
+) -> None:
+    tracker = NovelObjectTracker(
+        arena_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        object_points=[
+            {"point": [90, 50], "name": "Novel", "role": "novel"},
+            {"point": [10, 10], "name": "Familiar", "role": "familiar"},
+        ],
+        arena_side_cm=50,
+        fps=10,
+    )
+    pose = _pose(body=(50, 50), nose=(65, 50))
+    pose["keypoints"]["nose"]["confidence"] = 0.1
+    pose["keypoints"]["left_ear"]["confidence"] = 0.1
+    pose["keypoints"]["right_ear"]["confidence"] = 0.1
+    monkeypatch.setattr(
+        tracker,
+        "_estimate_head_direction",
+        lambda *_args, **_kwargs: pytest.fail("grayscale head estimator was called"),
+    )
+    result = tracker.update(
+        np.zeros((120, 120, 3), dtype=np.uint8),
+        0.0,
+        np.zeros((120, 120), dtype=np.uint8),
+        None,
+        None,
+        None,
+        pose_observation=pose,
+        tracking_source="deeplabcut",
+        allow_classical_fallback=False,
+    )
+    assert result["tracking_source"] == "deeplabcut"
+    assert result["head_direction_method"] is None
+    assert result["head_point"] is None
+
+
 def test_pose_coordinator_runs_once_and_assigns_individuals_to_rois() -> None:
     trackers = [
         OpenFieldTracker(

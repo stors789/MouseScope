@@ -385,6 +385,7 @@ class OpenFieldTracker:
         pose_observation: Optional[Dict[str, Any]] = None,
         tracking_source: Optional[str] = None,
         fallback_reason: Optional[str] = None,
+        allow_classical_fallback: bool = True,
     ) -> Dict[str, Any]:
         self.total_frames += 1
         try:
@@ -405,9 +406,13 @@ class OpenFieldTracker:
             }
             fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
             frame_tracking_source = "deeplabcut"
-        else:
+        elif allow_classical_fallback:
             detection, fg_mask = self.detect_mouse(frame, gray, bg_subtractor, morph_processor, detector)
             frame_tracking_source = tracking_source or "classical"
+        else:
+            detection = None
+            fg_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            frame_tracking_source = "deeplabcut_missing"
 
         centroid_px: Optional[Tuple[float, float]] = None
         bbox = None
@@ -620,6 +625,9 @@ class OpenFieldTracker:
             ),
             "classical_fallback_frames": sum(
                 1 for record in self.frame_records if record.get("tracking_source") == "classical_fallback"
+            ),
+            "deeplabcut_missing_frames": sum(
+                1 for record in self.frame_records if record.get("tracking_source") == "deeplabcut_missing"
             ),
             "frame_tracking_fallback_reasons": ";".join(
                 sorted({
