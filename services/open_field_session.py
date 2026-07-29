@@ -1,5 +1,5 @@
 from services.analysis_runtime import *
-from services.pose_tracking import PoseInferenceCoordinator
+from services.pose_tracking import PoseFrameResult, PoseInferenceCoordinator
 
 
 class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
@@ -220,8 +220,14 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
 
         trackers = self._create_trackers(roi_configs, vision_config, sampling['effective_fps'], global_start_time_s)
         pose_coordinator = PoseInferenceCoordinator(vision_config, trackers)
+        requested_pose_batch_size = pose_coordinator.batch_size
+        pose_cache = {}
         if pose_coordinator.enabled:
-            self._log("OFT DeepLabCut tracking enabled: one inference per sampled frame; ROI-level classical fallback remains active.")
+            self._log(
+                "OFT DeepLabCut tracking enabled: "
+                f"batch size {requested_pose_batch_size}, two-batch prefetch; "
+                "ROI-level classical fallback remains active."
+            )
         self._log(f"Configured {len(trackers)} OFT arenas")
 
         if start_frame > 0:
@@ -233,80 +239,96 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         source_frames_done = 0
         previous_analyzed_frame = None
 
-        while self.is_running:
-            ret, frame = cap.read()
-            if not ret:
+        logged_effective_batch_size = None
+        for batch in self._iter_prefetched_frame_batches(
+            cap,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            sampling=sampling,
+            batch_size=requested_pose_batch_size,
+        ):
+            if not self.is_running:
                 break
-
-            try:
-                current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
-            except Exception:
-                current_frame_no = start_frame + source_frames_done
-
-            if current_frame_no > end_frame:
-                break
-
-            current_time = timebase.time_at(current_frame_no)
-            current_dt = timebase.duration_between(
-                previous_analyzed_frame,
-                current_frame_no,
-                sample_fps=sampling['effective_fps'],
+            pose_frames = pose_coordinator.infer_many(
+                [item['frame'] for item in batch]
             )
-            analysis_frame = self._resize_for_sampling(frame, sampling)
-            gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
-            begin_frame_cache(bg_subtractor, current_frame_no)
-            pose_frame = pose_coordinator.infer(analysis_frame)
+            if (
+                pose_coordinator.enabled
+                and pose_coordinator.effective_batch_size != logged_effective_batch_size
+            ):
+                logged_effective_batch_size = pose_coordinator.effective_batch_size
+                self._log(
+                    "OFT DeepLabCut effective batch size: "
+                    f"{logged_effective_batch_size} "
+                    f"(requested {requested_pose_batch_size})."
+                )
             fallback_active = (
                 str(vision_config.get('tracking_backend') or 'classical') != 'classical'
             )
-            results = []
-            for tracker in trackers:
-                pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
-                fallback_reason = (
-                    pose_frame.error
-                    or vision_config.get('tracking_fallback_reason')
-                    or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
+            for item, pose_frame in zip(batch, pose_frames):
+                current_frame_no = int(item['source_frame_no'])
+                analysis_frame = item['frame']
+                gray = item['gray']
+                current_time = timebase.time_at(current_frame_no)
+                current_dt = timebase.duration_between(
+                    previous_analyzed_frame,
+                    current_frame_no,
+                    sample_fps=sampling['effective_fps'],
                 )
-                results.append(
-                    tracker.update(
-                        analysis_frame,
-                        current_time,
-                        gray,
-                        bg_subtractor,
-                        morph_processor,
-                        detector,
-                        dt_s=current_dt,
-                        pose_observation=pose_observation,
-                        tracking_source='classical_fallback' if fallback_active else 'classical',
-                        fallback_reason=fallback_reason if pose_observation is None else None,
+                begin_frame_cache(bg_subtractor, current_frame_no)
+                pose_cache[current_frame_no] = pose_frame
+                results = []
+                for tracker in trackers:
+                    pose_observation = pose_frame.by_roi_id.get(int(tracker.roi_id))
+                    fallback_reason = (
+                        pose_frame.error
+                        or vision_config.get('tracking_fallback_reason')
+                        or ('pose_low_confidence_or_unassigned' if fallback_active and pose_observation is None else None)
                     )
-                )
-            previous_analyzed_frame = current_frame_no
-            for result in results:
-                self._annotate_sample_record(result, current_frame_no, frame_idx, sampling)
+                    results.append(
+                        tracker.update(
+                            analysis_frame,
+                            current_time,
+                            gray,
+                            bg_subtractor,
+                            morph_processor,
+                            detector,
+                            dt_s=current_dt,
+                            pose_observation=pose_observation,
+                            tracking_source='classical_fallback' if fallback_active else 'classical',
+                            fallback_reason=fallback_reason if pose_observation is None else None,
+                        )
+                    )
+                previous_analyzed_frame = current_frame_no
+                for result in results:
+                    self._annotate_sample_record(
+                        result,
+                        current_frame_no,
+                        frame_idx,
+                        sampling,
+                    )
 
-            if frame_idx % 15 == 0:
-                rows = [self._live_row(tracker, result) for tracker, result in zip(trackers, results)]
-                self.realtime_data = rows
-                self.live_metrics = self._build_live_metrics(rows)
+                if frame_idx % 15 == 0:
+                    rows = [self._live_row(tracker, result) for tracker, result in zip(trackers, results)]
+                    self.realtime_data = rows
+                    self.live_metrics = self._build_live_metrics(rows)
 
-            if frame_idx % 30 == 0:
-                self.current_frame = analysis_frame
+                if frame_idx % 30 == 0:
+                    self.current_frame = analysis_frame
 
-            frame_idx += 1
-            skipped = self._grab_skipped_frames(cap, current_frame_no, end_frame, sampling['frame_stride'])
-            covered = 1 + skipped
-            source_frames_done += covered
-            self._advance_frame_counters(covered)
+                frame_idx += 1
+                covered = int(item['covered_source_frames'])
+                source_frames_done += covered
+                self._advance_frame_counters(covered)
 
-            if frame_idx % 20 == 0:
-                analysis_fraction = source_frames_done / max(frames_to_process, 1)
-                analysis_phase = 0.82 if generate_video else 0.94
-                self._set_video_progress(
-                    batch_index,
-                    analysis_fraction * analysis_phase,
-                    f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
-                )
+                if frame_idx % 20 == 0:
+                    analysis_fraction = source_frames_done / max(frames_to_process, 1)
+                    analysis_phase = 0.82 if generate_video else 0.94
+                    self._set_video_progress(
+                        batch_index,
+                        analysis_fraction * analysis_phase,
+                        f'Frame {source_frames_done}/{frames_to_process} ({{progress}}%)',
+                    )
 
         pose_coordinator.close()
         cap.release()
@@ -326,6 +348,8 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             summary = tracker.build_summary()
             summary['tracking_backend_requested'] = vision_config.get('tracking_backend', 'classical')
             summary['tracking_backend_effective'] = vision_config.get('tracking_backend_effective', 'classical')
+            summary['pose_batch_size_requested'] = requested_pose_batch_size
+            summary['pose_batch_size_effective'] = pose_coordinator.effective_batch_size
             summary['tracking_fallback_reason'] = vision_config.get('tracking_fallback_reason')
             dlc_frames = int(summary.get('deeplabcut_frames') or 0)
             fallback_frames = int(summary.get('classical_fallback_frames') or 0)
@@ -436,8 +460,10 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                 global_start_time_s,
                 sampling,
                 timebase,
+                pose_cache,
                 batch_index=batch_index,
             )
+        pose_cache.clear()
 
         if generate_video and os.path.exists(output_video_path):
             exported_video = _export_result_file(output_video_path, final_output_video_path)
@@ -489,6 +515,7 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
         global_start_time_s,
         sampling,
         timebase,
+        pose_cache,
         batch_index=None,
     ):
         cap = open_video_capture(video_path, orientation_override=vision_config.get('orientation_override'))
@@ -523,7 +550,6 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
             temporal_end_frame=end_frame,
         )
         render_trackers = self._create_trackers(roi_configs, vision_config, fps, global_start_time_s)
-        pose_coordinator = PoseInferenceCoordinator(vision_config, render_trackers)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         frame_idx = 0
         source_frames_done = 0
@@ -549,7 +575,10 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                 analysis_frame = self._resize_for_sampling(frame, sampling)
                 gray = cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY)
                 begin_frame_cache(bg_subtractor, current_frame_no)
-                pose_frame = pose_coordinator.infer(analysis_frame)
+                pose_frame = pose_cache.get(
+                    current_frame_no,
+                    PoseFrameResult({}, error='pose_cache_miss'),
+                )
                 fallback_active = str(vision_config.get('tracking_backend') or 'classical') != 'classical'
                 results = []
                 for tracker in render_trackers:
@@ -589,7 +618,6 @@ class OpenFieldMultiArenaAnalysisSession(AnalysisSessionBase):
                         f'Rendering OFT video {source_frames_done}/{frames_to_process} ({{progress}}%)',
                     )
         finally:
-            pose_coordinator.close()
             cap.release()
             writer.release()
         return os.path.exists(output_video_path)

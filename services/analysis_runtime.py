@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import os
+import queue
 import sys
 import threading
 import time
@@ -363,6 +364,88 @@ class AnalysisSessionBase:
     batch_complete_template = "All {total} videos finished."
     error_template = "Analysis error: {error}"
     error_log_prefix = ""
+
+    def _iter_prefetched_frame_batches(
+        self,
+        cap,
+        *,
+        start_frame,
+        end_frame,
+        sampling,
+        batch_size,
+    ):
+        prepared = queue.Queue(maxsize=2)
+        stop_event = threading.Event()
+        sentinel = object()
+
+        def put(item):
+            while not stop_event.is_set():
+                try:
+                    prepared.put(item, timeout=0.1)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def produce():
+            batch = []
+            source_frames_done = 0
+            try:
+                while self.is_running and not stop_event.is_set():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    try:
+                        current_frame_no = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+                    except Exception:
+                        current_frame_no = start_frame + source_frames_done
+                    if current_frame_no > end_frame:
+                        break
+                    analysis_frame = self._resize_for_sampling(frame, sampling)
+                    batch.append(
+                        {
+                            'source_frame_no': current_frame_no,
+                            'frame': analysis_frame,
+                            'gray': cv2.cvtColor(analysis_frame, cv2.COLOR_BGR2GRAY),
+                        }
+                    )
+                    skipped = self._grab_skipped_frames(
+                        cap,
+                        current_frame_no,
+                        end_frame,
+                        sampling['frame_stride'],
+                    )
+                    covered = 1 + skipped
+                    batch[-1]['covered_source_frames'] = covered
+                    source_frames_done += covered
+                    if len(batch) >= batch_size:
+                        if not put(batch):
+                            return
+                        batch = []
+                if batch:
+                    put(batch)
+            except BaseException as exc:
+                put(exc)
+            finally:
+                put(sentinel)
+
+        producer = threading.Thread(
+            target=produce,
+            daemon=True,
+            name=f"frame-prefetch-{getattr(self, 'session_id', 'analysis')}",
+        )
+        producer.start()
+        try:
+            while True:
+                item = prepared.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            stop_event.set()
+            producer.join(timeout=5.0)
 
     @staticmethod
     def _truthy(value, default=True):
