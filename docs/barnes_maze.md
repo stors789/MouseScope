@@ -4,6 +4,26 @@
 本模块使用完整分辨率和源视频帧，不启用快速评分的时空降采样。
 当前实现口径为 `barnes-1`；运行快照保存解析后的参数和模型版本。
 
+## 经典追踪的正式实现
+
+经典分割和几何估点统一位于 `core/classical_mouse.py` 的 `ClassicalMouseDetector`。
+正式巴恩斯分析、单帧预览、关键点验证和对照视频均调用该实现；实验视频目录里的旧脚本不再作为项目方法入口。
+计分规则版本仍为 `barnes-1`，新版经典追踪方法 ID 为 `local_otsu_v1`，两者分别记录。
+
+处理顺序为：时序背景差分 → 按鼠体明暗方向保留前景 → 3×3开运算清理 → 候选区域局部Otsu抑制较浅阴影 → 3×3闭运算。
+由此得到的同帧分割证据用于估计鼻尖、尾根；在它的副本上做身体腐蚀，得到身体范围和质心。
+默认仅身体使用3×3椭圆核腐蚀1次，经典质量阈值与DLC筛选阈值均为0.4。
+
+**身体范围与头尾证据用途不同。** 身体可以收紧，鼻尖和尾根不会因这一步腐蚀而丢掉输入依据；鼻尖仍落在额外腐蚀前的可见轮廓上。
+灰色轮廓为估点证据，青色轮廓为身体范围，N/B/T分别表示鼻尖、身体中心、尾根。
+若身体被腐蚀到不满足面积条件，则明确返回缺失，不退回旧轮廓伪装检出。
+尾部弯曲、遮挡或缺乏足够形状依据时，鼻尖和尾根仍会缺失；不会借用DLC、上一帧或插值补点。
+
+局部Otsu仅按亮度区分前景，不能保证区分灰度相近的阴影。几何质量分数不是正确概率；测试通过与检出覆盖率都不等于已取得定位准确率。
+
+界面中的“仅身体腐蚀核/次数”只控制身体范围，“清理核”控制前景开闭运算。
+旧的腐蚀/膨胀参数仅在 `legacy` 方法中使用。已保存的旧运行快照未记录方法ID时按旧形态学流程复现；新分析明确保存方法ID、版本、参数和头尾证据来源。
+
 ## 操作
 
 1. 在分析配置页确认画面方向、视频时间窗和帧率；仅在已知实际帧率时覆盖。
@@ -18,7 +38,7 @@
 
 ## DLC 开关
 
-- **关闭**：背景差分、形态学和轮廓身体/细尾分离；鼻尖为尾根对侧的保守候选。没有足够尾部依据时只输出身体，不用移动方向猜鼻尖。
+- **关闭**：使用上述统一经典方法；鼻尖为尾根对侧的保守候选。没有足够尾部依据时只输出身体，不用移动方向猜鼻尖。
 - **开启**：复用现有独立 DLC worker，选择模型档案与不可变版本，或使用 SuperAnimal-TopViewMouse 预训练模型。DLC 与经典背景参数分开。
 - 开启但模型/worker不可用会阻止启动。推理错误停止分析；低置信度、画外和缺失关键点保持缺失，不会静默换回经典视觉。
 - 预训练模型并非对任意拍摄条件都准确。需用与训练/调参视频独立的画面验证鼻尖、身体和尾根。
@@ -69,20 +89,35 @@ python tools/validate_landmarks.py prepare --video "D:/实验/旷场.mpg" --outp
 
 ```powershell
 python tools/validate_landmarks.py predict --manifest "D:/验证/oft/manifest.json" --backend classical --output "D:/验证/oft/classical.json"
-python tools/validate_landmarks.py predict --manifest "D:/验证/oft/manifest.json" --backend deeplabcut --confidence 0.8 --output "D:/验证/oft/dlc.json"
+python tools/validate_landmarks.py predict --manifest "D:/验证/oft/manifest.json" --backend deeplabcut --confidence 0.4 --output "D:/验证/oft/dlc.json"
 python tools/validate_landmarks.py evaluate --labels "D:/验证/oft/labels.json" --predictions "D:/验证/oft/classical.json" --tolerance-px 5 --output "D:/验证/oft/经典评估"
 python tools/validate_landmarks.py evaluate --labels "D:/验证/oft/labels.json" --predictions "D:/验证/oft/dlc.json" --tolerance-px 5 --output "D:/验证/oft/DLC评估"
 ```
 
 用 `predict --run-snapshot 路径/run_snapshot.json` 可复用某次运行解析的 DLC 模型引用和关键点 schema。
+经典预测也从同一个运行快照读取实际分割方法和参数；批量快照用 `--video-index` 选择对应视频。
+未提供快照时使用项目当前工厂默认配置。`--body-erosion-kernel` 和 `--body-erosion-iter` 可显式改变身体范围；它们不修改头尾证据。
 请给出预先确定的容差。评估按关键点输出人工可见点数、检出覆盖率、容差内命中率、匹配点中位误差和第90百分位误差。
 容差内命中率以所有人工可见点为分母，预测缺失算未命中；误差只在配对点上计算，需和覆盖率一起看。
 标注页的“human”标签只是来源记录，不能替代独立、盲法和标注者一致性要求。
 
+## 从项目方法直接生成对照视频
+
+```powershell
+python tools/review_mouse_tracking.py --manifest "D:/验证/oft/manifest.json" --segment 60:70 --segment 300:310 --segment 540:550 --confidence 0.4 --output "D:/验证/正式方法复核"
+```
+
+这是正式入口，不在视频脚本里重写分割。它输出 `review.mp4`、逐帧坐标 `points.csv`、完整配置 `review_config.json`、方法版本与覆盖记录 `summary.json`。
+没有未标点的原图面板；每个连续片段使用固定窗口与倍率，不对坐标平滑或补点。
+若已有逐帧DLC预测，可加 `--compare-predictions 路径/raw_predictions.jsonl --prediction-metadata 路径/summary.json`，只比较共同的N/B/T三点。
+保存的DLC预测必须与源视频、源帧和ROI名称匹配，缺少预测输入会报错，不能当作模型漏检。
+`--viewports` 可复用已保存的窗口JSON；所有对照列共用相同的固定映射。
+两边的青/灰轮廓都来自统一经典分割，DLC列只替换标点，不表示DLC输出了分割掩膜。
+
 ## 开发验收
 
 ```powershell
-python -m pytest tests/test_barnes_maze.py tests/test_barnes_runtime.py tests/test_landmark_validation.py -q
+python -m pytest tests/test_classical_mouse.py tests/test_classical_review.py tests/test_barnes_maze.py tests/test_barnes_runtime.py tests/test_landmark_validation.py -q
 python tools/e2e_barnes.py --url http://127.0.0.1:8093 --output "D:/验证/browser"
 ```
 

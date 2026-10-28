@@ -192,6 +192,14 @@ def resolved_config_for_replay(snapshot: dict[str, Any], *, output_dir: str | Pa
     config = copy.deepcopy(snapshot.get("resolved_config") or {})
     if not isinstance(config, dict) or not config:
         raise ReproducibilityError("运行快照缺少最终生效配置。")
+    if snapshot.get("experiment_type") == "barnes_maze":
+        # Old Barnes snapshots predate the method ID. Make their historical
+        # path explicit so both the editor and runtime retain that method.
+        method = config.setdefault("classical_method", "legacy")
+        config.setdefault("classical_method_version", "legacy_morphology_v1" if method == "legacy" else method)
+        for item in config.get("per_video_configs") or []:
+            selected = item.setdefault("classical_method", method)
+            item.setdefault("classical_method_version", "legacy_morphology_v1" if selected == "legacy" else selected)
     config["output_dir"] = str(output_dir)
     config["reproducibility_seed"] = int(snapshot.get("random_seed") or DEFAULT_RANDOM_SEED)
     return config

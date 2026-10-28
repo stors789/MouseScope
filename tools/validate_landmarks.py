@@ -20,18 +20,13 @@ sys.path[:0] = [str(ROOT), str(ROOT / "core")]
 import cv2
 import numpy as np
 
-from barnes_maze import estimate_silhouette_landmarks
+from classical_mouse import ClassicalMouseDetector, create_classical_background
+from services.barnes_config import build_barnes_config
 from file_utils import write_image_unicode
 from services.pose_model_profiles import DEFAULT_KEYPOINT_SCHEMA, SUPERANIMAL_MODEL_REF
 from services.pose_tracking import normalise_pose_output
 from services.video_frame_reader import read_video_frame
 from services.video_metadata import probe_video_info
-from vision_tracker import (
-    BackgroundSubtractor,
-    MorphologyProcessor,
-    MouseDetector,
-    create_temporal_background,
-)
 
 KEYPOINTS = ("nose", "left_ear", "right_ear", "body_center", "tail_base")
 
@@ -134,39 +129,70 @@ def prepare(args):
     )
 
 
+def resolve_prediction_config(args):
+    raw = {}
+    snapshot_path = getattr(args, "run_snapshot", None)
+    if snapshot_path:
+        snapshot = read_json(snapshot_path)
+        raw = dict(snapshot.get("resolved_config") or snapshot)
+        per = raw.get("per_video_configs") or []
+        index = getattr(args, "video_index", 0)
+        if per:
+            if not 0 <= index < len(per):
+                raise ValueError("快照视频索引无效。")
+            raw.update(per[index])
+        # Existing snapshots without a method ID replay the old pipeline.
+        raw.setdefault("classical_method", "legacy")
+        raw.setdefault("bg_type", "dark" if raw.get("invert") else "light")
+    overrides = {
+        "classical_method": "classical_method",
+        "segmentation_kernel": "segmentation_kernel",
+        "body_erosion_kernel": "body_erosion_kernel",
+        "body_erosion_iter": "body_erosion_iter",
+        "diff_threshold": "temporal_diff_threshold",
+        "min_area": "min_area",
+        "background_samples": "temporal_bg_samples",
+    }
+    for arg, field in overrides.items():
+        value = getattr(args, arg, None)
+        if value is not None:
+            raw[field] = value
+    raw.update(rois=[], per_video_configs=[], tracking_backend=args.backend)
+    config = build_barnes_config({}, raw)
+    confidence = getattr(args, "confidence", None)
+    if confidence is None:
+        confidence = (
+            config["head_confidence_threshold"]
+            if args.backend == "classical"
+            else config["pose_confidence_threshold"]
+        )
+    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        raise ValueError("关键点筛选阈值必须在0到1之间。")
+    return config, confidence
+
+
 def predict(args):
-    if (
-        not 0 <= args.confidence <= 1
-        or args.min_area <= 0
-        or not 0 <= args.diff_threshold <= 255
-        or args.background_samples < 5
-    ):
-        raise ValueError("请检查关键点阈值、最小面积、差分阈值及背景抽样帧数。")
     manifest = read_json(args.manifest)
-    config = {}
-    if args.run_snapshot:
-        snapshot = read_json(args.run_snapshot)
-        config = snapshot.get("resolved_config") or snapshot
-    reference = config.get("pose_model_reference") or SUPERANIMAL_MODEL_REF
-    schema = config.get("pose_keypoint_schema") or DEFAULT_KEYPOINT_SCHEMA
-    bg = morph = detector = runtime = None
+    config, confidence = resolve_prediction_config(args)
+    snapshot = read_json(args.run_snapshot) if args.run_snapshot else {}
+    original = snapshot.get("resolved_config") or snapshot
+    if original.get("per_video_configs"):
+        original = dict(original, **original["per_video_configs"][args.video_index])
+    reference = original.get("pose_model_reference") or SUPERANIMAL_MODEL_REF
+    schema = original.get("pose_keypoint_schema") or DEFAULT_KEYPOINT_SCHEMA
+    bg = detector = runtime = None
     if args.backend == "classical":
-        background, noise, _ = create_temporal_background(
-            manifest["video_path"], num_samples=args.background_samples
+        fps = float(config.get("fps_override") or manifest["video_info"]["fps"])
+        start = int(round(float(config.get("start_sec") or 0) * fps))
+        end = (
+            None
+            if config.get("end_sec") is None
+            else int(round(config["end_sec"] * fps)) - 1
         )
-        bg = BackgroundSubtractor(
-            method="temporal",
-            static_bg=background,
-            temporal_noise_map=noise,
-            threshold=args.diff_threshold,
+        bg = create_classical_background(
+            manifest["video_path"], config, start_frame=start, end_frame=end
         )
-        morph = MorphologyProcessor(
-            erosion_kernel=3,
-            erosion_iterations=1,
-            dilation_kernel=5,
-            dilation_iterations=2,
-        )
-        detector = MouseDetector(min_area=args.min_area, max_area=50000)
+        detector = ClassicalMouseDetector(config)
     else:
         from services.deeplabcut_runtime import DeepLabCutRuntime
 
@@ -213,22 +239,23 @@ def predict(args):
                 foreground = bg.apply(
                     frame, gray=cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 )
-                detections = detector.detect(
-                    morph.process(foreground[y : y + h, x : x + w])
+                background = getattr(bg, "static_bg", None)
+                observation = detector.detect(
+                    cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY),
+                    foreground[y : y + h, x : x + w],
+                    background=(
+                        None if background is None else background[y : y + h, x : x + w]
+                    ),
                 )
-                if detections:
-                    observation = estimate_silhouette_landmarks(
-                        max(detections, key=lambda d: d["area"])["contour"]
-                    )
-                    keypoints = observation["keypoints"]
-                    reason = observation["reason"]
+                keypoints = observation["keypoints"]
+                reason = observation["reason"]
             filtered = {
                 key: dict(
                     p,
                     visible=bool(p.get("visible", True))
                     and 0 <= p["x"] < w
                     and 0 <= p["y"] < h
-                    and float(p.get("confidence", 0)) >= args.confidence,
+                    and float(p.get("confidence", 0)) >= confidence,
                 )
                 for key, p in keypoints.items()
             }
@@ -250,14 +277,10 @@ def predict(args):
             schema_version=1,
             dataset_id=manifest["dataset_id"],
             backend=args.backend,
-            confidence_threshold=args.confidence,
+            confidence_threshold=confidence,
             model_reference=reference if runtime else None,
             coordinate_space="crop_pixels",
-            settings=dict(
-                diff_threshold=args.diff_threshold,
-                min_area=args.min_area,
-                background_samples=args.background_samples,
-            ),
+            settings=config,
             records=records,
         ),
     )
@@ -386,10 +409,17 @@ def main():
         "--run-snapshot",
         help="Reuse the resolved DLC reference and canonical schema from a saved run",
     )
-    p.add_argument("--confidence", type=float, default=0.6)
-    p.add_argument("--diff-threshold", type=int, default=25)
-    p.add_argument("--min-area", type=int, default=120)
-    p.add_argument("--background-samples", type=int, default=90)
+    p.add_argument(
+        "--confidence", type=float, help="Override the configured point cutoff"
+    )
+    p.add_argument("--video-index", type=int, default=0)
+    p.add_argument("--classical-method", choices=["local_otsu_v1", "legacy"])
+    p.add_argument("--segmentation-kernel", type=int)
+    p.add_argument("--body-erosion-kernel", type=int)
+    p.add_argument("--body-erosion-iter", type=int)
+    p.add_argument("--diff-threshold", type=int)
+    p.add_argument("--min-area", type=int)
+    p.add_argument("--background-samples", type=int)
     p.set_defaults(func=predict)
     p = sub.add_parser(
         "evaluate", help="Compare predictions with independent human labels"
