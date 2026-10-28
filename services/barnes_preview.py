@@ -66,11 +66,15 @@ def build_barnes_preview(frame, data, video_path):
             detector = MouseDetector(
                 min_area=data.get("min_area", 120), max_area=data.get("max_area", 50000)
             )
-        coordinator = PoseInferenceCoordinator(data, trackers)
+        coordinator = (
+            PoseInferenceCoordinator(data, trackers)
+            if backend == "deeplabcut"
+            else None
+        )
         if backend == "deeplabcut" and not coordinator.enabled:
             raise ValueError("DLC未启用：请检查worker和模型。")
-        pose = coordinator.infer(frame)
-        if pose.error:
+        pose = coordinator.infer(frame) if coordinator is not None else None
+        if pose is not None and pose.error:
             raise ValueError(f"DLC预览失败：{pose.error}")
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         results = [
@@ -82,7 +86,9 @@ def build_barnes_preview(frame, data, video_path):
                 morph,
                 detector,
                 dt_s=1 / 30,
-                pose_observation=pose.by_roi_id.get(t.roi_id),
+                pose_observation=(
+                    pose.by_roi_id.get(t.roi_id) if pose is not None else None
+                ),
             )
             for t in trackers
         ]

@@ -145,6 +145,18 @@ def test_unchecked_dlc_does_not_require_a_worker():
     assert config["tracking_backend_effective"] == "classical"
 
 
+def test_classical_session_never_initializes_a_dlc_worker(clip, tmp_path, monkeypatch):
+    def unavailable():
+        raise AssertionError("A disabled DLC worker must not be initialized")
+
+    monkeypatch.setattr("services.pose_tracking.shared_deeplabcut_runtime", unavailable)
+    session = run_clip(clip, tmp_path, payload())
+    assert (
+        read_csv(session.result_files, "_summary.csv")[0]["tracking_backend_effective"]
+        == "classical"
+    )
+
+
 class DeterministicPoseRuntime:
     """A contract fixture, not evidence of a real model's accuracy."""
 

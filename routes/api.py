@@ -143,7 +143,7 @@ def register_api_routes(app, ctx) -> None:
             config,
             assay,
             profile_store=pose_model_profile_store,
-            runtime_status=DeepLabCutRuntime().status(),
+            runtime_status=None if assay == 'barnes_maze' else DeepLabCutRuntime().status(),
         )
 
     def _ensure_writable_output_directory(value: str | os.PathLike) -> str:

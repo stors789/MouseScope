@@ -204,7 +204,11 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                     temporal_start_frame=start_frame,
                     temporal_end_frame=end_frame,
                 )
-            coordinator = PoseInferenceCoordinator(cfg, trackers)
+            coordinator = (
+                PoseInferenceCoordinator(cfg, trackers)
+                if backend == "deeplabcut"
+                else None
+            )
             if backend == "deeplabcut" and not coordinator.enabled:
                 raise RuntimeError("DLC开关已开启，但正式推理后端未启用。")
             if cfg.get("generate_video", True):
@@ -228,14 +232,18 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                 start_frame=start_frame,
                 end_frame=end_frame,
                 sampling=sampling,
-                batch_size=coordinator.batch_size if coordinator.enabled else 1,
+                batch_size=coordinator.batch_size if coordinator is not None else 1,
                 prepare_gray=backend == "classical",
             ):
                 if not self.is_running:
                     break
-                poses = coordinator.infer_many([x["frame"] for x in batch])
+                poses = (
+                    coordinator.infer_many([x["frame"] for x in batch])
+                    if coordinator is not None
+                    else [None] * len(batch)
+                )
                 for item, pose in zip(batch, poses):
-                    if pose.error and backend == "deeplabcut":
+                    if pose is not None and pose.error:
                         raise RuntimeError(f"DLC推理失败，未回退经典视觉：{pose.error}")
                     source_frame = int(item["source_frame_no"])
                     frame = item["frame"]
@@ -257,7 +265,11 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                             morph,
                             detector,
                             dt_s=dt,
-                            pose_observation=pose.by_roi_id.get(tracker.roi_id),
+                            pose_observation=(
+                                pose.by_roi_id.get(tracker.roi_id)
+                                if pose is not None
+                                else None
+                            ),
                         )
                         rec.update(
                             frame=source_frame,

@@ -26,7 +26,11 @@ def resolve_pose_runtime_config(
     """Resolve requested backends and immutable model refs before snapshotting."""
     if assay not in {"open_field", "novel_object", "barnes_maze"}:
         return
-    status = runtime_status or DeepLabCutRuntime().status()
+    targets = [config] + list(config.get("per_video_configs") or [])
+    if assay == "barnes_maze" and not any(t.get("tracking_backend") == "deeplabcut" for t in targets):
+        status = {"available": False, "code": "disabled"}
+    else:
+        status = runtime_status or DeepLabCutRuntime().status()
 
     def resolve_one(target: dict[str, Any]) -> None:
         requested = str(target.get("tracking_backend") or "classical").strip().lower()
