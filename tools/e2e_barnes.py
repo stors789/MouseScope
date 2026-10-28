@@ -112,7 +112,9 @@ def main():
             page.locator('[data-config-field="hole_count"]').fill("4")
             page.locator('[data-config-field="bg_method"]').select_option("threshold")
             page.locator("#drawMode").select_option("ellipse")
-            box = page.locator("#barnesCanvas").bounding_box()
+            canvas = page.locator("#barnesCanvas")
+            canvas.scroll_into_view_if_needed()
+            box = canvas.bounding_box()
 
             def at(x, y):
                 return dict(
@@ -127,7 +129,9 @@ def main():
             page.mouse.up()
             page.locator("#drawMode").select_option("holes")
             for x, y in [(265, 160), (160, 255), (55, 160), (160, 65)]:
-                page.mouse.click(**at(x, y))
+                canvas.click(
+                    position={"x": box["width"] * x / 320, "y": box["height"] * y / 320}
+                )
             assert page.locator("#holeList input").count() == 4
             page.locator("#targetHole").select_option("1")
             page.locator("#roiName").fill("Mouse <A>")
@@ -269,6 +273,9 @@ def main():
             print(
                 "Barnes browser acceptance passed: calibration, previews, DLC persistence, geometry-only templates, per-video targets, batch analysis, annotation and ZIP exports."
             )
+        except Exception:
+            page.screenshot(path=str(out / "failure.png"), full_page=True)
+            raise
         finally:
             browser.close()
 
