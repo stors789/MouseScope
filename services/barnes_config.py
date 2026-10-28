@@ -7,9 +7,13 @@ import math
 
 BARNES_DEFAULTS = {
     "tracking_backend": "classical",
-    "pose_confidence_threshold": 0.8,
+    "pose_confidence_threshold": 0.4,
     "pose_batch_size": 4,
-    "head_confidence_threshold": 0.6,
+    "head_confidence_threshold": 0.4,
+    "classical_method": "local_otsu_v1",
+    "segmentation_kernel": 3,
+    "body_erosion_kernel": 3,
+    "body_erosion_iter": 1,
     "trial_type": "acquisition",
     "day_label": "",
     "trial_no": 1,
@@ -127,6 +131,8 @@ def build_barnes_config(sess, data):
             "erosion_kernel",
             "dilation_kernel",
             "trial_no",
+            "segmentation_kernel",
+            "body_erosion_kernel",
         }
         nonnegative = {
             "visit_confirm_s",
@@ -134,6 +140,7 @@ def build_barnes_config(sess, data):
             "tracking_max_jump_cm",
             "erosion_iter",
             "dilation_iter",
+            "body_erosion_iter",
         }
         for key in (
             positive_fields
@@ -183,6 +190,9 @@ def build_barnes_config(sess, data):
             "gray_threshold",
             "temporal_diff_threshold",
             "trial_no",
+            "segmentation_kernel",
+            "body_erosion_kernel",
+            "body_erosion_iter",
         ]:
             if int(config[key]) != config[key]:
                 raise ValueError(f"{key}必须是整数。")
@@ -204,6 +214,10 @@ def build_barnes_config(sess, data):
         }:
             raise ValueError("背景方法无效。")
         config["invert"] = str(config["bg_type"]).lower() == "dark"
+        from classical_mouse import ClassicalMouseDetector
+
+        method = ClassicalMouseDetector(config)
+        config["classical_method_version"] = method.version
         config["start_sec"] = float(
             raw.get("start_sec", sess.get("start_seconds")) or 0.0
         )

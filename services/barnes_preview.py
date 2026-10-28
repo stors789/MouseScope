@@ -6,14 +6,12 @@ import cv2
 from flask import jsonify
 
 from barnes_maze import BarnesArena, BarnesTracker, draw_barnes_results
-from vision_tracker import MorphologyProcessor, MouseDetector
 from services.barnes_config import normalise_barnes_roi
 from services.pose_tracking import PoseInferenceCoordinator
+from classical_mouse import create_classical_background
 
 
 def build_barnes_preview(frame, data, video_path):
-    from services.debug_preview import _build_debug_bg_subtractor
-
     coordinator = None
     try:
         rois = [
@@ -36,6 +34,7 @@ def build_barnes_preview(frame, data, video_path):
                 roi_id=i + 1,
                 roi_name=r["name"],
                 tracking_backend=backend,
+                classical_config=data,
                 head_confidence_threshold=(
                     data.get("pose_confidence_threshold", 0.8)
                     if backend == "deeplabcut"
@@ -46,26 +45,14 @@ def build_barnes_preview(frame, data, video_path):
         ]
         bg = morph = detector = None
         if backend == "classical":
-            bg = _build_debug_bg_subtractor(
+            bg = create_classical_background(
                 video_path,
-                data.get("bg_method", "temporal"),
-                data.get("gray_threshold", 127),
-                data.get("bg_type") == "dark",
-                data.get("_orientation_override"),
-                temporal_bg_samples=data.get("temporal_bg_samples", 90),
-                temporal_diff_threshold=data.get("temporal_diff_threshold", 25),
-                temporal_start_frame=data.get("_temporal_start_frame", 0),
-                temporal_end_frame=data.get("_temporal_end_frame"),
+                data,
+                start_frame=data.get("_temporal_start_frame", 0),
+                end_frame=data.get("_temporal_end_frame"),
+                orientation_override=data.get("_orientation_override"),
             )
-            morph = MorphologyProcessor(
-                erosion_kernel=data.get("erosion_kernel", 3),
-                erosion_iterations=data.get("erosion_iter", 1),
-                dilation_kernel=data.get("dilation_kernel", 5),
-                dilation_iterations=data.get("dilation_iter", 2),
-            )
-            detector = MouseDetector(
-                min_area=data.get("min_area", 120), max_area=data.get("max_area", 50000)
-            )
+
         coordinator = (
             PoseInferenceCoordinator(data, trackers)
             if backend == "deeplabcut"

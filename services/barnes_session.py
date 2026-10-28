@@ -13,6 +13,7 @@ from barnes_maze import (
     render_barnes_map,
 )
 from file_utils import ascii_slug
+from classical_mouse import create_classical_background
 
 
 class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
@@ -171,6 +172,7 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                         arena,
                         detection_points=r.get("detection_points"),
                         fps=fps,
+                        classical_config=cfg,
                         roi_id=r["roi_id"],
                         roi_name=r["name"],
                         start_s=rs,
@@ -193,17 +195,12 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                 )
             bg = morph = detector = None
             if backend == "classical":
-                bg, morph, detector = self._build_processors_for_sampling(
-                    video_path,
-                    cfg,
-                    sampling,
-                    static_frames=15,
-                    erosion_default=1,
-                    dilation_default=2,
-                    min_area_default=120,
-                    temporal_start_frame=start_frame,
-                    temporal_end_frame=end_frame,
+                bg = enable_frame_cache(
+                    create_classical_background(
+                        video_path, cfg, start_frame=start_frame, end_frame=end_frame
+                    )
                 )
+
             coordinator = (
                 PoseInferenceCoordinator(cfg, trackers)
                 if backend == "deeplabcut"
@@ -346,6 +343,22 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                     hole_radius_cm=tracker.arena.hole_radius_cm,
                     day_label=cfg.get("day_label"),
                     trial_no=cfg.get("trial_no"),
+                    classical_method=(
+                        tracker.classical_detector.method
+                        if backend == "classical"
+                        else None
+                    ),
+                    classical_method_version=(
+                        tracker.classical_detector.version
+                        if backend == "classical"
+                        else None
+                    ),
+                    landmark_evidence=(
+                        "pre_body_erosion"
+                        if backend == "classical"
+                        and cfg.get("classical_method") == "local_otsu_v1"
+                        else None
+                    ),
                 )
                 for key in ["subject_id", "group_id", "group_name", "animal_code"]:
                     summary[key] = r.get(key)

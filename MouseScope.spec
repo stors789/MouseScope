@@ -74,6 +74,8 @@ a = Analysis(
         'stringprep',
         'forced_swim',
         'barnes_maze',
+        'classical_mouse',
+        'core.classical_mouse',
         'core.barnes_maze',
         'services.barnes_config',
         'services.barnes_session',

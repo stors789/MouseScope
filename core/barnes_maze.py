@@ -11,6 +11,7 @@ import numpy as np
 from file_utils import write_image_unicode
 from maze_zone_utils import build_union_mask
 from water_maze import PoolGeometry
+from classical_mouse import ClassicalMouseDetector, estimate_silhouette_landmarks
 
 ALGORITHM_VERSION = "barnes-1"
 
@@ -111,88 +112,6 @@ class BarnesArena:
 
     def image_outline(self):
         return self.geometry.image_boundary_points()
-
-
-def estimate_silhouette_landmarks(contour):
-    """Conservative tail/body geometry; unknown head stays unknown.
-
-    Quality is a heuristic, not a calibrated probability of correctness.
-    This function deliberately has no knowledge of holes or their target.
-    """
-    if contour is None or len(contour) < 3:
-        return {"keypoints": {}, "source": "classical", "reason": "no_contour"}
-    x, y, w, h = cv2.boundingRect(contour)
-    local = np.zeros((h + 4, w + 4), np.uint8)
-    shifted = contour.astype(np.int32) - np.array([[[x - 2, y - 2]]], np.int32)
-    cv2.drawContours(local, [shifted], -1, 255, -1)
-    m = cv2.moments(local)
-    if m["m00"] < 20:
-        return {"keypoints": {}, "source": "classical", "reason": "small_contour"}
-    radius = math.sqrt(cv2.countNonZero(local) / math.pi)
-    size = max(3, int(radius * 0.5) // 2 * 2 + 1)
-    opened = cv2.morphologyEx(
-        local,
-        cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)),
-    )
-    body_contours, _ = cv2.findContours(
-        opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    if not body_contours:
-        return {"keypoints": {}, "source": "classical", "reason": "body_unresolved"}
-    body_contour = max(body_contours, key=cv2.contourArea)
-    bm = cv2.moments(body_contour)
-    if bm["m00"] <= 0:
-        return {"keypoints": {}, "source": "classical", "reason": "body_unresolved"}
-    center = np.array([bm["m10"] / bm["m00"], bm["m01"] / bm["m00"]], np.float32)
-    body = np.zeros_like(local)
-    cv2.drawContours(body, [body_contour], -1, 255, -1)
-    tail_mask = cv2.bitwise_and(local, cv2.bitwise_not(body))
-    _, labels, sizes, _ = cv2.connectedComponentsWithStats(tail_mask)
-    candidates = []
-    for label in range(1, len(sizes)):
-        ys, xs = np.where(labels == label)
-        if len(xs) < max(5, cv2.countNonZero(local) * 0.015):
-            continue
-        pixels = np.column_stack([xs, ys]).astype(np.float32)
-        distances = np.linalg.norm(pixels - center, axis=1)
-        eigenvalues = np.linalg.eigvalsh(np.cov(pixels.T))
-        elongation = float(eigenvalues[-1] / max(eigenvalues[0], 0.1))
-        if elongation < 4 or float(distances.max()) < radius * 1.2:
-            continue
-        candidates.append(
-            (float(distances.max()), pixels[int(distances.argmin())], elongation)
-        )
-    offset = np.array([x - 2, y - 2], np.float32)
-
-    def keypoint(p, confidence):
-        return dict(
-            x=float(p[0] + offset[0]),
-            y=float(p[1] + offset[1]),
-            confidence=float(confidence),
-            visible=True,
-        )
-
-    points = {"body_center": keypoint(center, 1.0)}
-    if not candidates:
-        return dict(keypoints=points, source="classical", reason="tail_unresolved")
-    _, root, elongation = max(candidates, key=lambda c: c[0])
-    direction = center - root
-    length = float(np.linalg.norm(direction))
-    if length < radius * 0.25:
-        return dict(keypoints=points, source="classical", reason="head_ambiguous")
-    direction /= length
-    vertices = body_contour.reshape(-1, 2).astype(np.float32)
-    projection = (vertices - center) @ direction
-    nose = vertices[int(projection.argmax())]
-    quality = min(
-        0.95,
-        0.35
-        + 0.3 * min(1.0, elongation / 20.0)
-        + 0.3 * min(1.0, float(projection.max()) / max(radius, 1.0)),
-    )
-    points.update(nose=keypoint(nose, quality), tail_base=keypoint(root, quality))
-    return dict(keypoints=points, source="classical", reason="silhouette_tail_geometry")
 
 
 def validate_manual_events(events, arena, start_s=0.0, end_s=None):
@@ -656,7 +575,15 @@ class BarnesScorer:
 class BarnesTracker:
     """One arena's frame observations; geometry and event scoring stay separate."""
 
-    def __init__(self, arena, *, detection_points=None, fps=30.0, **scoring):
+    def __init__(
+        self,
+        arena,
+        *,
+        detection_points=None,
+        fps=30.0,
+        classical_config=None,
+        **scoring,
+    ):
         self.arena = arena
         self.arena_points = np.asarray(arena.image_outline(), np.float32)
         self.detection_points = (
@@ -672,6 +599,10 @@ class BarnesTracker:
         self.detection_bbox = None
         self.frame_records = self.scorer.records
         self.last_keypoints = {}
+        self.classical_detector = ClassicalMouseDetector(
+            classical_config or {"classical_method": "legacy"}
+        )
+        self.last_classical_detection = None
 
     def initialize(self, frame_shape):
         if self.detection_mask is not None:
@@ -689,17 +620,26 @@ class BarnesTracker:
         self.initialize(frame.shape)
         x, y, w, h = self.detection_bbox
         foreground = bg.apply(frame, gray=gray)
-        mask = cv2.bitwise_and(
-            foreground[y : y + h, x : x + w], self._cropped_detection_mask
+        if gray is None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        background = getattr(bg, "static_bg", None)
+        observation = self.classical_detector.detect(
+            gray[y : y + h, x : x + w],
+            foreground[y : y + h, x : x + w],
+            background=None if background is None else background[y : y + h, x : x + w],
+            detection_mask=self._cropped_detection_mask,
+            morphology=morph,
+            detector=detector,
         )
-        detections = detector.detect(morph.process(mask, inplace=True))
-        if not detections:
-            return dict(keypoints={}, source="classical", reason="no_mouse_detected")
-        detection = max(detections, key=lambda d: d["area"])
-        contour = detection.get("contour")
-        if contour is None:
-            return dict(keypoints={}, source="classical", reason="no_mouse_contour")
-        return estimate_silhouette_landmarks(contour + np.array([[[x, y]]], np.int32))
+        observation["keypoints"] = {
+            key: dict(point, x=point["x"] + x, y=point["y"] + y)
+            for key, point in observation["keypoints"].items()
+        }
+        for key in ["body_contour", "landmark_contour"]:
+            if observation[key] is not None:
+                observation[key] = observation[key] + np.array([[[x, y]]], np.int32)
+        self.last_classical_detection = observation
+        return observation
 
     def update(
         self,
@@ -722,6 +662,17 @@ class BarnesTracker:
             time_s, dt_s if dt_s is not None else 1 / self.fps, observation
         )
         result["landmark_reason"] = observation.get("reason")
+        for key in [
+            "classical_method",
+            "classical_method_version",
+            "landmark_evidence",
+            "local_gray_threshold",
+            "body_area_px",
+            "landmark_area_px",
+            "score_kind",
+        ]:
+            if key in observation:
+                result[key] = observation[key]
         return result
 
     def build_summary(self):
@@ -790,6 +741,14 @@ def hole_outline(arena, hole, count=32):
 def draw_barnes_results(frame, trackers, results):
     out = frame.copy()
     for tracker, result in zip(trackers, results):
+        detection = tracker.last_classical_detection
+        if tracker.scorer.backend == "classical" and detection is not None:
+            for key, color in [
+                ("landmark_contour", (150, 150, 150)),
+                ("body_contour", (255, 220, 0)),
+            ]:
+                if detection.get(key) is not None:
+                    cv2.drawContours(out, [detection[key]], -1, color, 1, cv2.LINE_AA)
         cv2.polylines(
             out,
             [tracker.arena_points.astype(np.int32)],
@@ -820,12 +779,36 @@ def draw_barnes_results(frame, trackers, results):
                 p.get("visible", True)
                 and p.get("confidence", 0) >= tracker.scorer.confidence
             ):
+                colors = {
+                    "nose": (0, 230, 255),
+                    "body_center": (40, 60, 255),
+                    "tail_base": (70, 230, 70),
+                    "left_ear": (255, 140, 30),
+                    "right_ear": (220, 70, 220),
+                }
                 cv2.circle(
                     out,
                     (round(p["x"]), round(p["y"])),
                     3,
-                    (40, 40, 240) if name == "nose" else (180, 80, 230),
+                    colors.get(name, (180, 80, 230)),
                     -1,
+                )
+                codes = {
+                    "nose": "N",
+                    "body_center": "B",
+                    "tail_base": "T",
+                    "left_ear": "LE",
+                    "right_ear": "RE",
+                }
+                cv2.putText(
+                    out,
+                    codes.get(name, name),
+                    (round(p["x"]) + 4, round(p["y"]) - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.35,
+                    colors.get(name, (180, 80, 230)),
+                    1,
+                    cv2.LINE_AA,
                 )
         anchor = tracker.arena.geometry.ellipse_center_px
         label = f"{tracker.roi_name} | visits {result['hole_visit_count']} | {tracker.scorer.backend}"

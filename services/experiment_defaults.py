@@ -137,6 +137,10 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 _FIELD_LABELS: dict[str, tuple[str, str]] = {
+    "classical_method": ("经典分割方法", "Classical segmentation method"),
+    "segmentation_kernel": ("开闭清理核（奇数）", "Cleanup kernel (odd)"),
+    "body_erosion_kernel": ("仅身体腐蚀核（奇数）", "Body-only erosion kernel (odd)"),
+    "body_erosion_iter": ("仅身体腐蚀次数", "Body-only erosion iterations"),
     "arena_diameter_cm": ("圆盘直径 (cm)", "Arena diameter (cm)"),
     "hole_count": ("全部洞数", "Hole count"),
     "hole_radius_cm": ("洞 ROI 半径 (cm)", "Hole ROI radius (cm)"),
@@ -283,6 +287,7 @@ _SELECT_OPTIONS.update({
 })
 
 _EXPERIMENT_SELECT_OPTIONS: dict[tuple[str, str], list[tuple[str, str, str]]] = {
+    ("barnes_maze", "classical_method"): [("local_otsu_v1", "局部Otsu＋保留头尾线索 v1", "Local Otsu, preserved head/tail v1"), ("legacy", "旧形态学流程（历史复现）", "Legacy morphology (replay)")],
     ("barnes_maze", "tracking_backend"): [("classical", "经典视觉", "Classical vision"), ("deeplabcut", "DeepLabCut", "DeepLabCut")],
     ("barnes_maze", "trial_type"): [("acquisition", "训练", "Acquisition"), ("reversal", "反转", "Reversal"), ("probe", "探测", "Probe")],
     ("barnes_maze", "bg_method"): [("threshold", "阈值", "Threshold"), ("temporal", "时序背景", "Temporal background"), ("static", "静态背景", "Static background"), ("mog2", "MOG2", "MOG2"), ("knn", "KNN", "KNN")],
@@ -337,6 +342,9 @@ _NONNEGATIVE_SECONDS_FIELDS = {
     "occlusion_hold_s", "zone_confirm_s", "pose_head_hold_s",
 }
 _FIELD_CONSTRAINTS: dict[str, dict[str, Any]] = {
+    "segmentation_kernel": {"min": 1, "max": 99, "step": 2},
+    "body_erosion_kernel": {"min": 1, "max": 99, "step": 2},
+    "body_erosion_iter": {"min": 0, "max": 10, "step": 1},
     "arena_diameter_cm": {"min": 0.001, "max": 10000, "step": 0.1},
     "hole_count": {"min": 2, "max": 200, "step": 1},
     "hole_radius_cm": {"min": 0.001, "max": 1000, "step": 0.1},
@@ -378,7 +386,7 @@ def _select_options(experiment: str, key: str) -> list[tuple[str, str, str]]:
 
 
 def _field_group(key: str) -> str:
-    if key in {"tracking_backend", "pose_confidence_threshold", "pose_batch_size", "pose_trigger_margin_cm", "pose_crop_padding_ratio", "pose_cache_enabled", "bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "temporal_bg_samples", "temporal_diff_threshold", "exclude_platform_from_detection"}:
+    if key in {"classical_method", "segmentation_kernel", "body_erosion_kernel", "body_erosion_iter", "tracking_backend", "pose_confidence_threshold", "pose_batch_size", "pose_trigger_margin_cm", "pose_crop_padding_ratio", "pose_cache_enabled", "bg_method", "bg_type", "gray_threshold", "body_gray_threshold", "erosion_kernel", "erosion_iter", "dilation_kernel", "dilation_iter", "min_area", "max_area", "temporal_bg_samples", "temporal_diff_threshold", "exclude_platform_from_detection"}:
         return "detection"
     if key in {"arena_side_cm", "arena_width_cm", "arena_height_cm", "center_size_cm", "open_arm_length_cm", "closed_arm_length_cm", "arm_length_cm", "arm_width_cm", "cylinder_diameter_cm", "pool_diameter_cm", "platform_radius_cm", "light_box_length_cm", "light_box_width_cm", "dark_box_length_cm", "dark_box_width_cm", "shared_edge_length_cm", "open_axis"}:
         return "geometry"
@@ -560,6 +568,8 @@ def validate_experiment_defaults(payload: Any) -> list[dict[str, str]]:
                 if isinstance(factory_value, int) and not isinstance(factory_value, bool) and not number.is_integer():
                     errors.append(_validation_item(experiment, key, f"{label_zh}必须是整数", f"{label_en} must be an integer."))
                     continue
+                if key in {"segmentation_kernel", "body_erosion_kernel"} and number % 2 != 1:
+                    errors.append(_validation_item(experiment, key, f"{label_zh}必须为奇数", f"{label_en} must be odd."))
                 constraint = _FIELD_CONSTRAINTS.get(key, {})
                 minimum = constraint.get("min")
                 maximum = constraint.get("max")

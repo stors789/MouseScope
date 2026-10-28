@@ -89,7 +89,14 @@ function fillForm() {
     el('escapeTime').value = roi?.manual_escape_time_s ?? '';
     el('manualEventsEnabled').checked = Array.isArray(roi?.manual_hole_events);
     el('manualEvents').value = (roi?.manual_hole_events || []).map(e => `${e.time_s},${e.hole_id}`).join('\n');
+    syncClassicalMethod();
     refreshLists();
+}
+
+function syncClassicalMethod() {
+    const modern = document.querySelector('[data-config-field="classical_method"]').value === 'local_otsu_v1';
+    document.querySelectorAll('[data-classical-modern]').forEach(node => { node.hidden = !modern; });
+    document.querySelectorAll('[data-classical-legacy]').forEach(node => { node.hidden = modern; });
 }
 
 function refreshLists() {
@@ -271,6 +278,7 @@ function safe(action) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelector('[data-config-field="classical_method"]').addEventListener('change', syncClassicalMethod);
     el('videoSelect').replaceChildren(...barnesPage.videoInfos.map((_, i) => new Option(currentVideoName(i), String(i))));
     el('videoSelect').value = String(currentVideoIdx);
     el('videoSelect').addEventListener('change', safe(() => { pullForm(); currentVideoIdx = Number(el('videoSelect').value); loadVideo(); }));

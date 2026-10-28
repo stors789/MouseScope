@@ -81,12 +81,20 @@
       <section class="barnes-panel" id="classicalDetectionControls">
         <h5>经典视觉检测 / Classical detection</h5>
         <div class="barnes-fields">
+          <label>经典分割方法<select class="form-select" data-config-field="classical_method"><option value="local_otsu_v1">局部Otsu＋头尾线索保留 v1</option><option value="legacy">旧形态学流程（复现历史）</option></select></label>
           <label>背景方法<select class="form-select" data-config-field="bg_method"><option value="temporal">时序背景</option><option value="threshold">灰度阈值</option><option value="static">静态背景</option><option value="mog2">MOG2</option><option value="knn">KNN</option></select></label>
           <label>背景色<select class="form-select" data-config-field="bg_type"><option value="light">浅背景 / 深鼠</option><option value="dark">深背景 / 浅鼠</option></select></label>
-          {% for key,label in [('gray_threshold','灰度阈值'),('temporal_bg_samples','背景抽样帧数'),('temporal_diff_threshold','背景差分阈值'),('min_area','最小面积 (px²)'),('max_area','最大面积 (px²)'),('erosion_kernel','腐蚀核'),('erosion_iter','腐蚀次数'),('dilation_kernel','膨胀核'),('dilation_iter','膨胀次数')] %}
+          {% for key,label in [('gray_threshold','灰度阈值'),('temporal_bg_samples','背景抽样帧数'),('temporal_diff_threshold','背景差分阈值'),('min_area','最小面积 (px²)'),('max_area','最大面积 (px²)')] %}
           <label>{{ label }}<input class="form-control" type="number" min="0" step="1" data-config-field="{{ key }}"></label>
           {% endfor %}
+          <label data-classical-modern>清理核（奇数）<input class="form-control" type="number" min="1" max="99" step="2" data-config-field="segmentation_kernel"></label>
+          <label data-classical-modern>仅身体腐蚀核（奇数）<input class="form-control" type="number" min="1" max="99" step="2" data-config-field="body_erosion_kernel"></label>
+          <label data-classical-modern>仅身体腐蚀次数<input class="form-control" type="number" min="0" max="10" step="1" data-config-field="body_erosion_iter"></label>
+          {% for key,label in [('erosion_kernel','旧版腐蚀核'),('erosion_iter','旧版腐蚀次数'),('dilation_kernel','旧版膨胀核'),('dilation_iter','旧版膨胀次数')] %}
+          <label data-classical-legacy>{{ label }}<input class="form-control" type="number" min="0" step="1" data-config-field="{{ key }}"></label>
+          {% endfor %}
         </div>
+        <p class="barnes-note" data-classical-modern>身体腐蚀只收紧身体范围；鼻尖、尾根使用额外腐蚀前的同帧线索。灰轮廓为估点依据，青轮廓为身体范围；缺失不补点。</p>
       </section>
       <section class="barnes-panel">
         <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="generateVideo" checked><label class="form-check-label" for="generateVideo">生成标注视频 / Annotated video</label></div>
