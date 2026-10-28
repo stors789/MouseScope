@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小鼠关键点独立标注</title>
+<style>body{font:16px system-ui;margin:24px auto;max-width:1200px;padding:0 20px;background:#f8f5f0;color:#242422}button,select{font:inherit;padding:8px 14px;margin:4px;border:1px solid #bbb;border-radius:6px;background:white}button:focus-visible{outline:3px solid #c96442}canvas{max-width:100%;height:auto;background:#ddd;cursor:crosshair;border:1px solid #bbb;touch-action:none}#status{white-space:pre-wrap}aside{margin:12px 0;color:#555}</style>
+<h1>关键点独立标注</h1>
+<p>先标注，再查看模型预测。每个裁剪框只包含一只小鼠。点击图像设置当前关键点；看不到的点标记“不可见”。</p>
+<div><button id="previous">上一帧</button><select id="frameSelect" aria-label="选择验证帧"></select><button id="next">下一帧</button></div>
+<div><label>当前关键点 <select id="keypointSelect"></select></label><button id="invisible">此点不可见</button><button id="clear">清除此点标注</button></div>
+<p id="status" role="status"></p><canvas id="canvas" aria-label="人工关键点标注画布"></canvas>
+<aside>导出文件为裁剪图像像素坐标。保存按钮可导出阶段结果；继续标注可重新导入。导出不代表已经完成全部标注。</aside>
+<button id="save">保存人工标注 JSON</button><label>继续标注 <input type="file" id="load" accept=".json"></label>
+<script>
+'use strict';
+const dataset=__DATASET_JSON__;
+const keys=['nose','left_ear','right_ear','body_center','tail_base'];
+const names={nose:'鼻尖',left_ear:'左耳',right_ear:'右耳',body_center:'身体中心',tail_base:'尾根'};
+const colors=['#ffe248','#3ccfff','#bb86ff','#3be18d','#ff7875'];
+const el=id=>document.getElementById(id);
+let index=0,base=null,request=0;
+const record=()=>dataset.records[index];
+function draw(){
+ const ctx=el('canvas').getContext('2d');if(!base)return;
+ ctx.clearRect(0,0,base.width,base.height);ctx.drawImage(base,0,0);ctx.font=`${Math.max(13,base.width/50)}px sans-serif`;
+ keys.forEach((key,i)=>{const p=record().keypoints[key];if(!p?.visible)return;ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(p.x,p.y,Math.max(4,base.width/130),0,Math.PI*2);ctx.fill();ctx.fillText(key,p.x+8,p.y-8);});
+ const count=dataset.records.reduce((n,r)=>n+keys.filter(k=>r.keypoints[k]).length,0);
+ el('status').textContent=`${index+1}/${dataset.records.length} · ${record().crop.name} · 源帧 ${record().frame_index} · ${record().time_s.toFixed(2)} s\n已标 ${count}/${dataset.records.length*keys.length} 个点。当前：${names[el('keypointSelect').value]} — ${JSON.stringify(record().keypoints[el('keypointSelect').value]||'未标注')}`;
+}
+function loadFrame(){
+ const token=++request;el('frameSelect').value=String(index);const img=new Image();
+ img.onload=()=>{if(token!==request)return;base=img;el('canvas').width=img.width;el('canvas').height=img.height;draw();};img.src=record().image;
+}
+el('frameSelect').replaceChildren(...dataset.records.map((r,i)=>new Option(`${i+1} · ${r.crop.name} · f${r.frame_index}`,String(i))));
+el('keypointSelect').replaceChildren(...keys.map(k=>new Option(`${names[k]} / ${k}`,k)));
+el('frameSelect').onchange=()=>{index=Number(el('frameSelect').value);loadFrame();};
+el('keypointSelect').onchange=draw;
+el('previous').onclick=()=>{index=Math.max(0,index-1);loadFrame();};
+el('next').onclick=()=>{index=Math.min(dataset.records.length-1,index+1);loadFrame();};
+el('canvas').onclick=event=>{const rect=el('canvas').getBoundingClientRect();record().keypoints[el('keypointSelect').value]={x:(event.clientX-rect.left)*el('canvas').width/rect.width,y:(event.clientY-rect.top)*el('canvas').height/rect.height,visible:true};draw();};
+el('invisible').onclick=()=>{record().keypoints[el('keypointSelect').value]={visible:false};draw();};
+el('clear').onclick=()=>{delete record().keypoints[el('keypointSelect').value];draw();};
+el('save').onclick=()=>{
+ const data={...dataset,annotation_origin:'human',annotation_note:'Independently entered labels; no predictions shown on this page.'};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='labels.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+el('load').onchange=async()=>{try{const data=JSON.parse(await el('load').files[0].text());if(data.dataset_id!==dataset.dataset_id||data.annotation_origin!=='human')throw Error('不是本数据集的人工标注');dataset.records.forEach(r=>{const saved=data.records.find(s=>s.id===r.id&&s.image_sha256===r.image_sha256);if(saved)r.keypoints=saved.keypoints;});loadFrame();}catch(error){el('status').textContent=error.message;}};
+loadFrame();
+</script></html>
