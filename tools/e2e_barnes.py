@@ -91,6 +91,24 @@ def main():
             page.wait_for_function(
                 "typeof barnesImage !== 'undefined' && barnesImage?.width === 320"
             )
+            method = page.locator('[data-config-field="classical_method"]')
+            assert method.input_value() == "local_otsu_v1"
+            assert (
+                page.locator('[data-config-field="body_erosion_kernel"]').input_value()
+                == "3"
+            )
+            assert (
+                page.locator(
+                    '[data-config-field="head_confidence_threshold"]'
+                ).input_value()
+                == "0.4"
+            )
+            assert page.locator("#poseConfidenceThreshold").input_value() == "0.4"
+            method.select_option("legacy")
+            assert page.locator("[data-classical-modern]").first.is_hidden()
+            assert page.locator("[data-classical-legacy]").first.is_visible()
+            method.select_option("local_otsu_v1")
+            page.locator('[data-config-field="body_erosion_iter"]').fill("2")
             page.locator('[data-config-field="hole_count"]').fill("4")
             page.locator('[data-config-field="bg_method"]').select_option("threshold")
             page.locator("#drawMode").select_option("ellipse")
@@ -129,6 +147,15 @@ def main():
             page.wait_for_function("barnesImage?.width === 320")
             assert page.locator("#holeList input").count() == 4
             assert page.locator("#escapeTime").input_value() == "2.8"
+            assert (
+                page.locator('[data-config-field="classical_method"]').input_value()
+                == "local_otsu_v1"
+            )
+            assert (
+                page.locator('[data-config-field="body_erosion_iter"]').input_value()
+                == "2"
+            )
+            page.locator('[data-config-field="body_erosion_iter"]').fill("1")
             assert page.locator("#manualEventsEnabled").is_checked()
             page.locator("#trackingBackend").check()
             assert page.locator("#classicalDetectionControls").is_hidden()

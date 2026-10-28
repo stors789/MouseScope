@@ -207,6 +207,7 @@ def predict(args):
                 manifest["video_path"],
                 source["frame_index"],
                 fps=manifest["video_info"]["fps"],
+                orientation_override=config.get("orientation_override"),
             )
             if frame is None:
                 raise ValueError(f'不能读取验证帧 {source["frame_index"]}')

@@ -96,7 +96,15 @@ def review(args):
         config["pose_confidence_threshold"] = cutoff
     pose_cutoff = float(config["pose_confidence_threshold"])
     video_path = manifest["video_path"]
-    info = probe_video_info(video_path, fps_override=config.get("fps_override"))
+    oriented = open_video_capture(
+        video_path, orientation_override=config.get("orientation_override")
+    )
+    try:
+        info = probe_video_info(
+            video_path, fps_override=config.get("fps_override"), cap=oriented
+        )
+    finally:
+        oriented.release()
     fps = float(info["fps"])
     rois = []
     for record in manifest["records"]:
