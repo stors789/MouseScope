@@ -166,10 +166,10 @@ def build_barnes_config(sess, data):
         if config["min_area"] > config["max_area"]:
             raise ValueError("最小面积不能大于最大面积。")
         if (
-            config["hole_count"] < 2
+            not 2 <= config["hole_count"] <= 200
             or int(config["hole_count"]) != config["hole_count"]
         ):
-            raise ValueError("洞数必须是至少2的整数。")
+            raise ValueError("洞数必须是2到200的整数。")
         for key in [
             "hole_count",
             "pose_batch_size",
@@ -184,7 +184,14 @@ def build_barnes_config(sess, data):
             "temporal_diff_threshold",
             "trial_no",
         ]:
+            if int(config[key]) != config[key]:
+                raise ValueError(f"{key}必须是整数。")
             config[key] = int(config[key])
+        if config["bg_type"] not in {"light", "dark"}:
+            raise ValueError("背景色只能为浅色或深色。")
+        for key in ["erosion_kernel", "dilation_kernel"]:
+            if config[key] > 99:
+                raise ValueError("形态学核大小不能超过99。")
         for key in ["gray_threshold", "temporal_diff_threshold"]:
             if not 0 <= config[key] <= 255:
                 raise ValueError(f"{key}必须在0到255之间。")

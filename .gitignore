@@ -17,6 +17,7 @@ data/
 !/README.md
 docs/**/*.md
 !docs/pose_model_profiles.md
+!docs/barnes_maze.md
 
 # Python cache
 __pycache__/

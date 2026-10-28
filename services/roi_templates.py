@@ -22,6 +22,8 @@ _ASSAY_ALIASES = {
     "fst": "forced_swim",
     "water_maze": "water_maze",
     "mwm": "water_maze",
+    "barnes_maze": "barnes_maze",
+    "barnes": "barnes_maze",
     "open_field": "open_field",
     "oft": "open_field",
     "novel_object": "novel_object",
@@ -55,6 +57,13 @@ _ASSAY_SCHEMAS = {
         "geometry": ("pool_diameter_cm", "platform_radius_cm"),
         "roi_scalars": ("pool_diameter_cm", "platform_radius_cm"),
         "roi_label": "MWM",
+    },
+    "barnes_maze": {
+        "special": "barnes_maze",
+        "point_fields": {"arena_points": (5, 200, True)},
+        "geometry": ("arena_diameter_cm", "hole_radius_cm", "hole_count"),
+        "roi_scalars": ("arena_diameter_cm", "hole_radius_cm", "hole_count"),
+        "roi_label": "Barnes",
     },
     "open_field": {
         "point_fields": {"points": (4, 4, True)},
@@ -181,6 +190,8 @@ def normalize_template_payload(assay: Any, payload: Any) -> dict[str, Any]:
     assay_key = canonical_assay(assay)
     if not isinstance(payload, dict):
         raise RoiTemplateValidationError("ROI 模板格式无效。")
+    if assay_key == "barnes_maze":
+        payload = {**payload, "settings": {}}
     source = _source_frame(payload.get("source_frame"))
     raw_rois = payload.get("rois")
     if not isinstance(raw_rois, list) or not raw_rois:
@@ -226,7 +237,7 @@ def normalize_template_payload(assay: Any, payload: Any) -> dict[str, Any]:
                 already_normalized=already_normalized,
             )
         detection_points = _point_list(
-            raw_roi.get("detection_points"),
+            raw_roi.get("detection_points") or None,
             minimum=3,
             maximum=200,
             source=source,
@@ -266,6 +277,26 @@ def normalize_template_payload(assay: Any, payload: Any) -> dict[str, Any]:
 
             roi["pool"] = clean_ellipse(raw_roi.get("pool"), "泳池")
             roi["platform"] = clean_ellipse(raw_roi.get("platform"), "平台")
+        elif schema.get("special") == "barnes_maze":
+            holes = []
+            ids = set()
+            for raw_hole in raw_roi.get("holes") or []:
+                hole_id = str(raw_hole.get("id") or "").strip()
+                if not hole_id or hole_id in ids:
+                    raise RoiTemplateValidationError("洞位编号不能为空或重复。")
+                ids.add(hole_id)
+                point = _point_list([raw_hole.get("point")], minimum=1, maximum=1,
+                                    source=source, already_normalized=already_normalized)[0]
+                hole = {"id": hole_id, "point": point}
+                if raw_hole.get("radius_cm") is not None:
+                    radius = float(raw_hole['radius_cm'])
+                    if not 0 < radius <= 1000:
+                        raise RoiTemplateValidationError("洞 ROI 半径无效。")
+                    hole['radius_cm'] = radius
+                holes.append(hole)
+            if len(holes) < 2 or len(holes) != int(raw_roi.get("hole_count") or len(holes)):
+                raise RoiTemplateValidationError("请完成全部洞位后保存模板。")
+            roi["holes"] = holes
         elif schema.get("special") in {"novel_object", "three_chamber"}:
             objects = []
             for raw_object in raw_roi.get("objects") or []:
@@ -382,7 +413,7 @@ def materialize_template(template: dict[str, Any], target_frame: dict[str, Any])
                 nx = float(point["x"]) / source_width if legacy_pixels else float(point["x"])
                 ny = float(point["y"]) / source_height if legacy_pixels else float(point["y"])
                 point["x"], point["y"] = nx * width, ny * height
-        for field in ("points", "diameter_points", "waterline_points"):
+        for field in ("points", "diameter_points", "waterline_points", "arena_points"):
             for point in roi.get(field) or []:
                 if unknown_legacy_frame:
                     point["x"], point["y"] = float(point["x"]), float(point["y"])
@@ -390,6 +421,10 @@ def materialize_template(template: dict[str, Any], target_frame: dict[str, Any])
                     nx = float(point["x"]) / source_width if legacy_pixels else float(point["x"])
                     ny = float(point["y"]) / source_height if legacy_pixels else float(point["y"])
                     point["x"], point["y"] = nx * width, ny * height
+        if str(result.get("assay")) == "barnes_maze":
+            for hole in roi.get("holes") or []:
+                point = hole["point"]
+                point["x"], point["y"] = float(point["x"]) * width, float(point["y"]) * height
         if str(result.get("assay")) == "water_maze":
             for field in ("pool", "platform"):
                 shape = roi.get(field)

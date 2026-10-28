@@ -440,6 +440,7 @@
                 <a href="{{ url_for('manual', module='mwm') }}" class="manual-switch-btn {% if manual_type == 'mwm' %}active{% endif %}">
                     <span data-i18n="manual.switch.mwm">MWM</span>
                 </a>
+                <a href="{{ url_for('manual', module='barnes') }}" class="manual-switch-btn {% if manual_type == 'barnes' %}active{% endif %}">Barnes</a>
                 <a href="{{ url_for('manual', module='oft') }}" class="manual-switch-btn {% if manual_type == 'oft' %}active{% endif %}">
                     <span data-i18n="manual.switch.oft">OFT</span>
                 </a>
@@ -468,6 +469,8 @@
         {% include "manual_tst_content.html" %}
         {% elif manual_type == 'fst' %}
         {% include "manual_fst_content.html" %}
+        {% elif manual_type == 'barnes' %}
+        {% include "manual_barnes_content.html" %}
         {% elif manual_type == 'mwm' %}
         {% include "manual_mwm_content.html" %}
         {% elif manual_type == 'oft' %}

@@ -5,13 +5,19 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
         <div>
             <strong>姿态识别后端</strong>
-            <div class="mini-note mt-1">DeepLabCut 与背景建模彼此独立；不可用时会明确回退经典视觉。</div>
+            <div class="mini-note mt-1">{% if experiment_type == 'barnes_maze' %}开启 DLC 后模型不可用会阻止运行；关闭时使用经典视觉。{% else %}DeepLabCut 与背景建模彼此独立；不可用时会明确回退经典视觉。{% endif %}</div>
         </div>
         <span class="badge text-bg-secondary" id="poseRuntimeBadge">正在检查 DLC…</span>
     </div>
     <div class="compact-grid">
         <div>
             <label class="form-label" for="trackingBackend">追踪后端</label>
+            {% if experiment_type == 'barnes_maze' %}
+            <div class="form-check form-switch mt-2">
+                <input class="form-check-input" type="checkbox" id="trackingBackend">
+                <label class="form-check-label" for="trackingBackend">使用 DLC / Use DLC</label>
+            </div>
+            {% else %}
             <select class="form-select" id="trackingBackend">
                 <option value="classical">经典视觉</option>
                 <option value="deeplabcut">DeepLabCut</option>
@@ -20,6 +26,7 @@
                 <option value="hybrid">混合追踪（近物体时 DLC）</option>
                 {% endif %}
             </select>
+            {% endif %}
         </div>
         <div>
             <label class="form-label" for="poseConfidenceThreshold">关键点置信度</label>

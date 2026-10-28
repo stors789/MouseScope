@@ -10,15 +10,15 @@
 </p>
 
 <p align="center">
-  支持悬尾实验 TST、强迫游泳 FST、水迷宫 MWM、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM、Y 迷宫与明暗箱<br/>
-  Supports Tail Suspension Test, Forced Swim Test, Morris Water Maze, Open Field Test, Novel Object Recognition, Elevated Plus Maze, Y-Maze, and Light-Dark Box.
+  支持悬尾实验 TST、强迫游泳 FST、水迷宫 MWM、巴恩斯迷宫 Barnes、旷场实验 OFT、新奇物体识别 NOR、高架十字迷宫 EPM、Y 迷宫与明暗箱<br/>
+  Supports Tail Suspension Test, Forced Swim Test, Morris Water Maze, Barnes Maze, Open Field Test, Novel Object Recognition, Elevated Plus Maze, Y-Maze, and Light-Dark Box.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Version-v3.5.0-c96442" alt="Version"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS-7a5136" alt="Platform"/>
   <img src="https://img.shields.io/badge/Mode-Project%20Workspace%20%7C%20Quick%20Analysis-f59e0b" alt="Mode"/>
-  <img src="https://img.shields.io/badge/Modules-8%20Assays-16a34a" alt="Modules"/>
+  <img src="https://img.shields.io/badge/Modules-9%20Assays-16a34a" alt="Modules"/>
   <img src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87%20%7C%20English-0f766e" alt="Language"/>
 </p>
 
@@ -27,6 +27,8 @@
   <br/>
   <sub>MouseScope Desktop v3.5.0 首页 · Project Workspace and Quick Analysis entry points</sub>
 </p>
+
+巴恩斯迷宫已支持圆盘与洞位标定、DLC 开关、逐洞事件、首次到达/确认入箱分开计分和独立关键点验证，见 [使用说明](docs/barnes_maze.md)。
 
 ## MouseScope 是什么 | Overview
 
@@ -94,6 +96,7 @@ Use this for temporary runs, parameter trials, single videos, or small batches t
 | `TST` 悬尾实验 / Tail Suspension Test | 不动与挣扎状态分析 / immobility and struggling analysis | 身长标定、ROI、时间窗 / body-length calibration, ROI, time windows | 不动时间、挣扎时间、不动比例、首次不动潜伏期 / immobility time, struggling time, immobility percent, latency |
 | `FST` 强迫游泳 / Forced Swim Test | 漂浮不动与活动状态分析 / immobility and active-state analysis | 圆筒 ROI、直径线、检测遮掩框、时间窗 / cylinder ROI, diameter line, detection mask, time windows | 不动时间、不动比例、片段数、潜伏期、ethogram、活动曲线 / immobility time, percent, bouts, latency, ethogram, activity curve |
 | `MWM` 水迷宫 / Morris Water Maze | 空间学习、目标象限和平台搜索 / spatial learning, target quadrant, and platform search | 泳池椭圆、平台椭圆、象限坐标轴、检测遮掩框 / pool ellipse, platform ellipse, quadrant axes, detection mask | 逃逸潜伏期、平台进入、目标象限时间、趋边、标准圆轨迹图/热图 / escape latency, platform entries, target-quadrant occupancy, thigmotaxis, standard circular maps |
+| `Barnes` 巴恩斯迷宫 / Barnes Maze | 空间学习与洞位搜索 / spatial learning and hole search | 圆盘、全部洞中心、目标洞与可选遮罩 / arena, all holes, target and optional mask | 洞位序列、首次/总错误与潜伏期、覆盖率、轨迹图和热图；可切换 DLC / hole events, primary/total errors and latencies, coverage, maps and optional DLC |
 | `OFT` 旷场实验 / Open Field Test | 自主活动与中心区偏好 / locomotion and center preference | 4 角场地、可选检测遮掩框、时间窗 / 4-corner arena, optional detection mask, time windows | 总路程、速度、中心区时间与比例、壁区时间与比例 / distance, speed, center metrics, wall metrics |
 | `NOR` 新奇物体识别 / Novel Object Recognition | 新奇与熟悉物体探索差异 / novel vs familiar object exploration | 场地 4 角、2 个物体中心、第二灰度阈值、可选检测遮掩框 / arena corners, two objects, body/tail threshold, optional mask | 新奇探索时间、熟悉探索时间、辨别指数、偏好指数、头向质量字段 / exploration time, discrimination, preference, head-direction quality fields |
 | `EPM` 高架十字迷宫 / Elevated Plus Maze | 开放臂与封闭臂探索 / open-arm vs closed-arm exploration | 中心区 + 2 开放臂 + 2 封闭臂手动画区 / center, two open arms, two closed arms | 开放臂时间、开放臂进入次数、开放臂进入占比、首次进入开放臂潜伏期 / open-arm time, open entries, open-entry ratio, first open-entry latency |

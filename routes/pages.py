@@ -130,7 +130,7 @@ def register_page_routes(app, ctx) -> None:
     def manual():
         """使用手册"""
         manual_type = request.args.get('module', 'tst').strip().lower()
-        manual_modules = {'tst', 'fst', 'oft', 'nor', 'epm', 'ymaze', 'ldb', 'mwm'}
+        manual_modules = {'tst', 'fst', 'oft', 'nor', 'epm', 'ymaze', 'ldb', 'mwm', 'barnes'}
         if is_three_chamber_enabled():
             manual_modules.add('three_chamber')
         if manual_type not in manual_modules:

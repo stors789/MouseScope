@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}巴恩斯迷宫配置 · MouseScope{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static',filename='css/calibration-workbench.css') }}">
+<style>
+.barnes-shell{max-width:1500px;margin:auto}.barnes-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(340px,1fr);gap:18px}.barnes-panel{background:var(--bg-card,#fff);padding:20px;border:1px solid var(--border-card,#ddd);border-radius:16px;margin-bottom:16px}.barnes-canvas{width:100%;height:auto;background:#e5e5e5;touch-action:none;cursor:crosshair;border-radius:8px}.barnes-fields,.compact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.barnes-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.barnes-note{font-size:.88rem;color:var(--text-secondary,#666);margin:8px 0}.barnes-preview{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mini-note{font-size:.85rem;color:#666}.barnes-fields label{display:block;font-size:.9rem}.barnes-alert{white-space:pre-wrap;overflow-wrap:anywhere}#holeList{max-height:175px;overflow:auto}button:focus-visible,canvas:focus-visible{outline:3px solid #c96442;outline-offset:3px}@media(max-width:1000px){.barnes-layout{grid-template-columns:1fr}}@media(max-width:600px){.barnes-fields,.compact-grid,.barnes-preview{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="barnes-shell">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+    <div><h2>巴恩斯迷宫 <small class="text-secondary">Barnes maze</small></h2><p class="mb-0 text-secondary">标定圆盘与全部洞位 → 核对鼻尖 → 保存或分析</p></div>
+    <div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('manual',module='barnes') }}" target="_blank" rel="noopener">使用手册</a><a class="btn btn-outline-secondary" href="{{ url_for('analysis_config',session_id=session_id) }}">分析配置页</a></div>
+  </div>
+  <div id="barnesStatus" class="alert alert-light barnes-alert" role="status" aria-live="polite">每个视频请至少检查一次 ROI 对齐。洞号按实验记录标定。</div>
+  <div class="barnes-layout">
+    <main>
+      <section class="barnes-panel">
+        <div class="barnes-fields mb-3">
+          <label>当前视频 / Video<select id="videoSelect" class="form-select"></select></label>
+          <label>当前圆盘 / Arena<select id="arenaSelect" class="form-select"></select></label>
+        </div>
+        <div class="barnes-toolbar">
+          <button class="btn btn-sm btn-outline-primary" id="addArena">新增圆盘</button>
+          <button class="btn btn-sm btn-outline-danger" id="removeArena">移除当前圆盘</button>
+          <label class="align-self-center">绘制<select id="drawMode" class="form-select form-select-sm" aria-label="绘制模式">
+            <option value="boundary">边界点（至少5点）</option><option value="ellipse">拖出椭圆边界</option><option value="holes">逐个洞中心</option><option value="mask">检测遮罩（至少3点）</option><option value="edit">拖动已有标记</option>
+          </select></label>
+          <button class="btn btn-sm btn-outline-secondary" id="undoPoint">撤销末点</button>
+          <button class="btn btn-sm btn-outline-secondary" id="clearPoints">清空当前绘制项</button>
+        </div>
+        <p class="barnes-note">沿圆盘边缘点选至少5点，或拖出椭圆；再切换“逐个洞中心”，按顺序点完所有洞。可拖动标记修正。黄色为目标洞。遮罩可延伸至圆盘边缘外，但应只包含本只小鼠。</p>
+        <canvas id="barnesCanvas" class="barnes-canvas" width="960" height="540" aria-label="巴恩斯圆盘与洞位标定画布"></canvas>
+        <label class="d-block mt-3" for="frameSliderDebug">查看帧 / Frame <span id="frameLabel">0</span></label>
+        <input type="range" class="form-range" id="frameSliderDebug" min="0" max="0" value="0">
+        <div class="barnes-fields mt-2"><label>跳到视频时间（秒）<input id="seekSeconds" type="number" min="0" step="0.1" value="0" class="form-control"></label><button id="seekFrame" class="btn btn-outline-primary align-self-end">查看该时刻</button></div>
+      </section>
+      <section class="barnes-panel">
+        <div class="d-flex justify-content-between align-items-center mb-2"><h5>检测与鼻尖预览</h5><button id="previewButton" class="btn btn-outline-primary">更新检测预览</button></div>
+        <p class="barnes-note">自动探洞采用“鼻尖进入洞 ROI 并达到确认时长”。看不到鼻尖时不凭运动方向猜测；请核对低覆盖率片段。</p>
+        <div class="barnes-preview"><canvas id="previewOriginal" class="barnes-canvas" aria-label="原始帧"></canvas><canvas id="previewResult" class="barnes-canvas" aria-label="追踪与关键点结果"></canvas></div>
+        <div class="mini-note mt-2" id="previewStatus" role="status"></div>
+      </section>
+    </main>
+    <aside>
+      <section class="barnes-panel" id="roiList">
+        <h5>本圆盘设置</h5>
+        <div class="barnes-fields">
+          <label>小鼠名称 / Name<input class="form-control" id="roiName"></label>
+          <label>项目小鼠 / Subject<select class="form-select" id="subjectId"><option value="">未绑定</option>{% for s in project_subjects %}<option value="{{ s.subject_id }}">{{ s.animal_code or s.subject_id }}</option>{% endfor %}</select></label>
+          <label>圆盘直径 (cm)<input class="form-control" data-config-field="arena_diameter_cm" type="number" min="1" step="0.1"></label>
+          <label>全部洞数<input class="form-control" data-config-field="hole_count" type="number" min="2" max="200" step="1"></label>
+          <label>洞 ROI 半径 (cm)<input class="form-control" data-config-field="hole_radius_cm" type="number" min="0.01" step="0.1"></label>
+          <label>目标洞号 / Target<select class="form-select" id="targetHole"></select></label>
+          <label>ROI开始（秒，可空）<input class="form-control" id="roiStart" type="number" min="0" step="0.01"></label>
+          <label>ROI结束（秒，可空）<input class="form-control" id="roiEnd" type="number" min="0" step="0.01"></label>
+        </div>
+        <p class="barnes-note" id="geometryStatus"></p><div id="holeList" class="small"></div>
+        <hr><label class="form-label" for="escapeTime">人工确认入箱时间 / Confirmed escape（源视频秒，可空）</label><input class="form-control" type="number" id="escapeTime" min="0" step="0.01">
+        <p class="barnes-note">只在视频中确认进入逃生箱后填写。单纯消失或到达目标洞不等于入箱；探测试次不填写。</p>
+        <div class="form-check"><input type="checkbox" class="form-check-input" id="manualEventsEnabled"><label for="manualEventsEnabled" class="form-check-label">使用人工复核洞序列替换自动序列</label></div>
+        <textarea class="form-control mt-2" id="manualEvents" rows="4" placeholder="每行：视频秒,洞号&#10;12.4,3&#10;18.2,3&#10;24.6,1" aria-label="人工洞位事件"></textarea>
+        <p class="barnes-note">保留撤出后再次探同一洞的记录。勾选但留空表示人工确认零次探洞。</p>
+      </section>
+      <section class="barnes-panel">
+        <h5>试次与计分 / Trial &amp; scoring</h5>
+        <div class="barnes-fields">
+          <label>试次类型<select class="form-select" data-config-field="trial_type"><option value="acquisition">训练 Acquisition</option><option value="reversal">反转 Reversal</option><option value="probe">探测 Probe</option></select></label>
+          <label>天次 / Day<input class="form-control" data-config-field="day_label"></label>
+          <label>试次编号<input class="form-control" type="number" min="1" step="1" data-config-field="trial_no"></label>
+          <label>确认时长 (s)<input class="form-control" type="number" min="0" step="0.01" data-config-field="visit_confirm_s"></label>
+          <label>撤出重置 (s)<input class="form-control" type="number" min="0" step="0.01" data-config-field="visit_reset_s"></label>
+          <label>经典鼻尖质量阈值<input class="form-control" type="number" min="0" max="1" step="0.01" data-config-field="head_confidence_threshold"></label>
+          <label>最大身体跳变 (cm)<input class="form-control" type="number" min="0" step="1" data-config-field="tracking_max_jump_cm"></label>
+          <label>分箱 (s)<input class="form-control" type="number" min="0.01" step="1" data-config-field="bin_seconds"></label>
+          <label>入箱候选消失时长 (s)<input class="form-control" type="number" min="0.01" step="0.1" data-config-field="escape_absence_s"></label>
+          <label>入箱候选半径 (cm)<input class="form-control" type="number" min="0.01" step="0.1" data-config-field="escape_zone_radius_cm"></label>
+        </div>
+      </section>
+      {% include "_pose_model_controls.html" %}
+      <section class="barnes-panel" id="classicalDetectionControls">
+        <h5>经典视觉检测 / Classical detection</h5>
+        <div class="barnes-fields">
+          <label>背景方法<select class="form-select" data-config-field="bg_method"><option value="temporal">时序背景</option><option value="threshold">灰度阈值</option><option value="static">静态背景</option><option value="mog2">MOG2</option><option value="knn">KNN</option></select></label>
+          <label>背景色<select class="form-select" data-config-field="bg_type"><option value="light">浅背景 / 深鼠</option><option value="dark">深背景 / 浅鼠</option></select></label>
+          {% for key,label in [('gray_threshold','灰度阈值'),('temporal_bg_samples','背景抽样帧数'),('temporal_diff_threshold','背景差分阈值'),('min_area','最小面积 (px²)'),('max_area','最大面积 (px²)'),('erosion_kernel','腐蚀核'),('erosion_iter','腐蚀次数'),('dilation_kernel','膨胀核'),('dilation_iter','膨胀次数')] %}
+          <label>{{ label }}<input class="form-control" type="number" min="0" step="1" data-config-field="{{ key }}"></label>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="barnes-panel">
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="generateVideo" checked><label class="form-check-label" for="generateVideo">生成标注视频 / Annotated video</label></div>
+        <div class="d-grid gap-2"><button class="btn btn-outline-primary" id="saveConfig">保存当前配置</button><button class="btn btn-primary" id="primaryActionBtn">{% if launch_mode == 'workspace' %}保存并返回分析配置{% else %}开始分析{% endif %}</button></div>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const sessionId = {{ session_id|tojson }};
+const initialDraftPayload = {{ draft_payload|tojson }};
+const barnesPage = {{ {'videoInfos':video_info_list,'videoIndex':current_video_index,'defaults':experiment_defaults,'isBatch':is_batch,'workspaceMode':launch_mode=='workspace','workspaceUrl':url_for('analysis_config',session_id=session_id),'projectSubjects':project_subjects,'isProject':project_context is not none}|tojson }};
+</script>
+<script src="{{ url_for('static',filename='js/pose_model_controls.js') }}"></script>
+<script src="{{ url_for('static',filename='js/barnes_calibration.js') }}"></script>
+{% endblock %}

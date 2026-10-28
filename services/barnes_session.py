@@ -137,6 +137,7 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
                 clock, count, cfg.get("start_sec"), cfg.get("end_sec")
             )
             start_s = float(cfg.get("start_sec") or 0.0)
+            video_end_s = clock.time_at(count - 1) + clock.median_dt
             roi_configs = self._parse_rois(cfg)
             for r in roi_configs:
                 points = r["arena_points"] + [h["point"] for h in r["holes"]]
@@ -148,7 +149,7 @@ class BarnesMultiArenaAnalysisSession(AnalysisSessionBase):
             for r in roi_configs:
                 timing = r["time_config"]
                 rs = start_s
-                re = cfg.get("end_sec")
+                re = min(float(cfg.get("end_sec") or video_end_s), video_end_s)
                 if timing["mode"] == "precise":
                     if timing.get("start") is not None:
                         rs = max(rs, float(timing["start"]))

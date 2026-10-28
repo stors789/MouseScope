@@ -12,6 +12,7 @@
         draggedKey: null,
         corrections: [],
         requestedSelection: null,
+        previewRequest: 0,
     };
 
     function byId(id) { return document.getElementById(id); }
@@ -45,9 +46,13 @@
         }
     }
 
+    function selectedBackend() {
+        const el = byId('trackingBackend');
+        return el?.type === 'checkbox' ? (el.checked ? 'deeplabcut' : 'classical') : (el?.value || 'classical');
+    }
     function readConfig() {
         const config = {
-            tracking_backend: byId('trackingBackend')?.value || 'classical',
+            tracking_backend: selectedBackend(),
             pose_model_profile_id: byId('poseModelProfile')?.value || null,
             pose_model_version_id: byId('poseModelVersion')?.value || null,
             pose_confidence_threshold: Number(byId('poseConfidenceThreshold')?.value || 0.8),
@@ -69,7 +74,10 @@
         const triggerMargin = byId('poseTriggerMarginCm');
         const cropPadding = byId('poseCropPaddingRatio');
         const cacheEnabled = byId('poseCacheEnabled');
-        if (backend && raw.tracking_backend) backend.value = raw.tracking_backend;
+        if (backend && raw.tracking_backend) {
+            if (backend.type === 'checkbox') backend.checked = raw.tracking_backend === 'deeplabcut';
+            else backend.value = raw.tracking_backend;
+        }
         if (confidence && raw.pose_confidence_threshold != null) confidence.value = String(raw.pose_confidence_threshold);
         if (batchSize && raw.pose_batch_size != null) batchSize.value = String(raw.pose_batch_size);
         if (triggerMargin && raw.pose_trigger_margin_cm != null) triggerMargin.value = String(raw.pose_trigger_margin_cm);
@@ -84,7 +92,7 @@
     }
 
     function syncBackendUi() {
-        const strictDlc = byId('trackingBackend')?.value === 'deeplabcut';
+        const strictDlc = selectedBackend() === 'deeplabcut';
         const classicalControls = byId('classicalDetectionControls');
         if (classicalControls) classicalControls.hidden = strictDlc;
     }
@@ -241,6 +249,7 @@
     }
 
     async function runPreview() {
+        const requestId = ++state.previewRequest;
         const button = byId('posePreviewButton');
         if (button) button.disabled = true;
         text('poseModelStatus', '正在运行姿态关键点预览…');
@@ -258,10 +267,11 @@
                 }),
             });
             const payload = await response.json();
+            if (requestId !== state.previewRequest) return;
             if (!response.ok || !payload.success) {
                 state.prediction = null;
                 syncButtons();
-                text('poseModelStatus', `${errorText(payload, '姿态预览失败')} 当前预览继续使用经典视觉。`);
+                text('poseModelStatus', `${errorText(payload, '姿态预览失败')}${state.assay === 'barnes_maze' ? ' DLC 开关状态保持不变。' : ' 当前预览继续使用经典视觉。'}`);
                 return;
             }
             state.prediction = normalizePrediction(payload);
@@ -377,7 +387,13 @@
         }
     }
 
-    window.MouseScopePoseModels = {readConfig, applyConfig, init};
+    function clearPreview() {
+        state.previewRequest += 1;
+        state.prediction = null;
+        state.baseCanvasImage = null;
+        syncButtons();
+    }
+    window.MouseScopePoseModels = {readConfig, applyConfig, init, clearPreview};
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

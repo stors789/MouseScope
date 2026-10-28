@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Barnes · 分析结果{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width:1400px">
+  <div class="d-flex justify-content-between align-items-center gap-3 mb-3"><h2>巴恩斯迷宫 · Barnes maze</h2><button id="stopBtn" class="btn btn-outline-danger">停止分析 / Stop</button></div>
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between mb-2"><strong id="statusText">等待中</strong><span id="runtimeStats"></span></div>
+    <div class="progress mb-2" role="progressbar" aria-label="分析进度"><div id="progressBar" class="progress-bar" style="width:0%">0%</div></div>
+    <p id="messageText" class="mb-0" role="status" aria-live="polite"></p>
+  </div></div>
+  <div class="card mb-3"><div class="card-body">
+    <h5>实时结果 / Live results</h5>
+    <div class="table-responsive"><table class="table align-middle"><thead><tr><th>圆盘 / Arena</th><th>当前洞</th><th>探洞次数</th><th>首次错误</th><th>首次到达潜伏期 (s)</th><th>距离 (cm)</th><th>鼻尖覆盖率</th></tr></thead><tbody id="roiTableBody"></tbody></table></div>
+    <p class="text-secondary small mb-0">首次到达目标洞与确认入箱分别统计。自动探洞依据鼻尖 ROI；入箱候选需人工确认。未确认的逃生潜伏期在汇总中留空。</p>
+  </div></div>
+  <div class="card mb-3" id="downloadSection" hidden><div class="card-body">
+    <h5>结果文件 / Results</h5><div class="d-flex flex-wrap gap-2" id="downloadLinks"></div>
+    <button class="btn btn-outline-secondary mt-3" id="openFolder">打开结果目录</button>
+    <a href="{{ url_for('calibrate',session_id=session_id) }}" class="btn btn-outline-primary mt-3">返回配置复核</a>
+  </div></div>
+  <details class="card"><summary class="card-header">运行日志 / Logs</summary><pre id="logBox" class="card-body small" style="white-space:pre-wrap;max-height:400px;overflow:auto"></pre></details>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const sessionId = {{ session_id|tojson }};
+let timer;
+const number = (value, digits=1) => value == null ? '—' : Number(value).toFixed(digits);
+async function updateStatus() {
+  try {
+    const response = await MouseScopeMonitor.fetchStatus(`/api/status/${sessionId}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || data.error || '读取状态失败');
+    document.getElementById('statusText').textContent = data.status;
+    document.getElementById('messageText').textContent = data.message || '';
+    const percent = Math.max(0,Math.min(100,Number(data.progress || 0)));
+    const bar = document.getElementById('progressBar'); bar.style.width = `${percent}%`; bar.textContent = `${number(percent)}%`;
+    bar.parentElement.setAttribute('aria-valuenow',percent);
+    const stats = data.stats || {};
+    document.getElementById('runtimeStats').textContent = `${stats.processed_frames || 0} frames · ${number(stats.elapsed_time)} s`;
+    const body = document.getElementById('roiTableBody'); body.replaceChildren();
+    for (const row of data.realtime_data || []) {
+      const tr = document.createElement('tr');
+      for (const value of [row.roi_name,row.hole_id || '—',row.hole_visit_count,row.primary_errors,number(row.primary_latency_s),number(row.total_distance_cm),`${number(row.nose_observed_percent)}%`]) {
+        const td = document.createElement('td');td.textContent = value ?? '—';tr.append(td);
+      }
+      body.append(tr);
+    }
+    document.getElementById('logBox').textContent = (data.logs || []).join('\n');
+    if (['completed','error','stopped','interrupted'].includes(data.status)) {
+      clearInterval(timer); document.getElementById('stopBtn').hidden = true;
+      if (data.status === 'completed') document.getElementById('downloadSection').hidden = false;
+    }
+  } catch(error) { document.getElementById('messageText').textContent = error.message; }
+}
+document.addEventListener('DOMContentLoaded',() => {
+  const links = {all:'全部下载 / Download all',summary_csv:'汇总与逐洞统计 CSV',events_csv:'洞位事件 CSV',track_csv:'逐帧轨迹 CSV',bins_csv:'分箱 CSV',trackmap:'轨迹图',heatmap:'热图',report:'报告',video:'标注视频'};
+  for (const [kind,label] of Object.entries(links)) {
+    const a=document.createElement('a');a.className='btn btn-outline-primary';a.textContent=label;
+    a.setAttribute('download','');
+    a.href=kind==='all'?`/api/download_all/${sessionId}`:`/api/download/${sessionId}/${kind}`;
+    document.getElementById('downloadLinks').append(a);
+  }
+  document.getElementById('stopBtn').onclick=async()=>{await fetch(`/api/stop/${sessionId}`,{method:'POST'});updateStatus();};
+  document.getElementById('openFolder').onclick=async()=>{
+    const data=await(await fetch(`/api/open_folder/${sessionId}`,{method:'POST'})).json();
+    if(!data.success)document.getElementById('messageText').textContent=data.error?.message || data.error;
+  };
+  timer=setInterval(updateStatus,1000);updateStatus();
+});
+</script>
+{% endblock %}

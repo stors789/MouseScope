@@ -20,6 +20,7 @@ from novel_object import NovelObjectTracker, render_novel_object_heatmap, render
 from open_field import OpenFieldTracker, render_open_field_heatmap, render_open_field_trackmap
 from three_chamber import ThreeChamberTracker, render_three_chamber_heatmap, render_three_chamber_trackmap
 from water_maze import WaterMazeTracker, render_water_maze_heatmap, render_water_maze_trackmap
+from barnes_maze import BarnesArena, BarnesTracker, render_barnes_map
 from y_maze import YMazeTracker, _extend_edge_to_quad, render_y_maze_heatmap, render_y_maze_trackmap
 
 
@@ -30,6 +31,7 @@ PREVIEW_EXPERIMENTS = (
     {"key": "light_dark", "label": "明暗箱", "short_label": "LDB"},
     {"key": "novel_object", "label": "新物体识别", "short_label": "NOR"},
     {"key": "water_maze", "label": "水迷宫", "short_label": "MWM"},
+    {"key": "barnes_maze", "label": "巴恩斯迷宫", "short_label": "Barnes"},
 )
 
 
@@ -251,7 +253,22 @@ def _build_water_maze() -> tuple[Any, Callable[..., Any], Callable[..., Any], in
     return tracker, render_water_maze_trackmap, render_water_maze_heatmap, 6
 
 
+def _build_barnes():
+    angles = np.linspace(0, 2 * math.pi, 32, endpoint=False)
+    points = [[300 + 250 * math.cos(t), 300 + 210 * math.sin(t)] for t in angles]
+    holes = [dict(id=str(i+1), point=[300+210*math.cos(t),300+176*math.sin(t)])
+             for i,t in enumerate(angles[::4])]
+    tracker = BarnesTracker(BarnesArena(points, holes, '1'), tracking_max_jump_cm=0)
+    for i,(x,y) in enumerate(_sample_path([(-5,10),(-25,-8),(-18,-27),(14,-22),(30,2)],steps=20)):
+        px,py = tracker.arena.to_image((x,y))
+        tracker.scorer.update(i*.1,.1,dict(keypoints=dict(body_center=dict(x=px,y=py,confidence=1,visible=True))))
+    track = lambda t,p,**kw: render_barnes_map(t,p,style=kw.get('style'))
+    heat = lambda t,p,**kw: render_barnes_map(t,p,heatmap=True,style=kw.get('style'))
+    return tracker,track,heat,1
+
+
 BUILDERS: dict[str, Callable[[], tuple[Any, Callable[..., Any], Callable[..., Any], int]]] = {
+    "barnes_maze": _build_barnes,
     "open_field": _build_open_field,
     "novel_object": _build_novel_object,
     "y_maze": _build_y_maze,

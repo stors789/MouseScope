@@ -325,7 +325,11 @@ class BarnesScorer:
             roi_id=self.roi_id,
             roi_name=self.roi_name,
             time_s=metric(time_s),
-            confirmed_time_s=metric(time_s if source == "manual" else self._last_t),
+            confirmed_time_s=metric(
+                time_s
+                if source == "manual"
+                else max(self._last_t, time_s + self.confirm_s)
+            ),
             latency_s=metric(time_s - self.start_s),
             hole_id=hole,
             target=hole == self.arena.target_hole_id,
@@ -726,34 +730,46 @@ class BarnesTracker:
     def build_time_bins(self, bin_seconds=60.0):
         width = positive(bin_seconds, "分箱长度")
         bins = {}
-        for row in self.frame_records:
-            if not row["in_stats_window"]:
-                continue
-            index = int(max(0, row["time_s"] - self.scorer.start_s) // width)
-            b = bins.setdefault(
-                index,
-                dict(
-                    roi_id=self.roi_id,
-                    roi_name=self.roi_name,
-                    bin_index=index + 1,
-                    start_s=metric(self.scorer.start_s + index * width),
-                    end_s=metric(self.scorer.start_s + (index + 1) * width),
-                    observed_body_s=0.0,
-                    observed_nose_s=0.0,
-                    observed_distance_cm=0.0,
-                    hole_visits=0,
-                    target_visits=0,
-                ),
-            )
-            b["observed_body_s"] += row["dt_s"] if row["detected"] else 0.0
-            b["observed_nose_s"] += row["dt_s"] if row["nose_observed"] else 0.0
-            b["observed_distance_cm"] += row["step_distance_cm"]
+        rows = [r for r in self.frame_records if r["in_stats_window"]]
+        end = max((r["time_s"] + r["dt_s"] for r in rows), default=self.scorer.start_s)
+        for row in rows:
+            cursor = row["time_s"]
+            stop = cursor + row["dt_s"]
+            while cursor < stop - 1e-9:
+                index = int(max(0, cursor - self.scorer.start_s) / width + 1e-9)
+                bin_end = self.scorer.start_s + (index + 1) * width
+                duration = min(stop, bin_end) - cursor
+                bucket = bins.setdefault(
+                    index,
+                    dict(
+                        roi_id=self.roi_id,
+                        roi_name=self.roi_name,
+                        bin_index=index + 1,
+                        start_s=metric(self.scorer.start_s + index * width),
+                        end_s=metric(min(end, bin_end)),
+                        observed_body_s=0.0,
+                        observed_nose_s=0.0,
+                        observed_distance_cm=0.0,
+                        hole_visits=0,
+                        target_visits=0,
+                    ),
+                )
+                bucket["observed_body_s"] += duration if row["detected"] else 0.0
+                bucket["observed_nose_s"] += duration if row["nose_observed"] else 0.0
+                bucket["observed_distance_cm"] += (
+                    row["step_distance_cm"] * duration / row["dt_s"]
+                )
+                cursor += duration
         for event in self.scorer.events:
-            index = int(max(0, event["time_s"] - self.scorer.start_s) // width)
+            if not bins:
+                break
+            index = min(
+                int(max(0, event["time_s"] - self.scorer.start_s) // width), max(bins)
+            )
             if index in bins:
                 bins[index]["hole_visits"] += 1
                 bins[index]["target_visits"] += int(event["target"])
-        return list(bins.values())
+        return [bins[index] for index in sorted(bins)]
 
 
 def hole_outline(arena, hole, count=32):
@@ -834,7 +850,22 @@ def render_barnes_map(tracker, path, *, heatmap=False, style=None):
     size = 520
     center = np.array([size / 2, size / 2])
     out = np.empty((size, size, 3), np.uint8)
-    out[:] = style_color(style, "trackmap", "background")
+    out[:] = (
+        style_color(style, "heatmap", "outside")
+        if heatmap
+        else style_color(style, "trackmap", "background")
+    )
+    cv2.circle(
+        out,
+        tuple(center.astype(int)),
+        round(radius * scale),
+        (
+            style_color(style, "heatmap", "zero_color")
+            if heatmap
+            else style_color(style, "trackmap", "region_fill")
+        ),
+        -1,
+    )
     ink = style_color(style, "trackmap", "text")
     histogram = np.zeros((size, size), np.float32)
 
