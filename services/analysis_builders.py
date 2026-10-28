@@ -1016,6 +1016,9 @@ def build_analysis_config(
 ) -> dict[str, Any]:
     exp = str(experiment_type or "").strip().lower()
     data = merge_experiment_defaults(exp, data, global_defaults)
+    if exp == "barnes_maze":
+        from services.barnes_config import build_barnes_config
+        return build_barnes_config(sess, data)
     if exp == "open_field":
         return build_open_field_config(sess, data)
     if exp == "novel_object":

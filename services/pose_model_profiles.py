@@ -13,7 +13,7 @@ from typing import Any
 from services.atomic_json import atomic_write_json, read_json
 
 
-SUPPORTED_ASSAYS = {"open_field", "novel_object"}
+SUPPORTED_ASSAYS = {"open_field", "novel_object", "barnes_maze"}
 DEFAULT_KEYPOINT_SCHEMA = [
     {"name": "nose", "label_zh": "鼻尖", "required": True},
     {"name": "left_ear", "label_zh": "左耳", "required": False},
@@ -44,12 +44,12 @@ def _clean_name(value: Any, label: str = "模型档案名称") -> str:
 
 def _clean_assays(value: Any) -> list[str]:
     raw = value if isinstance(value, list) else [value]
-    aliases = {"oft": "open_field", "nor": "novel_object"}
+    aliases = {"oft": "open_field", "nor": "novel_object", "barnes": "barnes_maze"}
     assays: list[str] = []
     for item in raw:
         assay = aliases.get(str(item or "").strip().lower(), str(item or "").strip().lower())
         if assay not in SUPPORTED_ASSAYS:
-            raise PoseModelValidationError("姿态模型仅支持旷场和新奇物体识别实验。")
+            raise PoseModelValidationError("姿态模型仅支持旷场、新奇物体识别和巴恩斯迷宫实验。")
         if assay not in assays:
             assays.append(assay)
     if not assays:

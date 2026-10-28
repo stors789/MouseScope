@@ -136,7 +136,8 @@ class BarnesScoringTests(unittest.TestCase):
         self.assertEqual(result["primary_errors"], 2)
         self.assertEqual(result["total_errors"], 3)
         self.assertEqual(result["escape_status"], "confirmed_manual")
-        self.assertEqual(len(s.events), 5)
+        self.assertEqual(len(s.events), 4)
+        self.assertEqual(result["analysis_duration_s"], 4.0)
 
     def test_detection_loss_is_only_escape_candidate(self):
         s = self.scorer()

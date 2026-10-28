@@ -325,6 +325,7 @@ class BarnesScorer:
             roi_id=self.roi_id,
             roi_name=self.roi_name,
             time_s=metric(time_s),
+            confirmed_time_s=metric(time_s if source == "manual" else self._last_t),
             latency_s=metric(time_s - self.start_s),
             hole_id=hole,
             target=hole == self.arena.target_hole_id,
@@ -345,13 +346,18 @@ class BarnesScorer:
         dt = positive(dt_s, "帧间隔")
         if not math.isfinite(t) or (self._last_t is not None and t <= self._last_t):
             raise ValueError("源时间戳必须为有限递增数值。")
+        previous_time = self._last_t
         self._last_t = t
-        self._last_dt = dt
         in_window = (
             t >= self.start_s
-            and (self.end_s is None or t <= self.end_s)
-            and (self.escape_time is None or t <= self.escape_time)
+            and (self.end_s is None or t < self.end_s)
+            and (self.escape_time is None or t < self.escape_time)
         )
+        if in_window:
+            for limit in (self.end_s, self.escape_time):
+                if limit is not None:
+                    dt = min(dt, limit - t)
+        self._last_dt = dt
         body_px = self._point(
             observation,
             "body_center",
@@ -388,7 +394,9 @@ class BarnesScorer:
                 if self._previous_body is not None:
                     step = math.dist(body, self._previous_body)
                     self.distance += step
-                    speed = step / dt
+                    speed = (
+                        step / (t - previous_time) if previous_time is not None else 0.0
+                    )
                 self._first_body = (
                     self._first_body if self._first_body is not None else body
                 )
@@ -477,6 +485,7 @@ class BarnesScorer:
             detected=body is not None,
             nose_observed=nose is not None,
             tracking_backend=self.backend,
+            landmark_source=(observation or {}).get("source", self.backend),
             x_px=metric(body_px[0]) if body_px is not None else None,
             y_px=metric(body_px[1]) if body_px is not None else None,
             x_cm=metric(body[0]) if body is not None else None,
@@ -625,6 +634,19 @@ class BarnesScorer:
             self._emit(event["hole_id"], event["time_s"], self.distance, "manual")
             self._manual_index += 1
         return self.build_summary()
+
+    def hole_summary(self):
+        return [
+            dict(
+                roi_id=self.roi_id,
+                roi_name=self.roi_name,
+                hole_id=h["id"],
+                target=h["id"] == self.arena.target_hole_id,
+                visits=sum(e["hole_id"] == h["id"] for e in self.events),
+                nose_occupancy_s=metric(self.hole_time[h["id"]]),
+            )
+            for h in self.arena.holes
+        ]
 
 
 class BarnesTracker:
@@ -805,11 +827,15 @@ def draw_barnes_results(frame, trackers, results):
 
 
 def render_barnes_map(tracker, path, *, heatmap=False, style=None):
-    scale = 5.0
+    from spatial_render import classic_heatmap, style_color
+
     radius = tracker.arena.radius_cm
-    size = max(240, int(2 * radius * scale + 80))
+    scale = 220.0 / radius
+    size = 520
     center = np.array([size / 2, size / 2])
-    out = np.full((size, size, 3), 255, np.uint8)
+    out = np.empty((size, size, 3), np.uint8)
+    out[:] = style_color(style, "trackmap", "background")
+    ink = style_color(style, "trackmap", "text")
     histogram = np.zeros((size, size), np.float32)
 
     def pixel(point):
@@ -831,21 +857,26 @@ def render_barnes_map(tracker, path, *, heatmap=False, style=None):
         if heatmap:
             histogram[p[1], p[0]] += row["dt_s"]
         elif previous is not None:
-            cv2.line(out, previous, p, (80, 110, 190), 2, cv2.LINE_AA)
+            cv2.line(
+                out,
+                previous,
+                p,
+                style_color(style, "trackmap", "track"),
+                2,
+                cv2.LINE_AA,
+            )
         previous = p
     if heatmap:
         blurred = cv2.GaussianBlur(histogram, (0, 0), sigmaX=5)
         if blurred.max() > 0:
-            colored = cv2.applyColorMap(
-                np.uint8(blurred / blurred.max() * 255), cv2.COLORMAP_TURBO
-            )
+            colored = classic_heatmap(blurred / blurred.max(), style)
             alpha = np.clip(blurred / blurred.max(), 0, 1)[:, :, None]
             out = np.uint8(out * (1 - alpha) + colored * alpha)
     cv2.circle(
         out,
         tuple(center.astype(int)),
         round(radius * scale),
-        (120, 120, 120),
+        ink,
         2,
         cv2.LINE_AA,
     )
@@ -856,7 +887,7 @@ def render_barnes_map(tracker, path, *, heatmap=False, style=None):
             out,
             p,
             max(3, round(hole["radius_cm"] * scale)),
-            (40, 160, 40) if target else (180, 180, 180),
+            style_color(style, "trackmap", "platform") if target else ink,
             2,
         )
         cv2.putText(
@@ -865,34 +896,21 @@ def render_barnes_map(tracker, path, *, heatmap=False, style=None):
             (p[0] + 4, p[1] - 4),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.4,
-            (50, 50, 50),
+            ink,
             1,
         )
     if not heatmap:
         if first is not None:
-            cv2.circle(out, first, 5, (30, 170, 30), -1)
+            cv2.circle(out, first, 5, style_color(style, "trackmap", "start"), -1)
         if last is not None:
-            cv2.circle(out, last, 5, (30, 30, 220), -1)
+            cv2.circle(out, last, 5, style_color(style, "trackmap", "end"), -1)
     cv2.putText(
         out,
         "Observed body occupancy" if heatmap else "Observed body path",
         (12, 22),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.52,
-        (50, 50, 50),
+        ink,
         1,
     )
     return bool(write_image_unicode(path, out))
-
-    def hole_summary(self):
-        return [
-            dict(
-                roi_id=self.roi_id,
-                roi_name=self.roi_name,
-                hole_id=h["id"],
-                target=h["id"] == self.arena.target_hole_id,
-                visits=sum(e["hole_id"] == h["id"] for e in self.events),
-                nose_occupancy_s=metric(self.hole_time[h["id"]]),
-            )
-            for h in self.arena.holes
-        ]

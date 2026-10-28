@@ -24,7 +24,7 @@ def resolve_pose_runtime_config(
     runtime_status: dict[str, Any] | None = None,
 ) -> None:
     """Resolve requested backends and immutable model refs before snapshotting."""
-    if assay not in {"open_field", "novel_object"}:
+    if assay not in {"open_field", "novel_object", "barnes_maze"}:
         return
     status = runtime_status or DeepLabCutRuntime().status()
 
@@ -81,6 +81,11 @@ def resolve_pose_runtime_config(
     for item in config.get("per_video_configs") or []:
         if isinstance(item, dict):
             resolve_one(item)
+    if assay == "barnes_maze":
+        for target in [config] + list(config.get("per_video_configs") or []):
+            if target.get("tracking_backend") == "deeplabcut" and target.get("tracking_backend_effective") != "deeplabcut":
+                reason = target.get("tracking_fallback_reason") or target.get("pose_runtime_code")
+                raise ValueError(f"DLC已开启，但模型或worker不可用（{reason}）。请配置DLC或关闭开关后运行。")
 
 
 def _normalise_point(value: Any) -> dict[str, Any] | None:

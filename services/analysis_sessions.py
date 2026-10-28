@@ -16,6 +16,7 @@ from services.three_chamber_session import (
     ThreeChamberSocialAnalysisSession,
 )
 from services.water_maze_session import WaterMazeMultiPoolAnalysisSession
+from services.barnes_session import BarnesMultiArenaAnalysisSession
 
 __all__ = [
     'configure_analysis_runtime',
@@ -30,4 +31,5 @@ __all__ = [
     'ThreeChamberSocialAnalysisSession',
     'ThreeChamberMultiArenaAnalysisSession',
     'WaterMazeMultiPoolAnalysisSession',
+    'BarnesMultiArenaAnalysisSession',
 ]

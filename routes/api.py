@@ -30,6 +30,7 @@ from services.analysis_sessions import (
     ThreeChamberSocialAnalysisSession,
     VisionAnalysisSession,
     WaterMazeMultiPoolAnalysisSession,
+    BarnesMultiArenaAnalysisSession,
     YMazeMultiArenaAnalysisSession,
 )
 from services.debug_preview import build_debug_preview_response
@@ -334,7 +335,7 @@ def register_api_routes(app, ctx) -> None:
         if not sess:
             return _api_error('会话不存在', 404, code='session_not_found')
         assay = str(sess.get('experiment_type') or '')
-        if assay not in {'open_field', 'novel_object'}:
+        if assay not in {'open_field', 'novel_object', 'barnes_maze'}:
             return _api_error('当前实验不支持姿态模型预览。', 400, code='pose_assay_unsupported')
         data = request.get_json(silent=True) or {}
         try:
@@ -1768,6 +1769,14 @@ def register_api_routes(app, ctx) -> None:
         data = request.get_json()
         if not isinstance(data, dict):
             data = {}
+        if sess.get('experiment_type') == 'barnes_maze':
+            from services.barnes_config import build_barnes_config
+            try:
+                resolved = build_barnes_config({}, dict(data, per_video_configs=[]))
+                _resolve_pose_runtime_config(resolved, 'barnes_maze')
+                data.update(resolved)
+            except (TypeError, ValueError, KeyError) as exc:
+                return _api_error(str(exc), 400, code='pose_configuration_invalid')
         return build_debug_preview_response(session_id, sess, data)
 
 
@@ -1958,11 +1967,17 @@ def register_api_routes(app, ctx) -> None:
                 )
         else:
             global_defaults = experiment_defaults_store.get_defaults() if experiment_defaults_store is not None else None
-            vision_config = build_analysis_config(experiment_type, sess, data, global_defaults=global_defaults)
+            try:
+                vision_config = build_analysis_config(experiment_type, sess, data, global_defaults=global_defaults)
+            except (ValueError, TypeError, KeyError) as exc:
+                return _api_error(str(exc), 400, code='invalid_draft')
             if visual_style_store is not None:
                 vision_config['visual_style'] = visual_style_store.get_style()
 
-        _resolve_pose_runtime_config(vision_config, experiment_type)
+        try:
+            _resolve_pose_runtime_config(vision_config, experiment_type)
+        except ValueError as exc:
+            return _api_error(str(exc), 400, code='pose_configuration_invalid')
 
         reproducibility_seed = apply_deterministic_seed(
             sess.get('reproducibility_seed') or vision_config.get('reproducibility_seed') or DEFAULT_RANDOM_SEED
@@ -2004,6 +2019,7 @@ def register_api_routes(app, ctx) -> None:
             'light_dark_box': LightDarkBoxMultiArenaAnalysisSession,
             'three_chamber': ThreeChamberSocialAnalysisSession,
             'water_maze': WaterMazeMultiPoolAnalysisSession,
+            'barnes_maze': BarnesMultiArenaAnalysisSession,
         }
         analysis_class = analysis_class_map.get(experiment_type, VisionAnalysisSession)
         analysis = analysis_class(

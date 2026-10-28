@@ -956,6 +956,9 @@ def build_debug_preview_response(session_id: str, sess: dict[str, Any], data: di
         return _three_chamber_debug_preview(frame, data, video_path)
     if experiment_type == 'forced_swim':
         return _forced_swim_debug_preview(frame, data, video_path)
+    if experiment_type == 'barnes_maze':
+        from services.barnes_preview import build_barnes_preview
+        return build_barnes_preview(frame, data, video_path)
     if experiment_type == 'water_maze':
         return _water_maze_debug_preview(frame, data, video_path)
 

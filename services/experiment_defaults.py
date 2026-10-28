@@ -3,11 +3,13 @@ from __future__ import annotations
 import copy
 import math
 from typing import Any
+from services.barnes_config import BARNES_DEFAULTS
 
 
 # These are the application's factory defaults.  They intentionally contain
 # only analysis/configuration fields (never ROI geometry or user data).
 BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
+    "barnes_maze": copy.deepcopy(BARNES_DEFAULTS),
     "tst": {
         "bg_method": "threshold", "bg_type": "light", "gray_threshold": 127,
         "erosion_kernel": 3, "erosion_iter": 2, "dilation_kernel": 5,
@@ -135,6 +137,13 @@ BUILTIN_EXPERIMENT_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 _FIELD_LABELS: dict[str, tuple[str, str]] = {
+    "arena_diameter_cm": ("圆盘直径 (cm)", "Arena diameter (cm)"),
+    "hole_count": ("全部洞数", "Hole count"),
+    "hole_radius_cm": ("洞 ROI 半径 (cm)", "Hole ROI radius (cm)"),
+    "visit_confirm_s": ("探洞确认时长 (s)", "Visit confirmation (s)"),
+    "visit_reset_s": ("撤出重置时长 (s)", "Withdrawal reset (s)"),
+    "escape_absence_s": ("入箱候选消失时长 (s)", "Escape candidate absence (s)"),
+    "escape_zone_radius_cm": ("入箱候选区域半径 (cm)", "Escape candidate zone radius (cm)"),
     "bg_method": ("背景建模方法", "Background method"), "bg_type": ("背景类型", "Background type"),
     "gray_threshold": ("灰度阈值", "Gray threshold"), "body_gray_threshold": ("身体灰度阈值", "Body gray threshold"),
     "erosion_kernel": ("腐蚀核大小", "Erosion kernel"), "erosion_iter": ("腐蚀次数", "Erosion iterations"),
@@ -274,6 +283,9 @@ _SELECT_OPTIONS.update({
 })
 
 _EXPERIMENT_SELECT_OPTIONS: dict[tuple[str, str], list[tuple[str, str, str]]] = {
+    ("barnes_maze", "tracking_backend"): [("classical", "经典视觉", "Classical vision"), ("deeplabcut", "DeepLabCut", "DeepLabCut")],
+    ("barnes_maze", "trial_type"): [("acquisition", "训练", "Acquisition"), ("reversal", "反转", "Reversal"), ("probe", "探测", "Probe")],
+    ("barnes_maze", "bg_method"): [("threshold", "阈值", "Threshold"), ("temporal", "时序背景", "Temporal background"), ("static", "静态背景", "Static background"), ("mog2", "MOG2", "MOG2"), ("knn", "KNN", "KNN")],
     ("novel_object", "tracking_backend"): [
         ("classical", "经典视觉", "Classical vision"),
         ("deeplabcut", "DeepLabCut", "DeepLabCut"),
@@ -325,6 +337,13 @@ _NONNEGATIVE_SECONDS_FIELDS = {
     "occlusion_hold_s", "zone_confirm_s", "pose_head_hold_s",
 }
 _FIELD_CONSTRAINTS: dict[str, dict[str, Any]] = {
+    "arena_diameter_cm": {"min": 0.001, "max": 10000, "step": 0.1},
+    "hole_count": {"min": 2, "max": 200, "step": 1},
+    "hole_radius_cm": {"min": 0.001, "max": 1000, "step": 0.1},
+    "visit_confirm_s": {"min": 0, "max": 60, "step": 0.01},
+    "visit_reset_s": {"min": 0, "max": 60, "step": 0.01},
+    "escape_absence_s": {"min": 0.001, "max": 60, "step": 0.1},
+    "escape_zone_radius_cm": {"min": 0.001, "max": 1000, "step": 0.1},
     "gray_threshold": {"min": 0, "max": 255, "step": 1}, "body_gray_threshold": {"min": 0, "max": 255, "step": 1},
     "erosion_kernel": {"min": 1, "max": 99, "step": 1}, "dilation_kernel": {"min": 1, "max": 99, "step": 1},
     "erosion_iter": {"min": 0, "max": 50, "step": 1}, "dilation_iter": {"min": 0, "max": 50, "step": 1},

@@ -136,6 +136,7 @@ _SESSION_MODULE_NAMES = (
     'services.light_dark_session',
     'services.three_chamber_session',
     'services.water_maze_session',
+    'services.barnes_session',
 )
 
 _RUNTIME_BINDING_NAMES = (

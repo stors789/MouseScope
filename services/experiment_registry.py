@@ -166,6 +166,17 @@ def _water_maze_video_complete(config: dict[str, Any] | None) -> tuple[bool, lis
     return True, []
 
 
+def _barnes_video_complete(config):
+    from services.barnes_config import build_barnes_config
+    try:
+        resolved = build_barnes_config({}, config or {})
+        if not resolved['rois']:
+            return False, ['缺少巴恩斯圆盘和洞位标定']
+    except (TypeError, ValueError, KeyError) as exc:
+        return False, [str(exc)]
+    return True, []
+
+
 def _maze_zone_complete(zone_points, expected_points: int = 4) -> bool:
     return isinstance(zone_points, list) and len(zone_points) == int(expected_points)
 
@@ -345,6 +356,11 @@ EXPERIMENT_SPECS: dict[str, ExperimentSpec] = {
         calibrate_template="calibrate_water_maze.html",
         monitor_template="monitor_water_maze.html",
         validator=_water_maze_video_complete,
+    ),
+    "barnes_maze": ExperimentSpec(
+        key="barnes_maze", label="巴恩斯迷宫 Barnes Maze", short_label="Barnes",
+        manual_module="barnes", calibrate_template="calibrate_barnes.html",
+        monitor_template="monitor_barnes.html", validator=_barnes_video_complete,
     ),
     "open_field": ExperimentSpec(
         key="open_field",
